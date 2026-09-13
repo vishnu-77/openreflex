@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "openreflex": {
+      "command": "openreflex",
+      "args": [
+        "mcp",
+        "--project",
+        "${CLAUDE_PROJECT_DIR}"
+      ]
+    }
+  }
+}

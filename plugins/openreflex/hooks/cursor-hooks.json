@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "openreflex hook cursor sessionStart",
+        "timeout": 10
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "openreflex hook cursor beforeSubmitPrompt",
+        "timeout": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "openreflex hook cursor preToolUse",
+        "timeout": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "openreflex hook cursor postToolUse",
+        "timeout": 10
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "command": "openreflex hook cursor postToolUseFailure",
+        "timeout": 10
+      }
+    ],
+    "preCompact": [
+      {
+        "command": "openreflex hook cursor preCompact",
+        "timeout": 10
+      }
+    ],
+    "stop": [
+      {
+        "command": "openreflex hook cursor stop",
+        "timeout": 15
+      }
+    ],
+    "sessionEnd": [
+      {
+        "command": "openreflex hook cursor sessionEnd",
+        "timeout": 5
+      }
+    ]
+  }
+}

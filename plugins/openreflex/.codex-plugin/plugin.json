@@ -1,0 +1,32 @@
+{
+  "name": "openreflex",
+  "version": "0.1.0",
+  "description": "Muscle memory for AI coding agents: learns from every task, advises the next one, and flags failure loops live.",
+  "author": {
+    "name": "vishnu-77",
+    "url": "https://github.com/vishnu-77"
+  },
+  "keywords": [
+    "memory",
+    "trajectory",
+    "agents",
+    "mcp",
+    "hooks"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/codex-hooks.json",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "OpenReflex",
+    "shortDescription": "Local execution memory and path advice for coding tasks.",
+    "longDescription": "Captures task trajectories through lifecycle hooks, retrieves relevant past experience before substantial tasks, scores candidate strategies, flags failure loops and stagnation, and learns lessons after each task. All data stays local.",
+    "developerName": "vishnu-77",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "What has OpenReflex learned about this project?",
+    "websiteURL": "https://github.com/vishnu-77/openreflex"
+  },
+  "homepage": "https://github.com/vishnu-77/openreflex",
+  "repository": "https://github.com/vishnu-77/openreflex",
+  "license": "MIT"
+}

@@ -1,0 +1,22 @@
+{
+  "name": "openreflex",
+  "version": "0.1.0",
+  "description": "Muscle memory for AI coding agents: learns from every task, advises the next one, and flags failure loops live.",
+  "author": {
+    "name": "vishnu-77",
+    "url": "https://github.com/vishnu-77"
+  },
+  "keywords": [
+    "memory",
+    "trajectory",
+    "agents",
+    "mcp",
+    "hooks"
+  ],
+  "hooks": "./hooks/cursor-hooks.json",
+  "mcpServers": "./.mcp.json",
+  "skills": "./skills/",
+  "homepage": "https://github.com/vishnu-77/openreflex",
+  "repository": "https://github.com/vishnu-77/openreflex",
+  "license": "MIT"
+}
