@@ -14,13 +14,17 @@ def home() -> Path:
 def project_root(cwd: str | os.PathLike | None = None) -> Path:
     """The enclosing repository root when there is one, so subdirectory sessions share one memory."""
     explicit = os.environ.get("OPENREFLEX_PROJECT") or os.environ.get("CLAUDE_PROJECT_DIR")
-    start = Path(explicit or cwd or os.getcwd()).resolve()
-    if explicit:
+    try:
+        start = Path(explicit or cwd or os.getcwd()).resolve()
+        if explicit:
+            return start
+        for candidate in (start, *start.parents):
+            if (candidate / ".git").exists() or (candidate / ".openreflex.json").exists():
+                return candidate
         return start
-    for candidate in (start, *start.parents):
-        if (candidate / ".git").exists() or (candidate / ".openreflex.json").exists():
-            return candidate
-    return start
+    except (OSError, ValueError):
+        # Unusable path from a payload (embedded NUL, name too long, ...): hooks run in the project directory.
+        return Path(os.getcwd()).resolve()
 
 
 def _key(project: Path) -> str:

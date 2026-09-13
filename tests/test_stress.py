@@ -71,6 +71,7 @@ def test_prompt_latency_with_thousands_of_experiences(tmp_path, project, clock):
 
 def _junk(rng: random.Random, depth: int = 0):
     choices = [None, True, 0, -1, 3.5, "", "x" * rng.randint(1, 5000), "\u00e9\u2603\U0001f600 \x00", "../../etc/passwd",
+               "/tmp/" + "y" * 300 + "/deep", "/tmp/nul\x00byte",
                "C:\\Windows\\system32", ["a", 1, None], {"nested": {"file_path": "../../x"}}]
     if depth < 2:
         choices.append({k: _junk(rng, depth + 1) for k in rng.sample(["command", "file_path", "path", "input", "q"], 2)})
