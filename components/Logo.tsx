@@ -1,33 +1,25 @@
+// OpenReflex logo: the R mark with its return stroke, and the outlined "openreflex" wordmark.
+// Colors come from theme tokens, so both light and dark themes render correctly.
+
 export function LogoMark({ className = "h-7 w-7" }: { className?: string }) {
-  // A reflex loop: an arc that returns to its origin, around a node.
   return (
-    <svg viewBox="0 0 80 80" className={className} aria-hidden="true" focusable="false">
-      <circle cx="40" cy="40" r="34" fill="none" stroke="var(--border-strong)" strokeWidth="2" />
-      <path
-        d="M40 15 A25 25 0 1 1 16.51 31.45"
-        fill="none"
-        stroke="var(--accent)"
-        strokeWidth="6"
-        strokeLinecap="round"
-      />
-      <path
-        d="M8.88 36.22 L16.51 31.45 L19.29 40.01"
-        fill="none"
-        stroke="var(--accent)"
-        strokeWidth="6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx="40" cy="40" r="8" fill="var(--accent)" />
+    <svg viewBox="8 8 260 270" className={className} aria-hidden="true" focusable="false">
+      <path d="M32 23H145A78 78 0 0 1 157 181" className="stroke-accent" strokeWidth="30" strokeLinecap="round" fill="none" /><path d="M154 187L253 263" className="stroke-accent" strokeWidth="28" strokeLinecap="round" fill="none" /><path d="M100 107H85A62 62 0 0 0 23 169V258" className="stroke-accent" strokeWidth="26" strokeLinecap="round" fill="none" /><circle cx="127" cy="105" r="27" className="fill-accent" /><path d="M112 176H71V214" className="stroke-accent" strokeWidth="19" strokeLinecap="round" strokeLinejoin="round" fill="none" /><path d="M78 183L151 257" className="stroke-accent" strokeWidth="21" strokeLinecap="round" fill="none" />
     </svg>
   );
 }
 
-export function Wordmark() {
+export function Wordmark({ className = "h-7 w-auto" }: { className?: string }) {
   return (
-    <span className="flex items-center gap-2.5">
-      <LogoMark />
-      <span className="text-[1.15rem] font-semibold tracking-tight text-ink">OpenReflex</span>
-    </span>
+    <svg
+      viewBox="4 4 1435.76 278.00"
+      className={className}
+      role="img"
+      aria-label="OpenReflex"
+      focusable="false"
+    >
+      <path d="M32 23H145A78 78 0 0 1 157 181" className="stroke-accent" strokeWidth="30" strokeLinecap="round" fill="none" /><path d="M154 187L253 263" className="stroke-accent" strokeWidth="28" strokeLinecap="round" fill="none" /><path d="M100 107H85A62 62 0 0 0 23 169V258" className="stroke-accent" strokeWidth="26" strokeLinecap="round" fill="none" /><circle cx="127" cy="105" r="27" className="fill-accent" /><path d="M112 176H71V214" className="stroke-accent" strokeWidth="19" strokeLinecap="round" strokeLinejoin="round" fill="none" /><path d="M78 183L151 257" className="stroke-accent" strokeWidth="21" strokeLinecap="round" fill="none" />
+      <path transform="translate(304.40 207.80) scale(0.21214)" className="fill-ink" d="M306.0 14Q232.0 14 173.0 -16.0Q114.0 -46 80.0 -103.0Q46.0 -160 46.0 -240V-256Q46.0 -336 80.0 -393.0Q114.0 -450 173.0 -480.0Q232.0 -510 306.0 -510Q380.0 -510 439.0 -480.0Q498.0 -450 532.0 -393.0Q566.0 -336 566.0 -256V-240Q566.0 -160 532.0 -103.0Q498.0 -46 439.0 -16.0Q380.0 14 306.0 14ZM306.0 -98Q364.0 -98 402.0 -135.5Q440.0 -173 440.0 -243V-253Q440.0 -323 402.5 -360.5Q365.0 -398 306.0 -398Q248.0 -398 210.0 -360.5Q172.0 -323 172.0 -253V-243Q172.0 -173 210.0 -135.5Q248.0 -98 306.0 -98Z M690.0 200V-496H814.0V-436H832.0Q849.0 -465 885.0 -487.5Q921.0 -510 988.0 -510Q1048.0 -510 1099.0 -480.5Q1150.0 -451 1181.0 -394.0Q1212.0 -337 1212.0 -256V-240Q1212.0 -159 1181.0 -102.0Q1150.0 -45 1099.0 -15.5Q1048.0 14 988.0 14Q943.0 14 912.5 3.5Q882.0 -7 863.5 -23.5Q845.0 -40 834.0 -57H816.0V200ZM950.0 -96Q1009.0 -96 1047.5 -133.5Q1086.0 -171 1086.0 -243V-253Q1086.0 -325 1047.0 -362.5Q1008.0 -400 950.0 -400Q892.0 -400 853.0 -362.5Q814.0 -325 814.0 -253V-243Q814.0 -171 853.0 -133.5Q892.0 -96 950.0 -96Z M1562.0 14Q1488.0 14 1431.5 -17.5Q1375.0 -49 1343.5 -106.5Q1312.0 -164 1312.0 -242V-254Q1312.0 -332 1343.0 -389.5Q1374.0 -447 1430.0 -478.5Q1486.0 -510 1560.0 -510Q1633.0 -510 1687.0 -477.5Q1741.0 -445 1771.0 -387.5Q1801.0 -330 1801.0 -254V-211H1440.0Q1442.0 -160 1478.0 -128.0Q1514.0 -96 1566.0 -96Q1619.0 -96 1644.0 -119.0Q1669.0 -142 1682.0 -170L1785.0 -116Q1771.0 -90 1744.5 -59.5Q1718.0 -29 1674.0 -7.5Q1630.0 14 1562.0 14ZM1441.0 -305H1673.0Q1669.0 -348 1638.5 -374.0Q1608.0 -400 1559.0 -400Q1508.0 -400 1478.0 -374.0Q1448.0 -348 1441.0 -305Z M1921.0 0V-496H2045.0V-431H2063.0Q2075.0 -457 2108.0 -480.5Q2141.0 -504 2208.0 -504Q2266.0 -504 2309.5 -477.5Q2353.0 -451 2377.0 -404.5Q2401.0 -358 2401.0 -296V0H2275.0V-286Q2275.0 -342 2247.5 -370.0Q2220.0 -398 2169.0 -398Q2111.0 -398 2079.0 -359.5Q2047.0 -321 2047.0 -252V0Z M2545.0 0V-496H2669.0V-440H2687.0Q2698.0 -470 2723.5 -484.0Q2749.0 -498 2783.0 -498H2843.0V-386H2781.0Q2733.0 -386 2702.0 -360.5Q2671.0 -335 2671.0 -282V0Z M3175.0 14Q3101.0 14 3044.5 -17.5Q2988.0 -49 2956.5 -106.5Q2925.0 -164 2925.0 -242V-254Q2925.0 -332 2956.0 -389.5Q2987.0 -447 3043.0 -478.5Q3099.0 -510 3173.0 -510Q3246.0 -510 3300.0 -477.5Q3354.0 -445 3384.0 -387.5Q3414.0 -330 3414.0 -254V-211H3053.0Q3055.0 -160 3091.0 -128.0Q3127.0 -96 3179.0 -96Q3232.0 -96 3257.0 -119.0Q3282.0 -142 3295.0 -170L3398.0 -116Q3384.0 -90 3357.5 -59.5Q3331.0 -29 3287.0 -7.5Q3243.0 14 3175.0 14ZM3054.0 -305H3286.0Q3282.0 -348 3251.5 -374.0Q3221.0 -400 3172.0 -400Q3121.0 -400 3091.0 -374.0Q3061.0 -348 3054.0 -305Z M3616.0 0V-392H3490.0V-496H3616.0V-588Q3616.0 -639 3646.5 -669.5Q3677.0 -700 3726.0 -700H3856.0V-596H3770.0Q3742.0 -596 3742.0 -566V-496H3872.0V-392H3742.0V0Z M3978.0 0V-700H4104.0V0Z M4478.0 14Q4404.0 14 4347.5 -17.5Q4291.0 -49 4259.5 -106.5Q4228.0 -164 4228.0 -242V-254Q4228.0 -332 4259.0 -389.5Q4290.0 -447 4346.0 -478.5Q4402.0 -510 4476.0 -510Q4549.0 -510 4603.0 -477.5Q4657.0 -445 4687.0 -387.5Q4717.0 -330 4717.0 -254V-211H4356.0Q4358.0 -160 4394.0 -128.0Q4430.0 -96 4482.0 -96Q4535.0 -96 4560.0 -119.0Q4585.0 -142 4598.0 -170L4701.0 -116Q4687.0 -90 4660.5 -59.5Q4634.0 -29 4590.0 -7.5Q4546.0 14 4478.0 14ZM4357.0 -305H4589.0Q4585.0 -348 4554.5 -374.0Q4524.0 -400 4475.0 -400Q4424.0 -400 4394.0 -374.0Q4364.0 -348 4357.0 -305Z M4793.0 0 4973.0 -250 4795.0 -496H4941.0L5054.0 -331H5072.0L5185.0 -496H5331.0L5153.0 -250L5333.0 0H5185.0L5072.0 -167H5054.0L4941.0 0Z" />
+    </svg>
   );
 }

@@ -46,8 +46,8 @@ const STEPS = [
 ] as const;
 
 const TONE = {
-  context: "border-[#7cc9c8] text-[#9edce0]",
-  alert: "border-[#e7b25a] text-[#f1c983]",
+  context: "border-[#7CC9C8] text-[#7CC9C8]",
+  alert: "border-[#E7B25A] text-[#E7B25A]",
   lesson: "border-white/25 text-term-text/85",
 };
 

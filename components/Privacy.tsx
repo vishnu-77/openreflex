@@ -43,7 +43,7 @@ export function Privacy() {
             <ul className="mt-5 space-y-3.5">
               {NEVER.map((item) => (
                 <li key={item} className="flex gap-3 leading-relaxed text-text">
-                  <X size={18} className="mt-0.5 shrink-0 text-fail" aria-hidden="true" />
+                  <X size={18} className="mt-0.5 shrink-0 text-muted" aria-hidden="true" />
                   {item}
                 </li>
               ))}

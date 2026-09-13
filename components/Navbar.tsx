@@ -21,7 +21,7 @@ export function Navbar() {
     <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
       <nav className="mx-auto flex h-16 max-w-[1320px] items-center justify-between gap-6 px-5 sm:px-10" aria-label="Main">
         <a href="#top" className="rounded" aria-label="OpenReflex home">
-          <Wordmark />
+          <Wordmark className="h-[26px] w-auto" />
         </a>
 
         <ul className="hidden items-center gap-7 text-[0.93rem] text-muted lg:flex">

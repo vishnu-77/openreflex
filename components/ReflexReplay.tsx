@@ -49,14 +49,14 @@ function Row({ line }: { line: Line }) {
       );
     case "alert":
       return (
-        <p className="my-1.5 border-l-2 border-[#e7b25a] bg-[#e7b25a]/10 py-1.5 pl-3 pr-2 text-[#f1c983]">{line.text}</p>
+        <p className="my-1.5 border-l-2 border-[#E7B25A] bg-[#E7B25A]/10 py-1.5 pl-3 pr-2 text-[#E7B25A]">{line.text}</p>
       );
     case "context":
-      return <p className="border-l-2 border-[#7cc9c8] pl-3 text-[#9edce0]">{line.text}</p>;
+      return <p className="border-l-2 border-[#7CC9C8] pl-3 text-[#7CC9C8]">{line.text}</p>;
     case "lesson":
-      return <p className="pl-3 text-[#9edce0]/80">{line.text}</p>;
+      return <p className="pl-3 text-[#7CC9C8]/80">{line.text}</p>;
     default: {
-      const tone = line.kind === "fail" ? "text-[#f08a78]" : line.kind === "ok" ? "text-[#8fcf8f]" : "";
+      const tone = line.kind === "fail" ? "text-term-text" : line.kind === "ok" ? "text-[#7CC9C8]" : "";
       const mark = line.kind === "fail" ? "x" : line.kind === "ok" ? "ok" : "";
       return (
         <p className="flex justify-between gap-4 pl-3 text-term-text/85">

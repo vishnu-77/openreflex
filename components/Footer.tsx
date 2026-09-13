@@ -21,7 +21,7 @@ export function Footer() {
     <footer className="bg-bg-soft">
       <div className="mx-auto grid max-w-[1320px] gap-12 px-5 py-16 sm:px-10 md:grid-cols-[1.6fr_1fr_1fr_1.2fr]">
         <div>
-          <Wordmark />
+          <Wordmark className="h-[30px] w-auto" />
           <p className="mt-4 max-w-[22rem] leading-relaxed text-muted">{TAGLINE}. Open source and local-first.</p>
         </div>
 
