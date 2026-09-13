@@ -3,7 +3,7 @@
 <a href="https://openreflex.vercel.app" target="_blank">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/openreflex-logo-dark.svg">
-    <img alt="OpenReflex" src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/openreflex-logo-light.svg" width="320" height="auto">
+    <img alt="OpenReflex" src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/openreflex-logo-light.svg" width="380" height="auto">
   </picture>
 </a>
 
