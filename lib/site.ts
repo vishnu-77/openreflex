@@ -1,4 +1,4 @@
-export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://openreflex.vercel.app";
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://openreflex.cc";
 
 export const LINKS = {
   github: "https://github.com/vishnu-77/openreflex",
