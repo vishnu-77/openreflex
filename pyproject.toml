@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openreflex"
-version = "0.1.0"
+version = "0.1.1"
 description = "Muscle memory for AI coding agents: learns from every task, advises the next one, and flags failure loops live"
 readme = "README.md"
 license = "MIT"
@@ -27,7 +27,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/vishnu-77/openreflex"
+Homepage = "https://openreflex.vercel.app"
 Repository = "https://github.com/vishnu-77/openreflex"
 Issues = "https://github.com/vishnu-77/openreflex/issues"
 

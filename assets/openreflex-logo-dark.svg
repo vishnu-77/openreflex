@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="80" viewBox="0 0 320 80" role="img" aria-label="OpenReflex">
+  <circle cx="40" cy="40" r="34" fill="none" stroke="#343a44" stroke-width="1.5"/>
+  <path d="M40.00 15.00 A25 25 0 1 1 16.51 31.45" fill="none" stroke="#7cc9c8" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M8.88 36.22 L16.51 31.45 L19.29 40.01" fill="none" stroke="#7cc9c8" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="40" cy="40" r="7" fill="#7cc9c8"/>
+  <text x="88" y="51" font-family="'Space Grotesk','Segoe UI',Helvetica,Arial,sans-serif" font-size="34" font-weight="600" letter-spacing="-0.5" fill="#f5efe4">Open<tspan fill="#7cc9c8">Reflex</tspan></text>
+</svg>

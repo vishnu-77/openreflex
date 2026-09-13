@@ -96,7 +96,7 @@ def cmd_status(args) -> int:
     print(f"  tasks: {data['engagement']['tasks']}   experiences: {data['engagement']['experiences']}   lessons: {data['lessons']}")
     print(f"  first session captured: {data['activation']['first_session_captured']}   "
           f"seconds to first task: {data['activation']['seconds_to_first_task']}")
-    print(f"  tasks benefiting from prior experience: {reuse['benefit_rate']}")
+    print(f"  tasks that used prior experience: {reuse['benefit_rate']}")
     print(f"  success rate (known outcomes): {data['outcomes']['success_rate']}   verified: {data['outcomes']['verified']}")
     print(f"  tool calls with vs without prior experience: {eff['with_prior_experience']['tool_calls']} vs "
           f"{eff['without_prior_experience']['tool_calls']} (observational)")

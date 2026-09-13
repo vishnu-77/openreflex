@@ -198,7 +198,6 @@ def run_benchmark(episodes: int = 150, seeds: int = 3) -> dict:
         "baseline": baseline, "guided": guided,
         "relative_change": {"tool_calls": change("tool_calls"), "tokens": change("tokens"), "time": change("seconds"),
                             "success_rate_points": round(guided["success_rate"] - baseline["success_rate"], 3)},
-        "targets": {"tool_calls": -0.20, "tokens": -0.20, "time": -0.15, "routing_agreement": 0.70},
         "per_seed": per_seed,
     }
 
@@ -206,20 +205,21 @@ def run_benchmark(episodes: int = 150, seeds: int = 3) -> dict:
 def format_report(report: dict) -> str:
     b, g, c = report["baseline"], report["guided"], report["relative_change"]
     rows = [
-        ("tool calls / task", b["tool_calls"], g["tool_calls"], f"{c['tool_calls']:+.0%}", "-20..-30%"),
-        ("output tokens / task", b["tokens"], g["tokens"], f"{c['tokens']:+.0%}", "-20%"),
-        ("time / task (s)", b["seconds"], g["seconds"], f"{c['time']:+.0%}", "-15%"),
-        ("success rate", b["success_rate"], g["success_rate"], f"{c['success_rate_points']:+.3f} pts", ">= baseline"),
-        ("regret, first quarter", b["regret_first_quarter"], g["regret_first_quarter"], "", ""),
-        ("regret, last quarter", b["regret_last_quarter"], g["regret_last_quarter"], "", "declining"),
-        ("routing agreement (2nd half)", "-", g["routing_agreement_second_half"], "", "> 0.70"),
+        ("tool calls / task", b["tool_calls"], g["tool_calls"], f"{c['tool_calls']:+.0%}"),
+        ("output tokens / task", b["tokens"], g["tokens"], f"{c['tokens']:+.0%}"),
+        ("time / task (s)", b["seconds"], g["seconds"], f"{c['time']:+.0%}"),
+        ("success rate", b["success_rate"], g["success_rate"], f"{c['success_rate_points']:+.3f} pts"),
+        ("regret, first quarter", b["regret_first_quarter"], g["regret_first_quarter"], ""),
+        ("regret, last quarter", b["regret_last_quarter"], g["regret_last_quarter"], ""),
+        ("routing agreement (2nd half)", "-", g["routing_agreement_second_half"], ""),
     ]
     lines = [f"SIMULATED benchmark - {report['episodes_per_arm']} tasks/arm x {report['seeds']} seeds "
              "(assumption-driven; not evidence of real-world gains)", ""]
-    lines.append(f"{'metric':30} {'baseline':>10} {'guided':>10} {'change':>12}  target")
+    lines.append(f"{'metric':30} {'baseline':>10} {'guided':>10} {'change':>12}")
+
     def cell(value):
         return f"{value:,.3f}".rstrip("0").rstrip(".") if isinstance(value, float) else str(value)
 
-    for name, base, guide, delta, target in rows:
-        lines.append(f"{name:30} {cell(base):>10} {cell(guide):>10} {delta:>12}  {target}")
+    for name, base, guide, delta in rows:
+        lines.append(f"{name:30} {cell(base):>10} {cell(guide):>10} {delta:>12}")
     return "\n".join(lines)
