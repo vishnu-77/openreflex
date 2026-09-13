@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: #f6f2e8;
+  --bg-soft: #fbf7ee;
+  --panel: #fffaf1;
+  --muted-bg: #efe7d8;
+  --border: #d8d0c2;
+  --border-strong: #bdb3a2;
+  --ink: #171511;
+  --text: #26231e;
+  --muted: #625b50;
+  --accent: #286a70;
+  --accent-strong: #1d5a5f;
+  --signal: #9a5b12;
+  --ok: #2f6b3a;
+  --fail: #9b3326;
+  --grid: rgba(35, 31, 25, 0.055);
+  --term-bg: #15181c;
+  --term-text: #e9e3d8;
+  --term-dim: #8f887c;
+}
+
+.dark {
+  --bg: #101317;
+  --bg-soft: #14171c;
+  --panel: #1c2026;
+  --muted-bg: #242932;
+  --border: #343a44;
+  --border-strong: #4a515d;
+  --ink: #f5efe4;
+  --text: #e4ddd1;
+  --muted: #b7ad9f;
+  --accent: #7cc9c8;
+  --accent-strong: #9edce0;
+  --signal: #e7b25a;
+  --ok: #8fcf8f;
+  --fail: #f08a78;
+  --grid: rgba(245, 239, 228, 0.045);
+  --term-bg: #0c0e11;
+  --term-text: #e9e3d8;
+  --term-dim: #857e73;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-soft: var(--bg-soft);
+  --color-panel: var(--panel);
+  --color-muted-bg: var(--muted-bg);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-signal: var(--signal);
+  --color-ok: var(--ok);
+  --color-fail: var(--fail);
+  --color-term: var(--term-bg);
+  --color-term-text: var(--term-text);
+  --color-term-dim: var(--term-dim);
+  --font-sans: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-serif: var(--font-newsreader), Georgia, Cambria, "Times New Roman", serif;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.grid-backdrop {
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(to bottom, transparent, black 18%, black 70%, transparent);
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+.caret {
+  animation: caret 1s steps(1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .caret {
+    animation: none;
+  }
+}
