@@ -13,7 +13,11 @@ A hook must never break the agent: every failure path degrades to an empty, non-
 
 import json
 import os
+import random
 import re
+import sqlite3
+import time
+import traceback
 from dataclasses import dataclass, field
 
 from .engine import Engine
@@ -108,7 +112,8 @@ def normalize(agent: str, name: str, payload: dict) -> Event:
                       tool_id=_ident(payload.get("tool_use_id")) or None, arguments=_arguments(payload.get("tool_input")))
         if name == "PostToolUseFailure":
             event.success = False
-            event.error = "interrupted by user" if payload.get("is_interrupt") is True else                 _message(payload.get("error"), "tool failed")
+            interrupted = payload.get("is_interrupt") is True
+            event.error = "interrupted by user" if interrupted else _message(payload.get("error"), "tool failed")
             event.output_chars = _size(payload.get("error"))
         elif name == "PostToolUse":
             response = payload.get("tool_response")
@@ -119,7 +124,8 @@ def normalize(agent: str, name: str, payload: dict) -> Event:
 
     if agent == "cursor":
         name = name or _text(payload, "hook_event_name")
-        roots = [root for root in payload.get("workspace_roots") or [] if isinstance(root, str)]             if isinstance(payload.get("workspace_roots"), list) else []
+        raw_roots = payload.get("workspace_roots")
+        roots = [root for root in raw_roots if isinstance(root, str)] if isinstance(raw_roots, list) else []
         cwd = _text(payload, "cwd") or (roots[0] if roots else None) or os.environ.get("CURSOR_PROJECT_DIR")
         event = Event(CURSOR_KINDS.get(name, "ignored"),
                       _ident(payload.get("conversation_id")) or _ident(payload.get("session_id")), cwd,
@@ -209,13 +215,24 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
 
 
 def safe_handle(agent: str, name: str, raw: str) -> str:
+    started = time.monotonic()
     try:
         payload = json.loads(raw) if raw.strip() else {}
         if not isinstance(payload, dict):
             raise ValueError("hook payload must be a JSON object")
-        return handle(agent, name, payload)
+        while True:
+            try:
+                return handle(agent, name, payload)
+            except sqlite3.OperationalError as error:
+                # SQLite can report "locked" immediately (without waiting) under heavy parallel hooks. Engine
+                # operations are idempotent, so a brief retry is safe; slow lock waits are not retried.
+                if "locked" not in str(error) or time.monotonic() - started > 3:
+                    raise
+                time.sleep(random.uniform(0.05, 0.3))
     except Exception as error:  # noqa: BLE001 - a hook must never take the agent down
-        log_error(f"hook {agent} {name}: {type(error).__name__}: {error}")
+        frames = [frame for frame in traceback.extract_tb(error.__traceback__) if "openreflex" in frame.filename]
+        site = f" at {os.path.basename(frames[-1].filename)}:{frames[-1].lineno}" if frames else ""
+        log_error(f"hook {agent} {name}: {type(error).__name__}: {error}{site}")
         try:
             return render(agent if agent in AGENTS else "claude-code", name, None)
         except Exception:  # noqa: BLE001

@@ -43,6 +43,10 @@ PRAGMA user_version = 1;
 """
 
 
+BUSY_TIMEOUT_SECONDS = 8
+SCHEMA_VERSION = 1
+
+
 def _field(name: str) -> str:
     if not name.isidentifier():
         raise ValueError("Invalid field name")
@@ -57,15 +61,25 @@ def database_path(project: Path) -> Path:
 class Store:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(path, timeout=3, isolation_level=None)
+        # Parallel tool calls start many hook processes at once; on a busy machine a lock holder can be descheduled
+        # for seconds. Wait long enough to ride that out, but stay under the agents' 10s hook timeout.
+        self.db = sqlite3.connect(path, timeout=BUSY_TIMEOUT_SECONDS, isolation_level=None)
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys=ON")
-        self.db.execute("PRAGMA journal_mode=WAL")
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version > 1:
+        if version > SCHEMA_VERSION:
             self.db.close()
             raise ValueError("Database schema is newer than this engine")
-        self.db.executescript(SCHEMA)
+        if version < SCHEMA_VERSION:
+            # Only a fresh database pays for schema setup. Re-running it on every hook process meant autocommit
+            # writes outside BEGIN IMMEDIATE, which in WAL mode can fail instantly with SQLITE_BUSY under contention.
+            if self.db.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
+                self.db.execute("PRAGMA journal_mode=WAL")
+            with self.transaction():
+                if self.db.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
+                    for statement in SCHEMA.split(";"):
+                        if statement.strip():
+                            self.db.execute(statement)
 
     def close(self):
         self.db.close()
@@ -97,6 +111,17 @@ class Store:
         args: list = [kind]
         if field:
             sql += f" AND json_extract(data,'$.{_field(field)}')=?"
+            args.append(value)
+        sql += " ORDER BY rowid DESC LIMIT ?"
+        args.append(limit)
+        return [NODE_MODELS[kind].model_validate_json(r[0]) for r in self.db.execute(sql, args)]
+
+    def find(self, kind: str, limit: int = 1000, **fields):
+        """Nodes of a kind whose top-level JSON fields equal the given values; filtering happens in SQLite."""
+        sql = "SELECT data FROM nodes WHERE kind=?"
+        args: list = [kind]
+        for name, value in fields.items():
+            sql += f" AND json_extract(data,'$.{_field(name)}')=?"
             args.append(value)
         sql += " ORDER BY rowid DESC LIMIT ?"
         args.append(limit)

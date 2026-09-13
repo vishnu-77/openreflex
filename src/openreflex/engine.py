@@ -238,10 +238,11 @@ class Engine:
                       key=lambda c: (c.started_at, c.id))
 
     def _find_call(self, execution_id: str, tool_id: str | None, fp: str, running_only: bool) -> ToolCall | None:
-        calls = self.store.list("ToolCall", "execution_id", execution_id, limit=5000)
+        # Filter in SQLite: hooks hold the write lock here, and parsing every call in a long task is slow.
         if tool_id:
-            return next((c for c in calls if c.external_id == tool_id), None)
-        matches = [c for c in calls if c.fingerprint == fp and (c.status == "running" or not running_only)]
+            return next(iter(self.store.find("ToolCall", limit=1, execution_id=execution_id, external_id=tool_id)), None)
+        matches = [c for c in self.store.find("ToolCall", execution_id=execution_id, fingerprint=fp)
+                   if c.status == "running" or not running_only]
         return max(matches, key=lambda c: c.started_at, default=None)
 
     def _execution_for(self, agent: str, session: str, now: float) -> Execution:
@@ -317,7 +318,8 @@ class Engine:
         return context
 
     def _retry_warning(self, execution: Execution, call: ToolCall) -> str | None:
-        same = [c for c in self._calls(execution.id) if c.fingerprint == call.fingerprint and c.id != call.id]
+        same = sorted((c for c in self.store.find("ToolCall", execution_id=execution.id, fingerprint=call.fingerprint)
+                       if c.id != call.id), key=lambda c: c.started_at)
         failures = [c for c in same if c.status == "failure"]
         marker = "retry:" + call.fingerprint[:12]
         if len(failures) >= 2 and not any(c.status == "success" for c in same) and marker not in execution.alerts:
