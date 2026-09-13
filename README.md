@@ -1,6 +1,6 @@
 <div align="center">
 
-<a href="https://openreflex.vercel.app" target="_blank">
+<a href="https://openreflex.cc" target="_blank">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/openreflex-logo-dark.svg">
     <img alt="OpenReflex" src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/openreflex-logo-light.svg" width="380" height="auto">
@@ -9,7 +9,7 @@
 
 ### OpenReflex: muscle memory for AI coding agents
 
-<a href="https://openreflex.vercel.app">Website</a> · <a href="https://github.com/vishnu-77/openreflex">GitHub</a> · <a href="https://pypi.org/project/openreflex/">PyPI</a> · <a href="https://github.com/vishnu-77/openreflex/issues">Issues</a> · <a href="https://buymeacoffee.com/vishnuprashanth">Buy me a coffee</a>
+<a href="https://openreflex.cc">Website</a> · <a href="https://github.com/vishnu-77/openreflex">GitHub</a> · <a href="https://pypi.org/project/openreflex/">PyPI</a> · <a href="https://github.com/vishnu-77/openreflex/issues">Issues</a> · <a href="https://buymeacoffee.com/vishnuprashanth">Buy me a coffee</a>
 
 [![PyPI](https://img.shields.io/pypi/v/openreflex?style=flat-square&labelColor=black&color=286a70)](https://pypi.org/project/openreflex/)
 [![Python](https://img.shields.io/pypi/pyversions/openreflex?style=flat-square&labelColor=black&color=7cc9c8)](https://pypi.org/project/openreflex/)
