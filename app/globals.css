@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+@custom-variant research (&:where([data-view="research"], [data-view="research"] *));
 
 :root {
   /* Flat, matte palette. Amber is reserved for alerts. */
@@ -113,4 +114,12 @@ body {
   .caret {
     animation: none;
   }
+}
+
+/* Builder / Researcher views: both are rendered; the html data-view attribute picks one. */
+html[data-view="research"] .view-builder {
+  display: none !important;
+}
+html:not([data-view="research"]) .view-research {
+  display: none !important;
 }

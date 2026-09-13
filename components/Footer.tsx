@@ -9,11 +9,24 @@ const PROJECT = [
   { href: LINKS.license, label: "MIT License" },
 ];
 
-const PAGE = [
-  { href: "#how", label: "How it works" },
-  { href: "#quickstart", label: "Quickstart" },
-  { href: "#privacy", label: "Privacy" },
-  { href: "#shipped", label: "What's shipped" },
+const PAGES = [
+  {
+    className: "view-builder",
+    links: [
+      { href: "#how", label: "How it works" },
+      { href: "#quickstart", label: "Quickstart" },
+      { href: "#privacy", label: "Privacy" },
+      { href: "#shipped", label: "What's shipped" },
+    ],
+  },
+  {
+    className: "view-research",
+    links: [
+      { href: "#idea", label: "The idea" },
+      { href: "#graph", label: "Graph explorer" },
+      { href: "#prior-work", label: "Prior work" },
+    ],
+  },
 ];
 
 export function Footer() {
@@ -40,15 +53,17 @@ export function Footer() {
 
         <nav aria-label="On this page">
           <h2 className="text-sm font-semibold text-ink">On this page</h2>
-          <ul className="mt-4 space-y-2.5 text-muted">
-            {PAGE.map((link) => (
-              <li key={link.href}>
-                <a href={link.href} className="hover:text-ink">
-                  {link.label}
-                </a>
-              </li>
-            ))}
-          </ul>
+          {PAGES.map((page) => (
+            <ul key={page.className} className={`${page.className} mt-4 space-y-2.5 text-muted`}>
+              {page.links.map((link) => (
+                <li key={link.href}>
+                  <a href={link.href} className="hover:text-ink">
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ))}
         </nav>
 
         <div>

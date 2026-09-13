@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Newsreader, Space_Grotesk } from "next/font/google";
 import { DESCRIPTION, SITE_URL, TITLE } from "@/lib/site";
+import { viewScript } from "@/lib/view";
 import "./globals.css";
 
 const grotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-grotesk", display: "swap" });
@@ -46,6 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: viewScript }} />
       </head>
       <body className="min-h-screen font-sans">{children}</body>
     </html>

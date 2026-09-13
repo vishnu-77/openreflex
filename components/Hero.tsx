@@ -3,6 +3,7 @@ import { LINKS } from "@/lib/site";
 import { CopyButton } from "./CopyButton";
 import { GithubStars } from "./GithubStars";
 import { ReflexReplay } from "./ReflexReplay";
+import { ResearchLink } from "./ViewToggle";
 
 const INSTALL = "pipx install openreflex";
 
@@ -46,6 +47,12 @@ export function Hero() {
               <GithubStars />
             </a>
           </div>
+          <p className="view-builder mt-6 text-[0.95rem] text-muted">
+            Evaluating the approach? <ResearchLink />
+          </p>
+          <p className="view-research mt-6 text-[0.95rem] text-muted">
+            You are in the Researcher view: how OpenReflex learns, and where it fits among related work.
+          </p>
         </div>
 
         <ReflexReplay />

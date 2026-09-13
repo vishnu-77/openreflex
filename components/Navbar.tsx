@@ -6,12 +6,24 @@ import { useState } from "react";
 import { LINKS } from "@/lib/site";
 import { Wordmark } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
+import { ViewToggle } from "./ViewToggle";
 
-const SECTIONS = [
+const BUILDER_SECTIONS = [
   { href: "#how", label: "How it works" },
   { href: "#quickstart", label: "Quickstart" },
   { href: "#privacy", label: "Privacy" },
   { href: "#shipped", label: "What's shipped" },
+];
+
+const RESEARCH_SECTIONS = [
+  { href: "#idea", label: "The idea" },
+  { href: "#graph", label: "Graph explorer" },
+  { href: "#prior-work", label: "Prior work" },
+];
+
+const VIEWS = [
+  { className: "view-builder", sections: BUILDER_SECTIONS },
+  { className: "view-research", sections: RESEARCH_SECTIONS },
 ];
 
 export function Navbar() {
@@ -24,17 +36,20 @@ export function Navbar() {
           <Wordmark className="h-[26px] w-auto" />
         </a>
 
-        <ul className="hidden items-center gap-7 text-[0.93rem] text-muted lg:flex">
-          {SECTIONS.map((section) => (
-            <li key={section.href}>
-              <a href={section.href} className="transition-colors hover:text-ink">
-                {section.label}
-              </a>
-            </li>
-          ))}
-        </ul>
+        {VIEWS.map((view) => (
+          <ul key={view.className} className={`${view.className} hidden items-center gap-7 text-[0.93rem] text-muted xl:flex`}>
+            {view.sections.map((section) => (
+              <li key={section.href}>
+                <a href={section.href} className="transition-colors hover:text-ink">
+                  {section.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        ))}
 
         <div className="flex items-center gap-2">
+          <ViewToggle className="hidden md:flex" />
           <ThemeToggle />
           <a
             href={LINKS.coffee}
@@ -56,7 +71,7 @@ export function Navbar() {
           </a>
           <button
             type="button"
-            className="grid h-9 w-9 place-items-center rounded-md border border-line text-muted lg:hidden"
+            className="grid h-9 w-9 place-items-center rounded-md border border-line text-muted xl:hidden"
             aria-expanded={open}
             aria-controls="mobile-menu"
             aria-label={open ? "Close menu" : "Open menu"}
@@ -68,16 +83,19 @@ export function Navbar() {
       </nav>
 
       {open && (
-        <div id="mobile-menu" className="border-t border-line bg-bg px-5 pb-5 pt-2 lg:hidden">
-          <ul className="flex flex-col text-[1.02rem]">
-            {SECTIONS.map((section) => (
-              <li key={section.href}>
-                <a href={section.href} onClick={() => setOpen(false)} className="block border-b border-line py-3 text-text">
-                  {section.label}
-                </a>
-              </li>
-            ))}
-          </ul>
+        <div id="mobile-menu" className="border-t border-line bg-bg px-5 pb-5 pt-4 xl:hidden">
+          <ViewToggle className="mb-2 w-full md:hidden [&>button]:flex-1 [&>button]:justify-center" />
+          {VIEWS.map((view) => (
+            <ul key={view.className} className={`${view.className} flex flex-col text-[1.02rem]`}>
+              {view.sections.map((section) => (
+                <li key={section.href}>
+                  <a href={section.href} onClick={() => setOpen(false)} className="block border-b border-line py-3 text-text">
+                    {section.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ))}
           <div className="mt-4 grid grid-cols-2 gap-2">
             <a
               href={LINKS.coffee}
