@@ -66,12 +66,16 @@ export default async function GuidePage({ params }: Props) {
 
         <section aria-labelledby="benefits" className="mt-12">
           <h2 id="benefits" className="text-[1.6rem] font-semibold tracking-tight text-ink">
-            What OpenReflex adds to {guide.agent}
+            The OpenReflex execution loop
           </h2>
-          <div className="mt-6 grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-3">
-            {guide.benefits.map((benefit) => (
+          <p className="mt-3 max-w-[48rem] leading-relaxed text-muted">
+            The product behaviour is the same in every supported coding agent. Only the installation and hook transport differ.
+          </p>
+          <div className="mt-6 grid gap-px overflow-hidden rounded-lg border border-line bg-line md:grid-cols-2 xl:grid-cols-4">
+            {guide.benefits.map((benefit, index) => (
               <div key={benefit.title} className="bg-panel p-6">
-                <h3 className="font-semibold text-ink">{benefit.title}</h3>
+                <span className="font-mono text-[0.7rem] tabular-nums text-accent">0{index + 1}</span>
+                <h3 className="mt-3 font-semibold text-ink">{benefit.title}</h3>
                 <p className="mt-2 leading-relaxed text-muted">{benefit.body}</p>
               </div>
             ))}
