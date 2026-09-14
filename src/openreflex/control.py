@@ -1,36 +1,17 @@
-"""Budget-aware execution control: is more computation on the current path still worth it?
-
-The current path's success estimate starts from its planned probability and is updated with Bayes' rule as
-the task runs. A tool call that makes no progress, and more so a failure, is likelier on a path that will not
-work than on one that will, so each lowers the odds. Failures also weigh, more lightly, on the alternatives,
-since some causes (a broken environment, a wrong assumption about the task) defeat any approach.
-
-The marginal value of continuing is the success the path can still deliver minus the cost of the work it is
-expected to need; pivoting is valued the same way for the best untried alternative that no other untried one
-dominates, charged
-the part of its work a fresh start repeats; stopping is the zero point. Work past the budget costs more per
-unit. A verdict other than "continue" is only acted on when a detector has already found trouble.
-"""
+"""Budget-aware execution control driven by the versioned OpenReflex policy."""
 
 import math
 from dataclasses import dataclass
 
 from .models import CandidatePath, Execution, ToolCall
+from .policy import Policy, load_policy
 from .privacy import PROGRESS
 from .routing import Budget, dominates, marginal_cost
-
-SUCCESS_VALUE = 0.55        # utility weight of success, as in routing.utility
-IDLE_LIKELIHOOD = 0.85      # P(call without progress | path will succeed) / P(... | path will not)
-FAILURE_LIKELIHOOD = 0.6    # the same ratio for a failed call
-SHARED_FAILURE_LIKELIHOOD = 0.85  # how much each failure also counts against the alternatives
-PIVOT_REUSE = 0.3           # most of an alternative's work that exploration so far can already cover
-PIVOT_MARGIN = 0.03         # a pivot must beat continuing by this much utility
-MIN_REMAINING = 0.3         # continuing always needs at least this share of the path's expected work
 
 
 @dataclass(frozen=True)
 class Verdict:
-    action: str                     # "continue", "pivot" or "stop"
+    action: str
     current: str | None
     success_estimate: float
     value_continue: float
@@ -55,9 +36,17 @@ def _update(probability: float, likelihood_ratio: float) -> float:
 
 def assess(execution: Execution, calls: list[ToolCall], current: CandidatePath | None,
            alternatives: list[CandidatePath], budget: Budget, active_seconds: float, since: float,
-           tried: set[str] = frozenset()) -> Verdict:
-    """Verdict for the execution so far. `since` is when evidence against the current path starts counting:
-    the last progress, or the moment the path was switched to. `tried` strategies are not offered again."""
+           tried: set[str] = frozenset(), policy: Policy | None = None) -> Verdict:
+    cfg = policy or load_policy()
+    values = cfg.table("control")
+    success_value = float(values["success_value"])
+    idle_likelihood = float(values["idle_likelihood_ratio"])
+    failure_likelihood = float(values["failure_likelihood_ratio"])
+    shared_failure_likelihood = float(values["shared_failure_likelihood_ratio"])
+    pivot_reuse = float(values["pivot_reuse"])
+    pivot_margin = float(values["pivot_margin"])
+    minimum_remaining = float(values["minimum_remaining"])
+
     finished = [c for c in calls if c.status != "running"]
     recent = [c for c in finished if c.started_at > since]
     failures = sum(c.status == "failure" for c in recent)
@@ -66,30 +55,31 @@ def assess(execution: Execution, calls: list[ToolCall], current: CandidatePath |
     overrun = max(1.0, used)
 
     prior = current.success_probability if current else 0.5
-    estimate = _update(prior, IDLE_LIKELIHOOD ** idle * FAILURE_LIKELIHOOD ** failures)
-    expected_calls = current.tool_calls if current else 20.0
-    remaining = max(expected_calls - len(calls), MIN_REMAINING * expected_calls) / max(expected_calls, 1.0)
-    value_continue = SUCCESS_VALUE * estimate - overrun * marginal_cost(
-        (current.time_seconds if current else 600) * remaining, expected_calls * remaining,
-        (current.context_tokens if current else 6000) * remaining)
+    estimate = _update(prior, idle_likelihood ** idle * failure_likelihood ** failures)
+    expected_calls = current.tool_calls if current else cfg.number("routing.budget.minimum_tool_calls")
+    remaining = max(expected_calls - len(calls), minimum_remaining * expected_calls) / max(expected_calls, 1.0)
+    value_continue = success_value * estimate - overrun * marginal_cost(
+        (current.time_seconds if current else cfg.number("routing.budget.minimum_seconds")) * remaining,
+        expected_calls * remaining,
+        (current.context_tokens if current else cfg.number("routing.budget.minimum_context_tokens")) * remaining,
+        cfg,
+    )
 
     total_failures = sum(c.status == "failure" for c in finished)
-    # Pivot options are compared with each other, not with the current path: its planning-time estimates are
-    # exactly what the evidence in this task is overturning.
     pool = [p for p in alternatives if p.within_limits and p.strategy not in tried
             and not (current and p.strategy == current.strategy)]
     best, best_estimate, best_value = None, None, None
     for path in pool:
         if any(dominates(other, path) for other in pool if other is not path):
             continue
-        path_estimate = _update(path.success_probability, SHARED_FAILURE_LIKELIHOOD ** total_failures)
-        repeat = 1 - min(PIVOT_REUSE, len(calls) / max(path.tool_calls, 1.0))
-        value = SUCCESS_VALUE * path_estimate - overrun * marginal_cost(
-            path.time_seconds * repeat, path.tool_calls * repeat, path.context_tokens * repeat)
+        path_estimate = _update(path.success_probability, shared_failure_likelihood ** total_failures)
+        repeat = 1 - min(pivot_reuse, len(calls) / max(path.tool_calls, 1.0))
+        value = success_value * path_estimate - overrun * marginal_cost(
+            path.time_seconds * repeat, path.tool_calls * repeat, path.context_tokens * repeat, cfg)
         if best_value is None or value > best_value:
             best, best_estimate, best_value = path, path_estimate, value
 
-    if best_value is not None and best_value > value_continue + PIVOT_MARGIN and best_value > 0:
+    if best_value is not None and best_value > value_continue + pivot_margin and best_value > 0:
         action = "pivot"
     elif value_continue <= 0 and (best_value is None or best_value <= 0) and used >= 1:
         action = "stop"
@@ -101,7 +91,6 @@ def assess(execution: Execution, calls: list[ToolCall], current: CandidatePath |
 
 
 def pivots(execution: Execution) -> list[tuple[str, str, int]]:
-    """(from, to, call count) for each pivot recommended so far; verdicts read "pivot:<from>><to>@<calls>"."""
     found = []
     for verdict in execution.verdicts:
         head, _, count = verdict.rpartition("@")
@@ -112,7 +101,6 @@ def pivots(execution: Execution) -> list[tuple[str, str, int]]:
 
 
 def switch_time(execution: Execution, calls: list[ToolCall]) -> float:
-    """When the path last changed: the call at which the latest pivot was recommended."""
     history = pivots(execution)
     if not history or not calls:
         return -math.inf
