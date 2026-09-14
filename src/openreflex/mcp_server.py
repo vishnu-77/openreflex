@@ -15,6 +15,7 @@ INSTRUCTIONS = """OpenReflex is local execution memory for this project. Hooks c
 Use get_execution_context before a substantial task if no [OpenReflex] context was already provided.
 Call choose_path if you deliberately take a different approach than suggested, check_progress when unsure
 whether more work is paying off, and record_outcome once the result is verified (tests pass, user confirmed).
+Use explain_decision or get_execution_trace when the user asks why OpenReflex recommended something.
 Never call approve_project unless the user asked for it."""
 
 
@@ -42,10 +43,7 @@ def build_server(project: Path) -> FastMCP:
     @server.tool()
     def get_execution_context(task: str, max_tool_calls: int | None = None, max_minutes: float | None = None,
                               max_context_tokens: int | None = None) -> str:
-        """Retrieve relevant past experience for a task: candidate strategies scored on success, time, tool calls,
-        context, risk, uncertainty and reversibility (dominated ones marked), an execution budget, likely files,
-        and lessons. Call before substantial work when no [OpenReflex] context was injected. Optional max_* limits
-        constrain the plan and budget."""
+        """Retrieve relevant past experience, candidate strategies and the current execution budget."""
         def operation(e: Engine):
             given = [value for value in (max_tool_calls, max_minutes, max_context_tokens) if value is not None]
             if any(value <= 0 for value in given):
@@ -69,8 +67,7 @@ def build_server(project: Path) -> FastMCP:
 
     @server.tool()
     def check_progress() -> str:
-        """Estimate whether more work on the current path is still worth it: continue, pivot to another strategy,
-        or stop and ask the user. Based on progress so far, failures and the execution budget. Records nothing."""
+        """Estimate whether more work on the current path is still worth it: continue, pivot or stop."""
         def operation(e: Engine):
             execution, verdict, problems, budget = e.progress()
             action = verdict.action if problems else "continue"
@@ -89,9 +86,42 @@ def build_server(project: Path) -> FastMCP:
         return run(operation)
 
     @server.tool()
+    def explain_decision() -> str:
+        """Explain the latest OpenReflex recommendation, score components, confidence and next-best route."""
+        return run(lambda e: e.why())
+
+    @server.tool()
+    def get_execution_trace() -> str:
+        """Show the current execution's OpenReflex decision timeline without raw prompts or tool output."""
+        return run(lambda e: e.trace())
+
+    @server.tool()
+    def get_reflex_score() -> str:
+        """Return the latest structured Reflex Score and its explainable component signals."""
+        def operation(e: Engine):
+            snapshots = e.decision_snapshots()
+            if not snapshots:
+                return json.dumps({"available": False, "reason": "no decision snapshot recorded yet"})
+            snapshot = snapshots[-1]
+            return json.dumps({
+                "available": True,
+                "reflex_score": snapshot.reflex_score,
+                "success_probability": snapshot.success_probability,
+                "decision_confidence": snapshot.decision_confidence,
+                "strategy": snapshot.strategy,
+                "next_best_strategy": snapshot.next_best_strategy,
+                "route_advantage": snapshot.route_advantage,
+                "evidence_count": snapshot.evidence_count,
+                "context_tokens": snapshot.context_tokens,
+                "budget_used": snapshot.budget_used,
+                "signals": snapshot.score_components,
+                "policy_version": snapshot.policy_version,
+            }, indent=2)
+        return run(operation)
+
+    @server.tool()
     def choose_path(strategy: str, steps: list[str] | None = None) -> str:
-        """Declare the strategy you are following (a suggested one like 'test-first', or your own with steps).
-        Improves regret analysis, which otherwise infers the path from tool activity."""
+        """Declare the strategy you are following, suggested or custom."""
         return run(lambda e: f"Recorded chosen path: {e.choose_path(strategy, steps).strategy}")
 
     @server.tool()
@@ -120,8 +150,7 @@ def build_server(project: Path) -> FastMCP:
 
     @server.tool()
     def explain_node(node_id: str) -> str:
-        """Show an Experience Graph node and its direct relations (used, caused, failed_with, resolved_by,
-        recommended_for). Embeddings are omitted."""
+        """Show an Experience Graph node and its direct relations. Embeddings are omitted."""
         def operation(e: Engine):
             graph = e.store.graph(node_id)
             for node in graph["nodes"]:

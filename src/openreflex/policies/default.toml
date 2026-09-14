@@ -1,0 +1,165 @@
+[meta]
+version = "1.0"
+
+[task]
+minimum_words = 5
+followup_word_limit = 10
+
+[retrieval]
+threshold = 0.20
+max_experiences = 5
+age_bonus_limit = 0.10
+age_decay_per_week = 0.01
+task_class_bonus = 0.10
+success_bonus = 0.05
+minimum_similar_evidence = 3
+
+[context]
+max_chars = 1400
+chars_per_token = 4.0
+max_lessons = 4
+max_likely_files = 6
+
+[routing]
+prior_weight = 4.0
+regret_weight = 0.25
+epsilon = 0.000000001
+
+[routing.utility]
+success = 0.55
+time = 0.12
+tool_calls = 0.10
+context_tokens = 0.08
+risk = 0.08
+uncertainty = 0.04
+reversibility = 0.03
+
+[routing.normalization]
+time_seconds = 900.0
+tool_calls = 40.0
+context_tokens = 16000.0
+
+[routing.budget]
+headroom_base = 1.875
+headroom_uncertainty = 0.625
+minimum_seconds = 1200.0
+minimum_tool_calls = 30.0
+minimum_context_tokens = 30000.0
+context_multiplier = 2.0
+context_base = 0.75
+context_uncertainty = 0.25
+
+[routing.alerts]
+detour = ["failure_loop", "stagnation", "over_budget"]
+
+[[routing.strategies]]
+name = "inspect-first"
+steps = [
+  "Locate the relevant implementation with targeted search",
+  "Inspect nearby conventions",
+  "Make a small change and verify it",
+]
+prior_success = 0.78
+time_seconds = 420.0
+tool_calls = 14.0
+context_tokens = 5000.0
+risk = 0.15
+reversibility = 0.90
+
+[[routing.strategies]]
+name = "test-first"
+steps = [
+  "Reproduce the issue with a focused check",
+  "Change the smallest failing behavior",
+  "Run focused tests and relevant regression checks",
+]
+prior_success = 0.85
+time_seconds = 540.0
+tool_calls = 18.0
+context_tokens = 6000.0
+risk = 0.10
+reversibility = 0.95
+
+[[routing.strategies]]
+name = "incremental"
+steps = [
+  "Identify interfaces and a reversible first slice",
+  "Implement and validate one slice at a time",
+  "Check integration behavior",
+]
+prior_success = 0.82
+time_seconds = 660.0
+tool_calls = 22.0
+context_tokens = 8000.0
+risk = 0.12
+reversibility = 0.95
+
+[routing.task_adjustments.debug]
+strategy = "test-first"
+success_bonus = 0.08
+
+[routing.task_adjustments.refactor]
+strategy = "incremental"
+success_bonus = 0.08
+
+[control]
+success_value = 0.55
+fallback_success_probability = 0.50
+idle_likelihood_ratio = 0.85
+failure_likelihood_ratio = 0.60
+shared_failure_likelihood_ratio = 0.85
+pivot_reuse = 0.30
+pivot_margin = 0.03
+minimum_remaining = 0.30
+probability_epsilon = 0.000001
+
+[detectors]
+cooldown_seconds = 180.0
+retry_warning_failures = 2
+repeat_threshold = 3
+recent_repeat_window = 10
+failure_loop_threshold = 3
+failure_signature_window = 5
+stagnation_calls = 15
+stagnation_seconds = 600.0
+exploration_stagnation_multiplier = 2.0
+minimum_stagnation_calls_with_time = 5
+recent_progress_window = 8
+
+[detectors.severity]
+repeated_action = 0.60
+failure_loop_streak = 0.90
+failure_loop_signature = 0.80
+stagnation = 0.70
+context_growth = 0.50
+over_budget = 0.50
+
+[engine]
+duplicate_prompt_window_seconds = 15.0
+stale_running_call_seconds = 600.0
+max_store_scan = 5000
+recent_execution_limit = 50
+recent_execution_max_age_seconds = 7200.0
+mcp_current_max_age_seconds = 1800.0
+
+[score]
+evidence_saturation = 8.0
+route_advantage_scale = 0.15
+
+[score.weights]
+evidence = 0.30
+confidence = 0.25
+route_advantage = 0.20
+budget_fit = 0.15
+relevance = 0.10
+
+[visibility]
+show_start = true
+show_complete = true
+runtime_events = ["pivot", "stop", "failure_loop", "stagnation", "over_budget", "context_growth"]
+
+[recap]
+max_words = 30
+
+[phases]
+ordered = ["orient", "explore", "hypothesise", "act", "verify", "resolve"]

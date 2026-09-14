@@ -107,7 +107,7 @@ class CandidatePath(Model):
     expected_regret: float = non_negative(0.0)
     evidence_count: int = 0
     score: float = 0
-    dominated_by: str | None = None  # a strategy at least as good on every objective and better on one
+    dominated_by: str | None = None
     within_limits: bool = True
 
 
@@ -132,7 +132,9 @@ class Execution(Model):
     budget_tool_calls: float | None = None
     budget_tokens: float | None = None
     budget_source: str = ""
-    verdicts: list[str] = field(default_factory=list)  # "pivot:<strategy>@<calls>" or "stop@<calls>"
+    verdicts: list[str] = field(default_factory=list)
+    decision_history: list[dict] = field(default_factory=list)
+    visible_decisions: int = 0
 
 
 @dataclass(kw_only=True)
