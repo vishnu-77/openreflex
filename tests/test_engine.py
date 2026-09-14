@@ -145,3 +145,20 @@ def test_choose_path_accepts_custom_strategy(engine, clock):
     execution = engine.store.latest("claude-code", "s1")
     assert execution.chosen_path_id == path.id and not execution.chosen_inferred
     assert path.uncertainty == 1.0
+
+
+def test_compound_commands_are_categorized_by_the_program_they_run():
+    from openreflex.privacy import categorize
+    assert categorize("Bash", {"command": "Get-Location; rg --files -g '*test*' -g pytest.ini"}) == "search"
+    assert categorize("Bash", {"command": "rg pytest; python -m pytest tests -q"}) == "test"
+    assert categorize("Bash", {"command": "cd web && npm run lint"}) == "lint"
+    assert categorize("Bash", {"command": "Get-Content dates.py; Get-Content tests/test_dates.py"}) == "read"
+
+
+def test_error_signature_prefers_the_failing_test_over_the_run_tally():
+    from openreflex.privacy import error_signature
+    output = ("E       assert (2024, 2, 15) == (2024, 3, 15)\n"
+              "FAILED tests/test_dates.py::test_parse_date - assert (2024, 2, 15) == (2024, 3, 15)\n"
+              "1 failed in {}\n")
+    assert "test_parse_date" in error_signature(output.format("0.12s"))
+    assert error_signature(output.format("0.12s")) == error_signature(output.format("1.08s"))

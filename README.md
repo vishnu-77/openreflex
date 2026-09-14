@@ -1,4 +1,5 @@
 <div align="center">
+<!-- mcp-name: io.github.vishnu-77/openreflex -->
 
 <a href="https://openreflex.cc" target="_blank">
   <picture>
@@ -92,8 +93,8 @@ OpenReflex installs per project with `openreflex install <agent>`, or as a plugi
 | Cursor | `openreflex install cursor` |
 | OpenCode | `openreflex install opencode` |
 
-With a plugin install, enable each project with `openreflex approve`. Claude Code is verified in live sessions;
-the Codex, Cursor, and OpenCode integrations follow each agent's documented hook protocol.
+With a plugin install, enable each project with `openreflex approve`. Claude Code and Codex are verified in live
+sessions; the Cursor and OpenCode integrations follow each agent's documented hook protocol.
 
 ## How it works
 

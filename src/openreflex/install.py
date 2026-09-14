@@ -81,7 +81,8 @@ def install(agent: str, project: Path, dry_run: bool = False) -> list[str]:
         config = project / ".codex" / "config.toml"
         text = config.read_text(encoding="utf-8") if config.exists() else ""
         if not re.search(r"^\[mcp_servers\.openreflex\]", text, re.MULTILINE):
-            block = '[mcp_servers.openreflex]\ncommand = "openreflex"\nargs = ["mcp"]\n'
+            # Codex starts MCP servers with a filtered environment, so a data-directory override must be forwarded.
+            block = '[mcp_servers.openreflex]\ncommand = "openreflex"\nargs = ["mcp"]\nenv_vars = ["OPENREFLEX_HOME"]\n'
             _write(config, (text.rstrip() + "\n\n" if text.strip() else "") + block, dry_run, changes)
     elif agent == "cursor":
         hooks = project / ".cursor" / "hooks.json"

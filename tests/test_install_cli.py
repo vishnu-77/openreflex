@@ -95,3 +95,22 @@ def test_cli_end_to_end_capture_via_subprocess(isolated_home, project):
     preview = _run(["context", "Fix unicode filename handling in uploads", "--project", str(project)], env_home=isolated_home)
     assert "src/upload.py" in preview.stdout.decode()
     assert not (isolated_home / "logs" / "errors.log").exists()
+
+
+def test_codex_mcp_server_receives_the_data_directory_override(project):
+    install.install("codex", project)
+    assert 'env_vars = ["OPENREFLEX_HOME"]' in (project / ".codex/config.toml").read_text()
+
+
+def test_release_versions_agree():
+    import tomllib
+
+    import openreflex
+    version = tomllib.loads((PLUGIN.parents[1] / "pyproject.toml").read_text())["project"]["version"]
+    server = json.loads((PLUGIN.parents[1] / "server.json").read_text())
+    manifests = [json.loads((PLUGIN / folder / "plugin.json").read_text())["version"]
+                 for folder in (".claude-plugin", ".codex-plugin", ".cursor-plugin")]
+    assert openreflex.__version__ == version
+    assert server["version"] == version and [p["version"] for p in server["packages"]] == [version]
+    assert manifests == [version] * 3
+    assert f"mcp-name: {server['name']}" in (PLUGIN.parents[1] / "README.md").read_text(encoding="utf-8")

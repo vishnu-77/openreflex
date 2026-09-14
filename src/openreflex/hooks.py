@@ -21,6 +21,7 @@ import traceback
 from dataclasses import dataclass, field
 
 from .engine import Engine
+from .privacy import categorize
 from .project import approval, log_error, project_root, should_notify_unapproved
 
 AGENTS = ("claude-code", "codex", "cursor", "opencode")
@@ -72,8 +73,42 @@ def response_failure(response: object) -> tuple[bool, str | None]:
         return False, None
     if isinstance(response, str):
         match = EXIT_CODE.search(response[:400])
-        if match and int(match.group(1)) != 0:
-            return True, response[:4000]
+        if match:
+            return int(match.group(1)) != 0, response[:4000] if int(match.group(1)) != 0 else None
+    return False, None
+
+
+# Summary lines that tools print when a run fails. Codex reports shell results as plain output with no exit
+# code, so for verification commands the output itself is the only failure signal.
+OUTPUT_FAILURE = re.compile(
+    r"(?im)"
+    r"\b\d+ (failed|errors?)\b.*\bin \d"                      # pytest summary: "1 failed, 2 passed in 0.1s"
+    r"|^={3,} (FAILURES|ERRORS) ={3,}"                        # pytest sections
+    r"|^FAILED \((failures|errors)="                          # unittest
+    r"|^Tests?:\s+\d+ failed"                                 # jest / vitest
+    r"|^(--- )?FAIL\b"                                        # go test, jest file lines
+    r"|test result: FAILED"                                   # cargo test
+    r"|error(\[E\d+\])?: could not compile|^error\[E\d+\]"    # rustc
+    r"|\berror TS\d+:"                                        # tsc
+    r"|✖ \d+ problems?"                                  # eslint
+    r"|^Found \d+ errors?\b"                                  # ruff, mypy
+    r"|npm ERR!|ERR_PNPM_|Command failed with exit code [1-9]"
+    r"|BUILD FAILED|^FAILURE: Build failed"                   # ant, gradle
+)
+SHELL_FAILURE = re.compile(
+    r"(?i)is not recognized as (the name of a cmdlet|an internal or external command)"
+    r"|CommandNotFoundException|: command not found|No such file or directory"
+)
+
+
+def output_failure(category: str, output: str) -> tuple[bool, str | None]:
+    """Failure inferred from command output, for agents whose hook payloads carry no exit status."""
+    tail = output[-6000:]
+    # Only short outputs: a long listing or log that merely contains "not found" text is not a failed command.
+    if len(output) < 800 and SHELL_FAILURE.search(output):
+        return True, output
+    if category in {"test", "lint", "build"} and OUTPUT_FAILURE.search(tail):
+        return True, tail[-4000:]
     return False, None
 
 
@@ -119,6 +154,9 @@ def normalize(agent: str, name: str, payload: dict) -> Event:
             response = payload.get("tool_response")
             event.output_chars = _size(response)
             failed, error = response_failure(response)
+            if agent == "codex" and not failed and isinstance(response, str) and not EXIT_CODE.search(response[:400]):
+                # Codex shell results are plain output without an exit status (verified live on codex-cli 0.154).
+                failed, error = output_failure(categorize(event.tool, event.arguments), response)
             event.success, event.error = not failed, error
         return event
 

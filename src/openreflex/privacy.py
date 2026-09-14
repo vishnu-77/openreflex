@@ -38,6 +38,7 @@ COMMAND_CATEGORIES = [
 VERIFICATION = {"test", "lint", "build"}
 PROGRESS = VERIFICATION | {"edit"}
 NOISE_LINE = re.compile(r"^(Traceback|File \"|\s*at |[-=~^]{3,}|\s*$)")
+RUN_SUMMARY = re.compile(r"^(?:(?:Tests?|Test Suites|Test Files):\s*)?\d+ (?:failed|passed|errors?)\b", re.I)
 
 
 def redact(value: str, limit: int = 2000) -> str:
@@ -61,11 +62,32 @@ def categorize(name: str, arguments: object) -> str:
         command = str(command or "")
         if PATCH_FILE.search(command) or "apply_patch" in command:
             return "edit"
-        for category, pattern in COMMAND_CATEGORIES:
-            if pattern.search(command):
-                return category
-        return "shell"
+        return _command_category(command)
     return CATEGORY_BY_TOOL.get(lowered, "other")
+
+
+# Commands that only set up context (location, echo) and say nothing about what the call is for.
+NEUTRAL_COMMAND = re.compile(r"^\s*(cd|pushd|popd|Set-Location|Get-Location|pwd|echo|Write-Output|Write-Host|clear|cls)\b", re.I)
+LOOKUP_CATEGORIES = {"search", "read", "vcs"}
+
+
+def _command_category(command: str) -> str:
+    """Classify a possibly compound command by the program each segment runs, not by words in its arguments.
+
+    `Get-Location; rg --files -g '*test*' -g pytest.ini` is a search, even though "pytest" appears in an argument.
+    """
+    segments = [s for s in re.split(r"\s*(?:;|&&|\|\||\n)\s*", command) if s.strip() and not NEUTRAL_COMMAND.match(s)]
+    first_lookup = None
+    for segment in segments:
+        head = next((category for category, pattern in COMMAND_CATEGORIES
+                     if category in LOOKUP_CATEGORIES and pattern.search(segment)), None)
+        if head:
+            first_lookup = first_lookup or head
+            continue  # a search or read never becomes a test just because its arguments mention one
+        for category, pattern in COMMAND_CATEGORIES:
+            if category not in LOOKUP_CATEGORIES and pattern.search(segment):
+                return category
+    return first_lookup or "shell"
 
 
 def error_signature(error: str | None) -> str | None:
@@ -77,11 +99,13 @@ def error_signature(error: str | None) -> str | None:
     lines = [line for line in stripped if not NOISE_LINE.match(line)]
     # Python/JS put the exception last; most CLIs put it first. Prefer a line that names an error.
     named = [line for line in lines if re.search(r"(?i)error|exception|fail|denied|not found|cannot", line)]
+    # A test runner's closing tally ("2 failed in 0.03s") says less than the failing test line above it.
+    named = [line for line in named if not RUN_SUMMARY.match(line)] or named
     line = (named or lines or [""])[-1 if named else 0]
     if len(line) < 4:
         return None
     line = re.sub(r"(?:[A-Za-z]:)?[\\/][^\s:'\"]+", "<path>", line)
-    line = re.sub(r"0x[0-9a-fA-F]+|\b\d+(?:\.\d+)?\b", "<n>", line)
+    line = re.sub(r"0x[0-9a-fA-F]+|\b\d+(?:\.\d+)?(?:ms|s)?\b", "<n>", line)
     line = re.sub(r"(['\"]).{1,80}?\1", "<str>", line)
     return line[:160]
 

@@ -2,6 +2,16 @@
 
 All notable changes to OpenReflex are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.1.3 (2026-09-14)
+
+Codex CLI fixes found by running OpenReflex in live `codex exec` sessions (`scripts/live_codex.py`).
+
+- Codex reports shell results without an exit status, so failed commands were recorded as successes. Failures are now read from the output of test, lint and build commands, and from shell errors such as an unknown command.
+- Compound commands are categorized by the programs they run, so a file search whose arguments mention `pytest` is no longer counted as a test run.
+- `openreflex install codex` forwards `OPENREFLEX_HOME` to the MCP server, which Codex starts with a filtered environment.
+- Error signatures name the failing test instead of the test runner's closing tally, and ignore run durations, so repeated failures match and lessons read clearly.
+- Releases also list the MCP server in the official MCP Registry (`server.json`), and `glama.json` names the maintainer for Glama.
+
 ## 0.1.2 (2026-09-14)
 
 - The project website moved to [openreflex.cc](https://openreflex.cc); the package homepage and README links point there.

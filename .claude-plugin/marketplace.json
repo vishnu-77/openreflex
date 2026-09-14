@@ -1,5 +1,6 @@
 {
   "name": "openreflex",
+  "description": "OpenReflex: local execution memory for AI coding agents.",
   "owner": {
     "name": "vishnu-77"
   },

@@ -130,3 +130,40 @@ def test_safe_handle_never_raises(project):
 ])
 def test_response_failure(response, failed):
     assert hooks.response_failure(response)[0] is failed
+
+
+# Payload shapes below were captured from live codex-cli 0.154 sessions: shell results carry no exit code.
+CODEX_FAILED_PYTEST = (
+    "FF                                                                       [100%]\r\n"
+    "================================== FAILURES ===================================\r\n"
+    "E       assert (2024, 2, 15) == (2024, 3, 15)\r\n"
+    "2 failed in 0.03s\r\n"
+)
+
+
+@pytest.mark.parametrize("command, response, success", [
+    ("python -m pytest -q", CODEX_FAILED_PYTEST, False),
+    ("python -m pytest -q", "..                                                   [100%]\r\n2 passed in 0.01s\r\n", True),
+    ("Get-Content tests/test_dates.py", "def test_x():\n    assert parse('x') == 1  # 2 failed in 3 tries\n", True),
+    ("pytset -q", "pytset : The term 'pytset' is not recognized as the name of a cmdlet, function", False),
+    ("npm test", "Tests:       1 failed, 3 passed, 4 total", False),
+])
+def test_codex_shell_failures_are_read_from_output(command, response, success):
+    event = hooks.normalize("codex", "PostToolUse", {"session_id": "s", "tool_name": "Bash",
+                                                     "tool_input": {"command": command}, "tool_response": response})
+    assert event.success is success
+
+
+def test_claude_code_post_tool_use_output_is_not_reinterpreted():
+    event = hooks.normalize("claude-code", "PostToolUse", {"session_id": "s", "tool_name": "Bash",
+                                                           "tool_input": {"command": "python -m pytest -q"},
+                                                           "tool_response": CODEX_FAILED_PYTEST})
+    assert event.success is True, "Claude Code reports failures through PostToolUseFailure"
+
+
+def test_codex_apply_patch_exit_code_zero_is_success():
+    response = "Exit code: 0\nWall time: 2 seconds\nOutput:\nSuccess. Updated the following files:\nM dates.py\n"
+    event = hooks.normalize("codex", "PostToolUse", {"session_id": "s", "tool_name": "apply_patch",
+                                                     "tool_input": {"command": "*** Begin Patch\n*** Update File: dates.py\n"},
+                                                     "tool_response": response})
+    assert event.success is True

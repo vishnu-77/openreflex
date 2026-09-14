@@ -103,3 +103,31 @@ jobs:
         with:
           # A GitHub Release for a version that is already on PyPI is a no-op instead of a failed run.
           skip-existing: true
+
+  mcp-registry:
+    # Lists the server in the official MCP Registry. The registry verifies the PyPI package through the
+    # mcp-name marker in the README, so this runs after the PyPI upload.
+    needs: [build, pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check server.json matches the released version
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          test "$(jq -r .version server.json)" = "$VERSION"
+          test "$(jq -r '.packages[0].version' server.json)" = "$VERSION"
+      - name: Install mcp-publisher
+        run: |
+          curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+      - name: Publish to the MCP Registry
+        run: |
+          ./mcp-publisher login github-oidc
+          for attempt in 1 2 3 4 5; do
+            ./mcp-publisher publish && exit 0
+            echo "PyPI may not show the new release yet; retrying"; sleep 30
+          done
+          exit 1
