@@ -1,6 +1,10 @@
 [meta]
 version = "1.0"
 
+[task]
+minimum_words = 5
+followup_word_limit = 10
+
 [retrieval]
 threshold = 0.20
 max_experiences = 5
@@ -111,6 +115,7 @@ probability_epsilon = 0.000001
 
 [detectors]
 cooldown_seconds = 180.0
+retry_warning_failures = 2
 repeat_threshold = 3
 recent_repeat_window = 10
 failure_loop_threshold = 3
