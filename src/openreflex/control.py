@@ -28,8 +28,8 @@ class Verdict:
         return ", ".join(parts)
 
 
-def _update(probability: float, likelihood_ratio: float) -> float:
-    probability = min(max(probability, 1e-6), 1 - 1e-6)
+def _update(probability: float, likelihood_ratio: float, epsilon: float) -> float:
+    probability = min(max(probability, epsilon), 1 - epsilon)
     odds = probability / (1 - probability) * likelihood_ratio
     return odds / (1 + odds)
 
@@ -46,6 +46,7 @@ def assess(execution: Execution, calls: list[ToolCall], current: CandidatePath |
     pivot_reuse = float(values["pivot_reuse"])
     pivot_margin = float(values["pivot_margin"])
     minimum_remaining = float(values["minimum_remaining"])
+    epsilon = float(values["probability_epsilon"])
 
     finished = [c for c in calls if c.status != "running"]
     recent = [c for c in finished if c.started_at > since]
@@ -54,8 +55,8 @@ def assess(execution: Execution, calls: list[ToolCall], current: CandidatePath |
     used = budget.usage(active_seconds, len(calls), execution.output_tokens_estimate)
     overrun = max(1.0, used)
 
-    prior = current.success_probability if current else 0.5
-    estimate = _update(prior, idle_likelihood ** idle * failure_likelihood ** failures)
+    prior = current.success_probability if current else float(values["fallback_success_probability"])
+    estimate = _update(prior, idle_likelihood ** idle * failure_likelihood ** failures, epsilon)
     expected_calls = current.tool_calls if current else cfg.number("routing.budget.minimum_tool_calls")
     remaining = max(expected_calls - len(calls), minimum_remaining * expected_calls) / max(expected_calls, 1.0)
     value_continue = success_value * estimate - overrun * marginal_cost(
@@ -70,9 +71,9 @@ def assess(execution: Execution, calls: list[ToolCall], current: CandidatePath |
             and not (current and p.strategy == current.strategy)]
     best, best_estimate, best_value = None, None, None
     for path in pool:
-        if any(dominates(other, path) for other in pool if other is not path):
+        if any(dominates(other, path, cfg) for other in pool if other is not path):
             continue
-        path_estimate = _update(path.success_probability, shared_failure_likelihood ** total_failures)
+        path_estimate = _update(path.success_probability, shared_failure_likelihood ** total_failures, epsilon)
         repeat = 1 - min(pivot_reuse, len(calls) / max(path.tool_calls, 1.0))
         value = success_value * path_estimate - overrun * marginal_cost(
             path.time_seconds * repeat, path.tool_calls * repeat, path.context_tokens * repeat, cfg)
