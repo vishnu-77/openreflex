@@ -134,6 +134,11 @@ class Store:
         self.db.execute("DELETE FROM edges WHERE source=? OR target=?", (node_id, node_id))
         self.db.execute("DELETE FROM nodes WHERE id=?", (node_id,))
 
+    def forget_execution(self, execution_id: str):
+        """Drop the session binding and event records that point at an execution being deleted."""
+        self.db.execute("DELETE FROM sessions WHERE execution_id=?", (execution_id,))
+        self.db.execute("DELETE FROM events WHERE execution_id=?", (execution_id,))
+
     def exists(self, node_id: str) -> bool:
         return self.db.execute("SELECT 1 FROM nodes WHERE id=?", (node_id,)).fetchone() is not None
 

@@ -19,13 +19,13 @@ Use get_execution_context before a substantial task if no [OpenReflex] context w
 Call choose_path if you deliberately take a different approach than suggested, check_progress when unsure
 whether more work is paying off, and record_outcome once the result is verified (tests pass, user confirmed).
 Use explain_decision or get_execution_trace when the user asks why OpenReflex recommended something.
-Never call approve_project unless the user asked for it."""
+Never call approve_project or forget_experience unless the user explicitly asked for it."""
 
-# Every tool works on local data only. Reads never change the Experience Graph; writes never delete from it.
-READ = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+# Every tool works on local data only. Reads never change the Experience Graph; writes never touch project files.
+READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 PLAN = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
-NOT_ENABLED = " Until the project is enabled, every tool except approve_project returns a 'not enabled' message."
+DELETE = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False)
 
 
 def build_server(project: Path) -> FastMCP:
@@ -37,11 +37,11 @@ def build_server(project: Path) -> FastMCP:
                                   "`openreflex approve` (or ask you to call approve_project).")
         return Engine(project)
 
-    def tool(title: str, annotations: ToolAnnotations, gated: bool = True):
-        """Register a tool whose description is its docstring, plus the not-enabled note for gated tools."""
+    def tool(title: str, annotations: ToolAnnotations):
+        """Register a tool whose description is its docstring."""
         def register(function):
-            description = inspect.cleandoc(function.__doc__ or "") + (NOT_ENABLED if gated else "")
-            return server.tool(title=title, description=description, annotations=annotations)(function)
+            return server.tool(title=title, description=inspect.cleandoc(function.__doc__ or ""),
+                               annotations=annotations)(function)
         return register
 
     def run(operation):
@@ -58,22 +58,29 @@ def build_server(project: Path) -> FastMCP:
 
     @tool("Get execution context", PLAN)
     def get_execution_context(
-        task: Annotated[str, Field(description="One or two plain sentences describing the task, e.g. 'Fix the login "
-                                               "redirect loop after logout'. Secrets are redacted before storage.")],
-        max_tool_calls: Annotated[int | None, Field(description="Optional upper limit on tool calls for this task. "
-                                                                "Must be positive.")] = None,
-        max_minutes: Annotated[float | None, Field(description="Optional upper limit on active working time, in "
-                                                               "minutes. Must be positive.")] = None,
-        max_context_tokens: Annotated[int | None, Field(description="Optional upper limit on tokens of tool output "
-                                                                    "added to context. Must be positive.")] = None,
+        task: Annotated[str, Field(description="The task in one or two plain sentences, e.g. 'Fix the login redirect "
+                                               "loop after logout'. Used to find similar past tasks; secrets are "
+                                               "redacted before it is stored.")],
+        max_tool_calls: Annotated[int | None, Field(description="Optional cap on tool calls for this task; a "
+                                                                "positive integer. Default: no cap.")] = None,
+        max_minutes: Annotated[float | None, Field(description="Optional cap on active working time in minutes; "
+                                                               "a positive number. Default: no cap.")] = None,
+        max_context_tokens: Annotated[int | None, Field(description="Optional cap on tokens of tool output added "
+                                                                    "to context; a positive integer. Default: no "
+                                                                    "cap.")] = None,
     ) -> str:
-        """Plan a substantial task from this project's past experience. Returns plain text: similar past tasks, the
-        suggested strategy with alternatives (dominated or over-limit ones marked), an execution budget, likely
-        relevant files and lessons, followed by every candidate path's estimates and the execution id.
-
-        Use it before a bug fix, feature, refactor or migration when no [OpenReflex] block was injected. Use
-        search_experience instead to look up history without planning a task. Starts or re-plans the current task
-        in the local graph; calling it again for the same task returns the same plan unless new limits are given."""
+        """Plan a task from this project's past experience.
+        Returns: plain text: the [OpenReflex] context block (similar past tasks, the suggested strategy with
+        alternatives, an execution budget, likely relevant files, lessons), then each candidate strategy's estimates
+        (success, tool calls, minutes, context tokens, risk, uncertainty, reversibility, expected regret, evidence
+        count; dominated or over-limit strategies are marked) and the execution id.
+        Use when: starting a bug fix, feature, refactor or migration and no [OpenReflex] block was injected.
+        Not for: looking up history (use search_experience) or checking progress mid-task (use check_progress).
+        Side effects: starts or re-plans the current task in the local Experience Graph; touches no project files,
+        runs no commands, sends nothing over the network. Calling it again for the same task returns the same plan
+        unless new limits are given.
+        Errors: 'limits must be positive' for a zero or negative limit; a 'not enabled' message until the project
+        is approved."""
         def operation(e: Engine):
             given = [value for value in (max_tool_calls, max_minutes, max_context_tokens) if value is not None]
             if any(value <= 0 for value in given):
@@ -97,13 +104,17 @@ def build_server(project: Path) -> FastMCP:
 
     @tool("Check progress", READ)
     def check_progress() -> str:
-        """Estimate whether more work on the current task's path is still worth it. Returns plain text starting with
-        'Recommendation: continue', 'pivot' or 'stop', then the success estimates, the marginal value of each option,
-        the execution budget and any detected problems (failure loops, stalled progress, budget overruns).
-
-        Use it mid-task when unsure whether to keep going; follow a pivot by switching to the named strategy, and a
-        stop by summarizing and asking the user. Reads the most recent task only and records nothing. Returns a
-        message asking for get_execution_context first when no task exists."""
+        """Estimate whether more work on the current task's path is still worth it.
+        Returns: plain text starting with 'Recommendation: continue', 'pivot' or 'stop', then the success estimates
+        for the current path and the best alternative, the marginal value of each option, the execution budget and
+        how much of it is used, and any detected problems (failure loop, repeated calls, stalled progress, context
+        growth, budget overrun).
+        Use when: unsure mid-task whether to keep going. Follow 'pivot' by switching to the named strategy; follow
+        'stop' by summarizing what was tried and asking the user.
+        Not for: planning a task (use get_execution_context).
+        Side effects: none; read-only on the most recent task.
+        Errors: asks for get_execution_context first when no task exists; a 'not enabled' message until the project
+        is approved."""
         def operation(e: Engine):
             execution, verdict, problems, budget = e.progress()
             action = verdict.action if problems else "continue"
@@ -123,31 +134,41 @@ def build_server(project: Path) -> FastMCP:
 
     @tool("Explain decision", READ)
     def explain_decision() -> str:
-        """Explain the latest recommendation for the most recent task in plain text: the chosen route, Reflex Score
-        and its component signals, confidence, evidence and the next-best route.
-
-        Use it when the user asks why OpenReflex suggested a path, pivot or stop. Use get_reflex_score for the same
-        numbers as JSON, and get_execution_trace for every decision in order. Records nothing."""
+        """Explain OpenReflex's latest recommendation for the most recent task.
+        Returns: plain text with the recommended strategy, the Reflex Score (0-100: how strong the recommendation
+        is, not the chance of success), the estimated success probability, confidence, the signals behind the
+        score, the next-best strategy with its route advantage, and the policy version.
+        Use when: the user asks why OpenReflex suggested a path, pivot or stop.
+        Not for: the same numbers as JSON (use get_reflex_score) or every decision in order (use get_execution_trace).
+        Side effects: none; read-only.
+        Errors: 'No decision snapshot recorded yet' before any task was planned; a 'not enabled' message until the
+        project is approved."""
         return run(lambda e: e.why())
 
     @tool("Get execution trace", READ)
     def get_execution_trace() -> str:
-        """Return the most recent task's decision timeline as plain text: one line per decision OpenReflex made, in
-        order, with elapsed time, phase, action, strategy, Reflex Score and the triggering event. Never includes
-        prompts, commands or tool output.
-
-        Use it to review how a task unfolded; use explain_decision for only the latest decision. Records nothing."""
+        """Return the decision timeline of the most recent task.
+        Returns: plain text, one line per decision in order, with elapsed time, phase (start, runtime, complete),
+        action, strategy, Reflex Score and the event that triggered it. Never includes prompts, commands or tool
+        output.
+        Use when: reviewing how a task unfolded.
+        Not for: only the latest decision (use explain_decision).
+        Side effects: none; read-only.
+        Errors: 'No decision snapshots recorded yet' before any task was planned; a 'not enabled' message until the
+        project is approved."""
         return run(lambda e: e.trace())
 
     @tool("Get Reflex Score", READ)
     def get_reflex_score() -> str:
-        """Return the latest decision's Reflex Score as JSON: reflex_score (0-100, the strength of the recommendation,
-        not the chance of success), success_probability, decision_confidence, strategy, next_best_strategy,
-        route_advantage, evidence_count, budget_used, component signals and policy_version. Returns
-        {"available": false} before any decision exists.
-
-        Use it when you need the numbers programmatically; use explain_decision for a readable explanation.
-        Records nothing."""
+        """Return the latest decision's Reflex Score and its components as JSON.
+        Returns: {"available": true, "reflex_score": 0-100 (how strong the recommendation is, not the chance of
+        success), "success_probability", "decision_confidence", "strategy", "next_best_strategy", "route_advantage",
+        "evidence_count", "context_tokens", "budget_used", "signals": {name: 0-1}, "policy_version"}, or
+        {"available": false, "reason"} before any decision exists.
+        Use when: a program needs the numbers.
+        Not for: a readable explanation (use explain_decision).
+        Side effects: none; read-only.
+        Errors: a 'not enabled' message until the project is approved."""
         def operation(e: Engine):
             snapshots = e.decision_snapshots()
             if not snapshots:
@@ -171,32 +192,46 @@ def build_server(project: Path) -> FastMCP:
 
     @tool("Choose path", WRITE)
     def choose_path(
-        strategy: Annotated[str, Field(description="The strategy being followed: a suggested one ('inspect-first', "
-                                                   "'test-first', 'incremental') or a short name for your own.")],
+        strategy: Annotated[str, Field(description="The strategy being followed: one of the suggested names "
+                                                   "'inspect-first', 'test-first' or 'incremental', or a short "
+                                                   "kebab-case name for your own, e.g. 'spike-then-rewrite'.")],
         steps: Annotated[list[str] | None, Field(description="For a custom strategy only: 2-4 short steps, e.g. "
-                                                             "['Prototype the parser', 'Swap callers']. Ignored for "
-                                                             "suggested strategies.")] = None,
+                                                             "['Prototype the toml loader', 'Swap the callers']. "
+                                                             "Ignored for suggested strategies.")] = None,
     ) -> str:
-        """Declare the strategy you are following for the most recent task, so the outcome and Execution Regret are
-        compared against the right plan and the budget follows that path. Returns a one-line confirmation.
-
-        Call it only when you deliberately depart from the suggested path; otherwise the path is inferred from tool
-        activity. Calling it again replaces the earlier choice."""
+        """Declare the strategy you are following for the most recent task.
+        Returns: one line, 'Recorded chosen path: <strategy>'.
+        Use when: deliberately departing from the suggested strategy, so the outcome and Execution Regret (how much
+        better the best alternative was estimated to do) are judged against the right plan and the budget follows
+        your path.
+        Not for: tasks that follow the suggestion; the path is then inferred from tool activity.
+        Side effects: writes the choice to the local Experience Graph; calling it again replaces the earlier choice.
+        Touches no project files.
+        Errors: 'No current execution' before any task was planned (call get_execution_context first); a 'not
+        enabled' message until the project is approved."""
         return run(lambda e: f"Recorded chosen path: {e.choose_path(strategy, steps).strategy}")
 
     @tool("Record outcome", WRITE)
     def record_outcome(
-        status: Annotated[Literal["success", "failure"], Field(description="'success' once checks pass or the user "
-                                                                           "confirms; 'failure' if the task failed "
-                                                                           "or was abandoned.")],
+        status: Annotated[Literal["success", "failure"], Field(description="'success' when tests, lint or build "
+                                                                           "passed or the user confirmed the result; "
+                                                                           "'failure' when the task failed or was "
+                                                                           "abandoned.")],
         evidence: Annotated[str, Field(description="Short proof of the result, e.g. 'pytest tests/test_auth.py "
-                                                   "passed' or 'user confirmed the fix'. Kept up to 500 characters.")],
+                                                   "passed' or 'user confirmed the fix'. Up to 500 characters; "
+                                                   "secrets are redacted.")],
     ) -> str:
-        """Record the verified outcome of the most recent task, then learn from it: the experience, lessons and
-        Execution Regret are updated. Returns a line with the status and the regret estimate.
-
-        Call it once the result is verified; unverified work is otherwise inferred from tool activity, less
-        reliably. Calling it again for the same task replaces the recorded outcome rather than adding another."""
+        """Record the verified outcome of the most recent task and learn from it.
+        Returns: one line with the recorded status and the Execution Regret estimate (how much better the best
+        alternative strategy was estimated to do; 0.00 means none), or 'n/a' with the reason.
+        Use when: the result is verified: tests, lint or build passed, the user confirmed, or the task failed or was
+        abandoned. Without this call the outcome is inferred from the checks that ran after the last edit, which is
+        less reliable.
+        Not for: declaring the strategy (use choose_path).
+        Side effects: finalizes the task in the local Experience Graph and updates its experience, lessons and
+        regret; calling it again for the same task replaces the recorded outcome. Touches no project files.
+        Errors: 'No execution to record an outcome for' before any task was planned; a 'not enabled' message until
+        the project is approved."""
         def operation(e: Engine):
             outcome = e.record_outcome(status, evidence)
             regret = "n/a" if outcome.estimated_regret is None else f"{outcome.estimated_regret:.3f}"
@@ -205,17 +240,20 @@ def build_server(project: Path) -> FastMCP:
 
     @tool("Search experience", READ)
     def search_experience(
-        query: Annotated[str, Field(description="Words describing the topic, e.g. 'expired token login bug'. Matched "
-                                                "lexically against past task descriptions.")],
-        limit: Annotated[int, Field(description="Maximum number of past tasks to return, 1-20. Default 5.")] = 5,
+        query: Annotated[str, Field(description="Words describing the topic, e.g. 'expired token login bug'. "
+                                                "Matched lexically against past task descriptions.")],
+        limit: Annotated[int, Field(description="Maximum number of past tasks to return, 1-20; values outside the "
+                                                "range are clamped. Default 5.")] = 5,
     ) -> str:
-        """Search this project's past tasks by description similarity. Returns JSON: 'experiences' (id, score,
-        description, class, agent, strategy, status, tool_calls, minutes, files), best match first, and the
-        'lessons' learned from them.
-
-        Use it to answer "what did we learn / what worked before?" without starting a task; use
-        get_execution_context to plan a new one. Pass an experience id to explain_node for its graph. Records
-        nothing."""
+        """Search this project's past tasks by description similarity.
+        Returns: JSON with 'experiences' (id, score, description, class, agent, strategy, status, tool_calls,
+        minutes, files), best match first, and 'lessons' learned from them (text, confidence, support). Both lists
+        are empty when nothing is similar enough.
+        Use when: the user asks what was learned or what worked before, or to find an experience id for
+        explain_node or forget_experience.
+        Not for: planning a new task (use get_execution_context).
+        Side effects: none; read-only. Matching is lexical, on task descriptions only.
+        Errors: a 'not enabled' message until the project is approved."""
         def operation(e: Engine):
             found = e.retrieve(query, k=max(1, min(limit, 20)))
             lessons = e.lessons([x for x, _ in found], limit=8)
@@ -230,15 +268,21 @@ def build_server(project: Path) -> FastMCP:
 
     @tool("Explain graph node", READ)
     def explain_node(
-        node_id: Annotated[str, Field(description="Id of an Experience Graph node, as returned by search_experience "
-                                                  "(experience ids start with 'exp-') or get_execution_context "
-                                                  "('execution <id>').")],
+        node_id: Annotated[str, Field(description="Id of an Experience Graph node: an experience id from "
+                                                  "search_experience (starts with 'exp-'), the execution id from "
+                                                  "get_execution_context, or any node id from an earlier "
+                                                  "explain_node result.")],
     ) -> str:
-        """Show one Experience Graph node and its direct relations (used, caused, failed_with, resolved_by,
-        recommended_for) as JSON with 'root', 'nodes' and 'edges'. Embeddings are omitted.
-
-        Use it to trace why a lesson or path exists after finding an id with search_experience. Returns 'Unknown
-        graph node' for an id that does not exist. Records nothing."""
+        """Show one Experience Graph node with its direct relations.
+        Returns: JSON with 'root', 'nodes' (each with its kind: Task, Execution, ToolCall, Outcome, Experience,
+        Lesson, Context or CandidatePath, plus its stored fields) and 'edges' (used, caused, failed_with,
+        resolved_by, recommended_for). Embeddings are omitted.
+        Use when: tracing why a lesson or recommendation exists, after finding an id with search_experience or
+        get_execution_context.
+        Not for: searching by topic (use search_experience).
+        Side effects: none; read-only.
+        Errors: 'Unknown graph node' for an id that does not exist; a 'not enabled' message until the project is
+        approved."""
         def operation(e: Engine):
             graph = e.store.graph(node_id)
             for node in graph["nodes"]:
@@ -246,32 +290,63 @@ def build_server(project: Path) -> FastMCP:
             return json.dumps(graph, indent=2, default=str)
         return run(operation)
 
-    @tool("Project insights", READ)
-    def project_insights() -> str:
-        """Summarize what OpenReflex has recorded and learned in this project, as JSON: tasks and experiences
-        captured, how often past experience was reused, known outcomes and success rate, observational efficiency
-        with and without prior experience, the Execution Regret trend, routing agreement, alerts raised, verdicts
-        (continue, pivot, stop) and lesson count.
-
-        Use it when the user asks how OpenReflex is doing in this project; use search_experience for individual
-        past tasks. Records nothing."""
+    @tool("Get project insights", READ)
+    def get_project_insights() -> str:
+        """Summarize what OpenReflex has recorded and learned in this project.
+        Returns: JSON with engagement (tasks, experiences, lessons), experience reuse (share of tasks that received
+        past experience), outcomes (known, verified, success rate), efficiency with and without prior experience
+        (observational, not a controlled comparison), the Execution Regret trend, routing agreement (how often the
+        recommended strategy matched the one that did best afterwards), live alerts, verdicts (continue, pivot,
+        stop) and budget adherence.
+        Use when: the user asks how OpenReflex is doing in this project.
+        Not for: individual past tasks (use search_experience).
+        Side effects: none; read-only.
+        Errors: a 'not enabled' message until the project is approved."""
         return run(lambda e: json.dumps(metrics.project_metrics(e, approval(project)), indent=2))
 
-    @tool("Enable project", WRITE, gated=False)
+    @tool("Enable project", WRITE)
     def approve_project(
-        confirm: Annotated[bool, Field(description="Set to true only when the user has explicitly asked to enable "
-                                                   "OpenReflex for this project. With false (the default) nothing "
-                                                   "is changed.")] = False,
+        confirm: Annotated[bool, Field(description="true only when the user has explicitly asked to enable "
+                                                   "OpenReflex for this project; with false (the default) nothing "
+                                                   "changes.")] = False,
     ) -> str:
-        """Enable OpenReflex capture for this project, so hooks start recording tasks locally. Returns a one-line
-        confirmation. Enabling an already-enabled project changes nothing.
-
-        Never call it on your own initiative: only when the user explicitly asks to enable OpenReflex. The user can
-        disable it again with `openreflex revoke`."""
+        """Enable OpenReflex capture for this project.
+        Returns: one line confirming the project is enabled, or 'Not approved' when confirm is false.
+        Use when: the user explicitly asks to enable OpenReflex here. Never call it on your own initiative; the user
+        can also run `openreflex approve`, and `openreflex revoke` disables capture again.
+        Not for: anything else; every other tool answers with a 'not enabled' message until this has happened.
+        Side effects: writes the project's approval to the local OpenReflex home; enabling an already enabled
+        project changes nothing. Touches no project files.
+        Errors: none."""
         if not confirm:
             return "Not approved: pass confirm=true only after the user explicitly asked to enable OpenReflex."
         approve(project, source="mcp")
         return f"OpenReflex enabled for {project}."
+
+    @tool("Forget experience", DELETE)
+    def forget_experience(
+        experience_id: Annotated[str, Field(description="The experience id to delete, as returned by "
+                                                        "search_experience; starts with 'exp-'.")],
+        confirm: Annotated[bool, Field(description="true only when the user has explicitly asked to forget this "
+                                                   "task; with false (the default) nothing is deleted.")] = False,
+    ) -> str:
+        """Delete one past task from this project's memory.
+        Returns: one line listing what was removed (task, executions, tool calls, outcomes, experience, lessons), or
+        'Not forgotten' when confirm is false.
+        Use when: the user explicitly asks to forget a specific past task, for example one that involved sensitive
+        work or taught a wrong lesson. Never call it on your own initiative.
+        Not for: deleting everything; the user runs `openreflex forget --yes` for that.
+        Side effects: permanently removes that task's nodes from the local Experience Graph; other tasks are
+        untouched. Touches no project files.
+        Errors: 'Unknown experience id' for an id that does not exist, is not an experience, or was already
+        forgotten; a 'not enabled' message until the project is approved."""
+        if not confirm:
+            return "Not forgotten: pass confirm=true only after the user explicitly asked to forget this task."
+        def operation(e: Engine):
+            removed = e.forget_experience(experience_id)
+            detail = ", ".join(f"{count} {kind}" for kind, count in sorted(removed.items()))
+            return f"Forgotten: {detail} removed from this project's memory."
+        return run(operation)
 
     return server
 

@@ -8,12 +8,12 @@
     "source": "github"
   },
   "websiteUrl": "https://openreflex.cc",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "openreflex",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "runtimeHint": "uvx",
       "packageArguments": [
         {

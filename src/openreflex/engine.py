@@ -216,6 +216,36 @@ class Engine:
                 raise ValueError("No execution to record an outcome for")
             return self._finalize(execution, status=status, evidence=redact(evidence, 500), verified=True)
 
+    def forget_experience(self, experience_id: str) -> dict[str, int]:
+        """Delete one past task and everything learned from it; returns how many nodes of each kind were removed."""
+        with self.store.transaction():
+            experience = self.store.get(experience_id) if self.store.exists(experience_id) else None
+            if not isinstance(experience, Experience):
+                raise ValueError("Unknown experience id")
+            removed: Counter = Counter()
+
+            def drop(node) -> None:
+                removed[type(node).__name__] += 1
+                self.store.delete(node.id)
+
+            for execution in self.store.list("Execution", "task_id", experience.task_id):
+                for call in self.store.list("ToolCall", "execution_id", execution.id, limit=5000):
+                    drop(call)
+                for outcome in self.store.find("Outcome", execution_id=execution.id):
+                    drop(outcome)
+                for item in self.store.find("Experience", execution_id=execution.id):
+                    for lesson in self.store.list("Lesson", "experience_id", item.id):
+                        drop(lesson)
+                    drop(item)
+                self.store.forget_execution(execution.id)
+                drop(execution)
+            for kind in ("Context", "CandidatePath"):
+                for node in self.store.list(kind, "task_id", experience.task_id):
+                    drop(node)
+            if self.store.exists(experience.task_id):
+                drop(self.store.get(experience.task_id))
+            return dict(removed)
+
     def preview(self, description: str) -> str:
         task = Task(description=redact(description, 1000), task_class=classify(description), session_id="preview",
                     agent="preview", started_at=self.clock())

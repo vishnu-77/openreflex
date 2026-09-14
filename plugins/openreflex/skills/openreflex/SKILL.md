@@ -44,9 +44,10 @@ abandoned, record `failure` with the reason. Unverified work is inferred from to
 
 - "What did we learn / what worked before?" → `search_experience` with the topic.
 - "Why was this path suggested?" or a node id → `explain_node`.
-- "How is OpenReflex doing?" → `project_insights`.
+- "How is OpenReflex doing?" → `get_project_insights`.
+- "Forget what you learned from that task" → `forget_experience` with the experience id, only when the user explicitly asks.
 
 ## Consent
 
-Never call `approve_project` on your own initiative. Call it with `confirm=true` only when the user explicitly
-asks to enable OpenReflex for this project.
+Never call `approve_project` or `forget_experience` on your own initiative. Call them with `confirm=true` only
+when the user explicitly asks to enable OpenReflex for this project, or to forget a specific past task.

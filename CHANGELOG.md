@@ -2,6 +2,16 @@
 
 All notable changes to OpenReflex are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.3.1 (2026-09-14)
+
+- **`project_insights` is now `get_project_insights`**, so every tool name is a verb followed by what it acts on.
+- **New MCP tool `forget_experience`** deletes one past task from the project's memory (its task, execution, tool
+  calls, outcome, experience and lessons). Like `approve_project`, it only acts with `confirm=true` after the user
+  explicitly asks; `openreflex forget --yes` still deletes the whole project.
+- MCP tool descriptions are restructured into labelled lines (what it returns, when to use it and when not to,
+  side effects, errors), and every parameter states its format, constraints and default. Terms such as Execution
+  Regret and Reflex Score are defined where they appear.
+
 ## 0.3.0 (2026-09-14)
 
 Observable, configurable execution policy: every recommendation is recorded with its evidence and can be

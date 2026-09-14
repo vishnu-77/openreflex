@@ -148,7 +148,7 @@ Routing, scoring, budget and recap settings come from a versioned policy: the pa
 Agents can also query OpenReflex directly through its MCP server: `get_execution_context` (optionally with
 `max_tool_calls`, `max_minutes`, `max_context_tokens`), `choose_path`, `check_progress`, `explain_decision`,
 `get_execution_trace`, `get_reflex_score`, `record_outcome`, `search_experience`, `explain_node`,
-`project_insights`, and `approve_project`.
+`get_project_insights`, `approve_project`, and `forget_experience` (deletes one past task's memory, only when the user asks).
 
 ## CLI
 
