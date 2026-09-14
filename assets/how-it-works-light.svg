@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 352" role="img" aria-label="Before a task OpenReflex retrieves experience, scores paths and injects context; during a task it watches tool calls, flags loops and recommends continue, pivot or stop; after a task it infers the outcome, estimates regret and extracts lessons, which feed the Experience Graph for the next task.">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#286A70"/></marker></defs>
+<rect x="40" y="36" width="370" height="212" rx="16" fill="#FBF8F1" stroke="#D8D2C6" stroke-width="2"/>
+<text x="68" y="80" font-family="'Space Grotesk', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="#171511">Before a task</text>
+<line x1="68" y1="98" x2="382" y2="98" stroke="#D8D2C6" stroke-width="1.5"/>
+<circle cx="76" cy="129" r="4.5" fill="#286A70"/>
+<text x="94" y="136" font-family="'Space Grotesk', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#26231E">retrieve similar experience</text>
+<circle cx="76" cy="167" r="4.5" fill="#286A70"/>
+<text x="94" y="174" font-family="'Space Grotesk', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#26231E">score candidate paths</text>
+<circle cx="76" cy="205" r="4.5" fill="#286A70"/>
+<text x="94" y="212" font-family="'Space Grotesk', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#26231E">inject context and a budget</text>
+<line x1="414" y1="142" x2="441" y2="142" stroke="#286A70" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="445" y="36" width="370" height="212" rx="16" fill="#FBF8F1" stroke="#D8D2C6" stroke-width="2"/>
+<text x="473" y="80" font-family="'Space Grotesk', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="#171511">During a task</text>
+<line x1="473" y1="98" x2="787" y2="98" stroke="#D8D2C6" stroke-width="1.5"/>
+<circle cx="481" cy="129" r="4.5" fill="#286A70"/>
+<text x="499" y="136" font-family="'Space Grotesk', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#26231E">watch every tool call</text>
+<circle cx="481" cy="167" r="4.5" fill="#286A70"/>
+<text x="499" y="174" font-family="'Space Grotesk', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#26231E">flag loops and stalls</text>
+<circle cx="481" cy="205" r="4.5" fill="#286A70"/>
+<text x="499" y="212" font-family="'Space Grotesk', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#26231E">advise continue, pivot or stop</text>
+<line x1="819" y1="142" x2="846" y2="142" stroke="#286A70" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="850" y="36" width="370" height="212" rx="16" fill="#FBF8F1" stroke="#D8D2C6" stroke-width="2"/>
+<text x="878" y="80" font-family="'Space Grotesk', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="#171511">After a task</text>
+<line x1="878" y1="98" x2="1192" y2="98" stroke="#D8D2C6" stroke-width="1.5"/>
+<circle cx="886" cy="129" r="4.5" fill="#286A70"/>
+<text x="904" y="136" font-family="'Space Grotesk', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#26231E">infer the outcome from checks</text>
+<circle cx="886" cy="167" r="4.5" fill="#286A70"/>
+<text x="904" y="174" font-family="'Space Grotesk', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#26231E">estimate Execution Regret</text>
+<circle cx="886" cy="205" r="4.5" fill="#286A70"/>
+<text x="904" y="212" font-family="'Space Grotesk', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="20" fill="#26231E">extract lessons</text>
+<path d="M1035 250V304H225V254" fill="none" stroke="#286A70" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="500" y="284" width="260" height="42" rx="21" fill="#FBF8F1" stroke="#286A70" stroke-width="2"/>
+<text x="630" y="312" text-anchor="middle" font-family="'Space Grotesk', 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="22" font-weight="600" fill="#286A70">Experience Graph</text>
+</svg>

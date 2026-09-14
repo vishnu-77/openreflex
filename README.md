@@ -3,14 +3,12 @@
 
 <a href="https://openreflex.cc" target="_blank">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/openreflex-logo-dark.svg">
-    <img alt="OpenReflex" src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/openreflex-logo-light.svg" width="380" height="auto">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/openreflex-banner-dark.svg">
+    <img alt="OpenReflex: muscle memory for AI coding agents" src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/openreflex-banner-light.svg" width="720" height="auto">
   </picture>
 </a>
 
-### OpenReflex: muscle memory for AI coding agents
-
-<a href="https://openreflex.cc">Website</a> · <a href="https://github.com/vishnu-77/openreflex">GitHub</a> · <a href="https://pypi.org/project/openreflex/">PyPI</a> · <a href="https://github.com/vishnu-77/openreflex/issues">Issues</a> · <a href="https://buymeacoffee.com/vishnuprashanth">Buy me a coffee</a>
+<a href="https://openreflex.cc">Website</a> · <a href="https://openreflex.cc/docs">Docs</a> · <a href="docs/walkthrough.md">Walkthrough</a> · <a href="https://pypi.org/project/openreflex/">PyPI</a> · <a href="https://github.com/vishnu-77/openreflex/issues">Issues</a> · <a href="https://buymeacoffee.com/vishnuprashanth">Buy me a coffee</a>
 
 [![PyPI](https://img.shields.io/pypi/v/openreflex?style=flat-square&labelColor=black&color=286a70)](https://pypi.org/project/openreflex/)
 [![Python](https://img.shields.io/pypi/pyversions/openreflex?style=flat-square&labelColor=black&color=7cc9c8)](https://pypi.org/project/openreflex/)
@@ -45,22 +43,19 @@ There is no account, no service, and no telemetry.
   compact Execution Context: a suggested approach with alternatives, the files that were changed, and lessons
   such as which edit resolved a recurring error.
 - **It catches loops while they happen.** Repeated failing commands, identical retries, stalled progress, and
-  runaway context growth raise a single, specific alert with an alternative path, never a stream of nags.
+  runaway context growth raise one alert that says whether to continue, pivot to another approach, or stop and
+  check in with you, never a stream of nags.
 - **It learns after every task.** OpenReflex infers the outcome from real verification (a test or build that
   passed or failed after the last edit), estimates Execution Regret against the alternatives, and extracts lessons.
 - **It is private by design.** Only coarse, project-relative metadata is stored. File contents, commands, tool
   output, and transcripts never are, and capture is off until you approve a project.
 
-```
-        before a task                  during a task                 after a task
-  ┌──────────────────────┐    ┌──────────────────────────┐    ┌───────────────────────┐
-  │ retrieve experience  │    │ watch tool calls         │    │ infer outcome         │
-  │ score candidate paths│ →  │ flag loops and stalls    │ →  │ estimate regret       │
-  │ inject context       │    │ suggest an alternative   │    │ extract lessons       │
-  └──────────────────────┘    └──────────────────────────┘    └───────────────────────┘
-                 ▲                                                        │
-                 └──────────────────── Experience Graph ◄─────────────────┘
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/how-it-works-dark.svg">
+    <img alt="Before a task: retrieve similar experience, score candidate paths, inject context and a budget. During a task: watch every tool call, flag loops and stalls, advise continue, pivot or stop. After a task: infer the outcome from checks, estimate Execution Regret, extract lessons. Lessons feed the Experience Graph for the next task." src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/how-it-works-light.svg" width="860">
+  </picture>
+</p>
 
 ## Quick start
 
@@ -70,6 +65,19 @@ Requires Python 3.11 or newer.
 pipx install openreflex            # or: uv tool install openreflex
 cd your-project
 openreflex install claude-code     # writes hooks + MCP config and enables this project
+```
+
+```
+OPENREFLEX / CONNECT
+  agent       claude-code
+  project     D:\demo\shop
+  config      updated 2 files
+              D:\demo\shop\.claude\settings.json
+              D:\demo\shop\.mcp.json
+  memory      enabled
+  storage     local
+
+  [ok] reflex active
 ```
 
 Then work as usual. After a few tasks:
@@ -84,26 +92,16 @@ openreflex doctor                                 # installation checks and rece
 
 OpenReflex installs per project with `openreflex install <agent>`, or as a plugin.
 
-<table>
-  <tbody>
-    <tr>
-      <td align="center" valign="bottom" width="25%"><strong>Claude&nbsp;Code</strong><br><sub>Plugin&nbsp;or&nbsp;hooks&nbsp;+&nbsp;MCP</sub></td>
-      <td align="center" valign="bottom" width="25%"><strong>Codex</strong><br><sub>Plugin&nbsp;or&nbsp;hooks&nbsp;+&nbsp;MCP</sub></td>
-      <td align="center" valign="bottom" width="25%"><strong>Cursor</strong><br><sub>Hooks&nbsp;+&nbsp;MCP</sub></td>
-      <td align="center" valign="bottom" width="25%"><strong>OpenCode</strong><br><sub>Plugin&nbsp;+&nbsp;MCP</sub></td>
-    </tr>
-  </tbody>
-</table>
+| Agent | Connects through | Install | Verified |
+|---|---|---|---|
+| **Claude Code** | Plugin, or hooks + MCP | `claude plugin marketplace add vishnu-77/openreflex` then `claude plugin install openreflex@openreflex`, or `openreflex install claude-code` | Live sessions |
+| **Codex** | Plugin, or hooks + MCP | `codex plugin marketplace add vishnu-77/openreflex`, or `openreflex install codex`, then trust the hooks once in `/hooks` | Live sessions |
+| **Cursor** | Hooks + MCP | `openreflex install cursor` | Protocol and fuzz tests |
+| **OpenCode** | Plugin + MCP | `openreflex install opencode` | Protocol and fuzz tests |
 
-| Agent | Install |
-|---|---|
-| Claude Code | `claude plugin marketplace add vishnu-77/openreflex` and `claude plugin install openreflex@openreflex`, or `openreflex install claude-code` |
-| Codex | `codex plugin marketplace add vishnu-77/openreflex`, or `openreflex install codex`, then trust the hooks once in `/hooks` |
-| Cursor | `openreflex install cursor` |
-| OpenCode | `openreflex install opencode` |
-
-With a plugin install, enable each project with `openreflex approve`. Claude Code and Codex are verified in live
-sessions; the Cursor and OpenCode integrations follow each agent's documented hook protocol.
+With a plugin install, enable each project with `openreflex approve`. Per-agent guides:
+[Claude Code](https://openreflex.cc/claude-code), [Codex](https://openreflex.cc/codex), [Cursor](https://openreflex.cc/cursor),
+[OpenCode](https://openreflex.cc/opencode).
 
 ## How it works
 
@@ -143,10 +141,27 @@ Set optional limits for every task with `OPENREFLEX_BUDGET`, for example `calls=
 Routing, scoring, budget and recap settings come from a versioned policy: the packaged defaults, overridden by
 `~/.openreflex/config.toml` and then by `.openreflex.toml` in the project.
 
-Agents can also query OpenReflex directly through its MCP server: `get_execution_context` (optionally with
-`max_tool_calls`, `max_minutes`, `max_context_tokens`), `choose_path`, `check_progress`, `explain_decision`,
-`get_execution_trace`, `get_reflex_score`, `record_outcome`, `search_experience`, `explain_node`,
-`get_project_insights`, `approve_project`, and `forget_experience` (deletes one past task's memory, only when the user asks).
+Agents can also query OpenReflex directly through its MCP server.
+
+<details>
+<summary><strong>The 12 MCP tools</strong></summary>
+
+| Tool | What it does |
+|---|---|
+| `get_execution_context` | Plan a task: similar past tasks, the suggested strategy with alternatives, a budget, likely files, lessons. Optional `max_tool_calls`, `max_minutes`, `max_context_tokens`. |
+| `check_progress` | Whether more work on the current path is worth it: continue, pivot or stop. |
+| `choose_path` | Declare the strategy being followed when it differs from the suggestion. |
+| `record_outcome` | Record a verified outcome (tests passed, user confirmed, or failure) and learn from it. |
+| `explain_decision` | Why the latest recommendation was made: Reflex Score, signals, confidence, next-best route. |
+| `get_execution_trace` | The decision timeline of the most recent task. |
+| `get_reflex_score` | The latest Reflex Score and its components as JSON. |
+| `search_experience` | Past tasks in the project by description similarity, with their lessons. |
+| `explain_node` | One Experience Graph node and its relations. |
+| `get_project_insights` | What has been recorded, reused and learned in the project. |
+| `approve_project` | Enable capture, only when the user explicitly asks. |
+| `forget_experience` | Delete one past task's memory, only when the user explicitly asks. |
+
+</details>
 
 ## CLI
 
@@ -165,12 +180,26 @@ Agents can also query OpenReflex directly through its MCP server: `get_execution
 
 ## Privacy
 
-- Stored per tool call: tool name, a coarse category (`read`, `edit`, `search`, `test`, ...), a fingerprint of the
-  arguments, project-relative file paths, status, duration, output size, and a masked one-line error signature.
-- Never stored: file contents, command text, tool output, transcripts, or paths outside the project.
-- Prompts are kept as task descriptions (up to 1,000 characters) with secrets such as API keys and tokens redacted.
-- Data lives in `~/.openreflex/projects/<hash>/experience.sqlite3`. Set `OPENREFLEX_HOME` to move it,
-  `OPENREFLEX_DISABLE=1` to turn capture off everywhere, or run `openreflex forget --yes` to delete a project's data.
+| Stored | Never stored |
+|---|---|
+| Tool name and a coarse category (`read`, `edit`, `search`, `test`, ...) | File contents |
+| A fingerprint of the arguments | Command text |
+| Project-relative file paths | Tool output |
+| Pass or fail, duration, output size | Transcripts and model output |
+| A masked one-line error signature | Paths outside the project |
+| The prompt as a task description (up to 1,000 characters, secrets redacted) | Anything sent to a server: there is none |
+
+Data lives in `~/.openreflex/projects/<hash>/experience.sqlite3`. Set `OPENREFLEX_HOME` to move it,
+`OPENREFLEX_DISABLE=1` to turn capture off everywhere, `openreflex forget --yes` to delete a project's data, or ask
+your agent to `forget_experience` a single task.
+
+## Research
+
+OpenReflex is also a research project in budget-aware execution: instead of treating success as a yes or no, it
+studies how agents choose execution paths, spend tool calls and context, respond to uncertainty, and whether more
+computation still adds value. The loop is experience retrieval, Pareto path selection, budget-aware execution and
+counterfactual regret. The [Researcher view](https://openreflex.cc/?view=research) on the site explains the idea,
+lets you step through one reflex forming in the graph, and places it next to related work.
 
 ## Community & Contributing
 
