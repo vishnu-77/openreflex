@@ -167,3 +167,30 @@ def test_codex_apply_patch_exit_code_zero_is_success():
                                                      "tool_input": {"command": "*** Begin Patch\n*** Update File: dates.py\n"},
                                                      "tool_response": response})
     assert event.success is True
+
+
+@pytest.mark.parametrize("tool_name", ["", None, ["Bash"], 7])
+def test_tool_event_without_a_tool_name_records_nothing(project, factory, tool_name):
+    approve(project)
+    payload = {"session_id": "s", "cwd": str(project), "tool_name": tool_name, "tool_input": {"command": "ls"},
+               "tool_use_id": "t1", "tool_response": {"stdout": "ok"}}
+    assert call("claude-code", "PreToolUse", payload, factory) == ""
+    assert call("claude-code", "PostToolUse", payload, factory) == ""
+    engine = factory(project)
+    assert engine.store.list("Task") == [] and engine.store.list("ToolCall") == []
+
+
+def test_why_and_trace_survive_later_activity_without_a_prompt(project, factory, clock):
+    approve(project)
+    base = {"session_id": "planned", "cwd": str(project)}
+    call("claude-code", "UserPromptSubmit", {**base, "prompt": "Fix the pricing bug where the SAVE15 coupon takes too little off"},
+         factory)
+    clock.advance(30)
+    # A different session then runs a tool with no captured prompt, which creates an untracked task.
+    other = {"session_id": "resumed", "cwd": str(project), "tool_name": "Read", "tool_input": {"file_path": "README.md"},
+             "tool_use_id": "r1", "tool_response": {"content": "x"}}
+    call("claude-code", "PreToolUse", other, factory)
+    call("claude-code", "PostToolUse", other, factory)
+    engine = factory(project)
+    assert "No decision snapshot" not in engine.why() and "Recommendation" in engine.why()
+    assert "START" in engine.trace()

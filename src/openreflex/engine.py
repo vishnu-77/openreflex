@@ -257,7 +257,13 @@ class Engine:
                               budget_for(paths[0], limits, self.policy), self.policy)
 
     def decision_snapshots(self, execution_id: str | None = None) -> list[DecisionSnapshot]:
-        execution = self.store.get(execution_id) if execution_id else self.current_execution(max_age=float("inf"))
+        """Snapshots of the given execution, or of the most recent one that made decisions. Activity without a
+        captured prompt (a resumed session, a tool call before any prompt) must not hide the latest explanation."""
+        if execution_id:
+            execution = self.store.get(execution_id)
+        else:
+            decided = [e for e in self.store.list("Execution", limit=200) if e.decision_history]
+            execution = max(decided, key=lambda e: e.started_at, default=None)
         if execution is None:
             return []
         return [DecisionSnapshot.from_dict(item) for item in execution.decision_history]

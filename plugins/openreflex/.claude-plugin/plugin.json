@@ -1,7 +1,7 @@
 {
   "name": "openreflex",
   "displayName": "OpenReflex",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Muscle memory for AI coding agents: learns from every task, advises the next one, and flags failure loops live.",
   "author": {
     "name": "vishnu-77",

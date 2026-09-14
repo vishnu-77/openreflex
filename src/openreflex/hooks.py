@@ -212,7 +212,8 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
     agent = detect_agent(agent, payload)
     name = name or payload.get("hook_event_name") or payload.get("event") or ""
     event = normalize(agent, name, payload)
-    if event.kind == "ignored" or not event.session:
+    # A tool event that names no tool is malformed; recording it would create a nameless call and a phantom task.
+    if event.kind == "ignored" or not event.session or (event.kind in ("tool_start", "tool_end") and not event.tool):
         return render(agent, name, None)
     project = project_root(event.cwd)
     if not approval(project):

@@ -2,6 +2,18 @@
 
 All notable changes to OpenReflex are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.3.2 (2026-09-15)
+
+Fixes found by an end-to-end test of the published 0.3.1 package.
+
+- A hook event that names no tool (a malformed payload) is ignored. It used to be recorded as a nameless tool call
+  inside a new, untracked task.
+- `openreflex why`, `openreflex trace`, `explain_decision`, `get_execution_trace` and `get_reflex_score` explain the
+  most recent task that made a decision. Activity without a captured prompt, such as a resumed session, used to hide
+  the latest explanation behind "No decision snapshot recorded yet."
+- The live Codex test harness reports why Codex refused a run (for example a usage limit) instead of an unrelated
+  stderr line.
+
 ## 0.3.1 (2026-09-14)
 
 - **`project_insights` is now `get_project_insights`**, so every tool name is a verb followed by what it acts on.

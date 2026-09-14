@@ -45,9 +45,15 @@ class CodexHarness(Harness):
         result = subprocess.run(command, cwd=repo, env=self.env, capture_output=True, timeout=900,
                                 stdin=subprocess.DEVNULL)
         stream = result.stdout.decode("utf-8", errors="replace")
-        return {"events": [json.loads(line) for line in stream.splitlines() if line.startswith("{")], "raw": stream,
-                "rollout": self.rollout(repo, started), "seconds": round(time.time() - started, 1),
-                "stderr": result.stderr.decode("utf-8", errors="replace")[-2000:], "code": result.returncode}
+        events = [json.loads(line) for line in stream.splitlines() if line.startswith("{")]
+        # Codex reports refusals (usage limits, auth, config) as JSON events, not on stderr.
+        failures = [e.get("message") or (e.get("error") or {}).get("message") for e in events
+                    if e.get("type") in ("error", "turn.failed")]
+        stderr = result.stderr.decode("utf-8", errors="replace")[-2000:]
+        if result.returncode != 0 and failures:
+            stderr = "Codex refused the run: " + next(m for m in reversed(failures) if m)
+        return {"events": events, "raw": stream, "rollout": self.rollout(repo, started),
+                "seconds": round(time.time() - started, 1), "stderr": stderr, "code": result.returncode}
 
     @staticmethod
     def rollout(repo: Path, since: float) -> str:
