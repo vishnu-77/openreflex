@@ -92,6 +92,12 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
 
     alerts = Counter(a for e in executions for a in e.alerts if not a.startswith("retry:"))
     alerts["retry_warning"] = sum(1 for e in executions for a in e.alerts if a.startswith("retry:"))
+    verdicts = Counter(v.split(":")[0].split("@")[0] for e in executions for v in e.verdicts)
+    # After a pivot or stop, did the task still reach a verified success? (observational)
+    advised = [x for x in known if any(v.startswith(("pivot", "stop")) for v in x.verdicts)]
+    outcomes_by_execution = {o.execution_id: o for o in store.list("Outcome", limit=100_000)}
+    within_budget = [outcomes_by_execution[e.id].tool_calls <= e.budget_tool_calls for e in executions
+                     if e.budget_tool_calls and e.id in outcomes_by_execution]
     with_prior_profile, without_prior_profile = profile(with_prior), profile(without_prior)
     return {
         "project": str(engine.project),
@@ -119,5 +125,8 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
                     "agreement": round(sum(agreements) / len(agreements), 3) if agreements else None,
                     "compared_executions": len(agreements)},
         "live_alerts": dict(alerts),
+        "execution_control": {"verdicts": dict(verdicts),
+                              "success_after_pivot_or_stop": _avg(x.status == "success" for x in advised),
+                              "tasks_within_tool_call_budget": _avg(within_budget)},
         "lessons": len(store.list("Lesson", limit=100_000)),
     }

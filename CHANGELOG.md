@@ -2,6 +2,29 @@
 
 All notable changes to OpenReflex are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.2.0 (2026-09-14)
+
+Budget-aware execution: OpenReflex now chooses between paths on several objectives, gives each task a budget,
+and recommends whether more work is worth it.
+
+- **Pareto-efficient routing.** Candidate strategies are estimated on success, time, tool calls, context, risk,
+  uncertainty, reversibility and expected regret. A strategy that another beats on every measure is marked
+  dominated and never recommended or offered as a pivot.
+- **Execution budget.** Each task gets a budget for tool calls, active time and context, with more headroom while
+  estimates are uncertain. Optional limits come from `OPENREFLEX_BUDGET` (for example `calls=40,minutes=20`) or
+  the new `max_tool_calls`, `max_minutes` and `max_context_tokens` arguments of `get_execution_context`; the
+  recommended path is the best one that fits them.
+- **Continue, pivot or stop.** When a detector finds trouble, OpenReflex updates the current path's success
+  estimate from calls that made no progress or failed, weighs the value of the remaining work against the best
+  untried alternative, and ends the alert with a recommendation. A stop recommendation asks the agent to
+  summarize and hand back to the user.
+- **New MCP tool `check_progress`** returns the same estimate on demand.
+- **Regret and detours feed back into routing.** A strategy's recorded Execution Regret, and how often it ran
+  into a failure loop, stalled progress or a budget overrun, now lower its ranking for similar tasks.
+- `openreflex status` and `project_insights` report verdicts and how many tasks finished within their tool-call
+  budget.
+- An empty `OPENREFLEX_HOME` is treated as unset instead of the working directory.
+
 ## 0.1.3 (2026-09-14)
 
 Codex CLI fixes found by running OpenReflex in live `codex exec` sessions (`scripts/live_codex.py`).

@@ -7,15 +7,15 @@ interrupted when replanning is justified by evidence rather than by a single slo
 
 from dataclasses import dataclass
 
-from .models import CandidatePath, Execution, ToolCall
+from .models import Execution, ToolCall
 from .privacy import PROGRESS
+from .routing import Budget
 
 COOLDOWN_SECONDS = 180
 REPEAT_THRESHOLD = 3
 FAILURE_LOOP_THRESHOLD = 3
 STAGNATION_CALLS = 15
 STAGNATION_SECONDS = 600
-CONTEXT_FLOOR_TOKENS = 30000
 
 
 @dataclass(frozen=True)
@@ -25,7 +25,7 @@ class Alert:
     detail: str
 
 
-def detect(execution: Execution, calls: list[ToolCall], recommended: CandidatePath | None, now: float) -> list[Alert]:
+def detect(execution: Execution, calls: list[ToolCall], budget: Budget, now: float, active_seconds: float = 0) -> list[Alert]:
     alerts: list[Alert] = []
     finished = [c for c in calls if c.status != "running"]
 
@@ -61,15 +61,17 @@ def detect(execution: Execution, calls: list[ToolCall], recommended: CandidatePa
         alerts.append(Alert("stagnation", 0.7, f"{len(since_progress)} calls over {idle / 60:.0f} min without a "
                                                f"successful edit or check (only {', '.join(kinds)})"))
 
-    budget = max(CONTEXT_FLOOR_TOKENS, 2 * (recommended.context_tokens if recommended else 8000))
-    if execution.output_tokens_estimate > budget or execution.compactions:
+    if execution.output_tokens_estimate > budget.context_tokens or execution.compactions:
         reason = "context was compacted" if execution.compactions else \
-            f"~{execution.output_tokens_estimate // 1000}k tokens of tool output (budget ~{int(budget) // 1000}k)"
+            f"~{execution.output_tokens_estimate // 1000}k tokens of tool output (budget ~{int(budget.context_tokens) // 1000}k)"
         alerts.append(Alert("context_growth", 0.5, reason))
 
-    if recommended and len(calls) > max(30, 2.5 * recommended.tool_calls) and not any(
-            c.category in PROGRESS and c.status == "success" for c in calls[-8:]):
-        alerts.append(Alert("over_budget", 0.5, f"{len(calls)} tool calls vs ~{recommended.tool_calls:.0f} expected"))
+    recent_progress = any(c.category in PROGRESS and c.status == "success" for c in calls[-8:])
+    # The time budget, like stagnation, only applies once implementation has begun: reading can take a while.
+    if not recent_progress and (len(calls) > budget.tool_calls or (implementing and active_seconds > budget.seconds)):
+        detail = (f"{len(calls)} tool calls (budget ~{budget.tool_calls:.0f})" if len(calls) > budget.tool_calls
+                  else f"{active_seconds / 60:.0f} min of work (budget ~{budget.seconds / 60:.0f} min)")
+        alerts.append(Alert("over_budget", 0.5, detail))
     return alerts
 
 

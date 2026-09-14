@@ -12,18 +12,27 @@ more accurate.
 ## When a task starts
 
 - If the conversation already contains an `[OpenReflex]` block, use it as advice: it lists similar past
-  tasks, a suggested strategy with alternatives, likely relevant files, and lessons. Start by checking the
-  listed files before broad searching.
+  tasks, a suggested strategy with alternatives (strategies that are worse on every measure are marked
+  dominated), an execution budget, likely relevant files, and lessons. Start by checking the listed files
+  before broad searching, and aim to finish within the budget.
 - If there is no such block and the task is substantial (a bug fix, feature, refactor, or migration), call
-  `get_execution_context` with a one-sentence description of the task.
+  `get_execution_context` with a one-sentence description of the task. If the user gave limits ("keep it
+  quick", "no more than 20 minutes"), pass them as `max_minutes`, `max_tool_calls` or `max_context_tokens`.
 - If you deliberately take a different approach than the suggested one, call `choose_path` with the strategy
   name (or your own name plus 2-4 short steps). Skip this when you follow the suggestion.
 
 ## During the task
 
-An `OpenReflex:` alert means repeated failures, repeated identical calls, stalled progress, or runaway
-context growth were detected. Treat it as a prompt to step back: re-read the error, question the current
-assumption, or switch to the alternative path it names. Do not retry the same failing action unchanged.
+An `OpenReflex:` alert means repeated failures, repeated identical calls, stalled progress, runaway context
+growth, or work past the budget were detected. Each alert ends with a recommendation:
+
+- **continue**: the path is still worth it; fix the approach within it (re-read the error, question the
+  current assumption). Do not retry the same failing action unchanged.
+- **pivot**: switch to the named strategy and follow its steps.
+- **stop**: more work is unlikely to pay off. Stop, summarize what was tried and what failed, and ask the user
+  how to proceed.
+
+When you are unsure whether more work is paying off, call `check_progress` for the same estimate on demand.
 
 ## When the task is done
 

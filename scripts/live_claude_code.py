@@ -197,24 +197,29 @@ def scenario_failure_loop_alert(h: Harness, report: dict):
                       failures=sum(c.status == "failure" for c in calls),
                       delivered=[t for t in h.delivered_context(run) if t.startswith("OpenReflex:")])
         assert sum(c.status == "failure" for c in calls) >= 3, "model did not run the failing test 3+ times"
-        assert any("failure_loop" in e.alerts or any(a.startswith("retry:") for a in e.alerts) for e in executions)
+        assert any("failure_loop" in e.alerts for e in executions), "no failure-loop alert raised"
         assert report["delivered"], "alert was recorded but never delivered to the model"
+        assert any("Recommendation:" in text for text in report["delivered"]), "no continue/pivot/stop recommendation delivered"
+        assert all(e.verdicts for e in executions if "failure_loop" in e.alerts), "verdict not recorded"
     finally:
         store.close()
 
 
 def scenario_mcp_tools(h: Harness, report: dict):
-    """The plugin's MCP server starts inside Claude Code and its tools return captured experience."""
+    """The plugin's MCP server starts inside Claude Code and its tools return captured experience and a verdict."""
     repo = h.root / "capture"
-    prompt = (f"Call the {MCP_PREFIX}search_experience tool with query 'parse_date wrong month bug' and then "
-              "reply with only the list of files it reports.")
-    run = h.claude_run(repo, prompt, [f"{MCP_PREFIX}search_experience"], turns=6)
+    prompt = (f"Call the {MCP_PREFIX}search_experience tool with query 'parse_date wrong month bug', then call "
+              f"{MCP_PREFIX}check_progress. Reply with only the list of files search_experience reports and the "
+              "first line check_progress returns.")
+    run = h.claude_run(repo, prompt, [f"{MCP_PREFIX}search_experience", f"{MCP_PREFIX}check_progress"], turns=8)
     used = [block for event in run["events"] if event.get("type") == "assistant"
             for block in event.get("message", {}).get("content", []) if block.get("type") == "tool_use"]
     report.update(seconds=run["seconds"], tools_called=[b.get("name") for b in used],
                   answer=run["result"].get("result", "")[:300])
     assert any(b.get("name") == f"{MCP_PREFIX}search_experience" for b in used), "MCP tool was not available/called"
     assert "dates.py" in run["raw"], "MCP tool result did not include captured files"
+    assert any(b.get("name") == f"{MCP_PREFIX}check_progress" for b in used), "check_progress was not called"
+    assert "Recommendation:" in run["raw"], "check_progress did not return a recommendation"
 
 
 def scenario_project_install(h: Harness, report: dict):

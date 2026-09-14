@@ -130,29 +130,41 @@ def scenario_failure_loop_alert(h: CodexHarness, report: dict):
         calls = store.list("ToolCall")
         alerts = [e.alerts for e in store.list("Execution")]
         delivered = h.delivered(run, "OpenReflex:")
-        report.update(seconds=run["seconds"], alerts=alerts, failures=sum(c.status == "failure" for c in calls),
-                      delivered=delivered[:1])
+        verdicts = [e.verdicts for e in store.list("Execution")]
+        report.update(seconds=run["seconds"], alerts=alerts, verdicts=verdicts,
+                      failures=sum(c.status == "failure" for c in calls), delivered=delivered)
         assert report["failures"] >= 3, "the failing test was not run (or not recorded as failing) 3+ times"
-        assert any("failure_loop" in a or any(x.startswith("retry:") for x in a) for a in alerts), "no alert raised"
+        assert any("failure_loop" in a for a in alerts), "no failure-loop alert raised"
         assert delivered, "alert was recorded but never delivered to the model"
+        assert any("Recommendation:" in text for text in delivered), "no continue/pivot/stop recommendation delivered"
+        assert any(verdicts), "verdict not recorded"
     finally:
         store.close()
 
 
-def scenario_mcp_tools(h: CodexHarness, report: dict):
-    """The MCP server from .codex/config.toml starts inside Codex and returns captured experience."""
-    repo = h.root / "capture"
-    run = h.codex_run(repo, "Use the openreflex MCP server's search_experience tool with query "
-                            "'parse_date wrong month bug', then reply with only the files it reports.")
+def tool_outputs(run: dict, name: str) -> tuple[list[dict], list[str]]:
+    """Calls whose input mentions the tool, and their outputs, from the rollout."""
     items = [json.loads(line).get("payload", {}) for line in run["rollout"].splitlines() if '"response_item"' in line]
     calls = [i for i in items if "call" in i.get("type", "") and "output" not in i.get("type", "")
-             and "search_experience" in json.dumps(i.get("input", i.get("arguments", "")))]
-    outputs = [json.dumps(i.get("output", "")) for i in items if i.get("call_id") in {c.get("call_id") for c in calls}
-               and "output" in i.get("type", "")]
-    report.update(seconds=run["seconds"], mcp_calls=len(calls), mcp_output=[o[:400] for o in outputs])
+             and name in json.dumps(i.get("input", i.get("arguments", "")))]
+    ids = {c.get("call_id") for c in calls}
+    return calls, [json.dumps(i.get("output", "")) for i in items if i.get("call_id") in ids and "output" in i.get("type", "")]
+
+
+def scenario_mcp_tools(h: CodexHarness, report: dict):
+    """The MCP server from .codex/config.toml starts inside Codex and returns captured experience and a verdict."""
+    repo = h.root / "capture"
+    run = h.codex_run(repo, "Use the openreflex MCP server's search_experience tool with query "
+                            "'parse_date wrong month bug', then its check_progress tool. Reply with only the files "
+                            "search_experience reports and the first line check_progress returns.")
+    calls, outputs = tool_outputs(run, "search_experience")
+    progress_calls, progress = tool_outputs(run, "check_progress")
+    report.update(seconds=run["seconds"], mcp_calls=len(calls), mcp_output=[o[:400] for o in outputs],
+                  progress=[o[:300] for o in progress])
     assert run["code"] == 0, run["stderr"]
     assert calls, "search_experience was not called"
     assert any("dates.py" in output for output in outputs), "MCP tool result did not include captured files"
+    assert progress_calls and any("Recommendation:" in output for output in progress), "check_progress not called or empty"
 
 
 SCENARIOS = {

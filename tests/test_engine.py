@@ -86,7 +86,7 @@ def test_failure_loop_triggers_one_replanning_alert(engine, clock):
         messages.append(engine.tool_end("claude-code", "s1", f"t{i}", *cmd, False, "E   ValueError: bad signature"))
     alerts = [m for m in messages if m]
     assert len(alerts) == 1, "cooldown and once-per-kind prevent nagging"
-    assert "consecutive tool failures" in alerts[0] and "Alternative path" in alerts[0]
+    assert "consecutive tool failures" in alerts[0] and "Recommendation:" in alerts[0]
 
 
 def test_exploration_does_not_trigger_stagnation(engine, clock):

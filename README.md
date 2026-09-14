@@ -108,16 +108,28 @@ Execution -failed_with-> ToolCall -resolved_by-> ToolCall
 Execution -caused-> Outcome -caused-> Experience -caused-> Lesson
 ```
 
-- **Before a task:** similar experiences are retrieved, three strategies (`inspect-first`, `test-first`,
-  `incremental`) are scored on success probability, time, tool calls, context cost, risk, uncertainty, and
-  reversibility, and a context of at most 1,400 characters is injected. Nothing is injected without relevant
-  experience.
-- **During a task:** each alert fires at most once per task with a cooldown, and names a concrete alternative.
+- **Before a task:** similar experiences are retrieved and three strategies (`inspect-first`, `test-first`,
+  `incremental`) are estimated on success probability, time, tool calls, context cost, risk, uncertainty,
+  reversibility, and expected regret. Strategies that another one beats on every measure are dropped as
+  dominated (Pareto efficiency), the rest are ranked by utility within any limits you set, and the chosen path
+  gets an execution budget for time, tool calls, and context. A context of at most 1,400 characters is
+  injected; nothing is injected without relevant experience.
+- **During a task:** when a detector finds a failure loop, repeated calls, stalled progress, context growth,
+  or work past the budget, OpenReflex estimates the marginal value of more work. The current path's success
+  estimate is updated with each call that makes no progress or fails, and compared with the cost of the work
+  left and with the best untried alternative. The alert ends with a recommendation to **continue**, **pivot**
+  to another strategy, or **stop** and ask the user. Each problem, pivot, or stop is raised once, with a cooldown
+  between messages.
 - **After a task:** outcome and chosen path come from the agent's `record_outcome` / `choose_path` MCP calls when
-  available, and are otherwise inferred from tool activity. Execution Regret is withheld when the outcome is unknown.
+  available, and are otherwise inferred from tool activity. Execution Regret compares the path taken with the
+  best plausible alternative; it is withheld when the outcome is unknown, and feeds back into how strategies
+  are ranked next time, along with success, cost, and how often a strategy ran into trouble.
 
-Agents can also query OpenReflex directly through its MCP server: `get_execution_context`, `choose_path`,
-`record_outcome`, `search_experience`, `explain_node`, `project_insights`, and `approve_project`.
+Set optional limits for every task with `OPENREFLEX_BUDGET`, for example `calls=40,minutes=20,tokens=60000`.
+
+Agents can also query OpenReflex directly through its MCP server: `get_execution_context` (optionally with
+`max_tool_calls`, `max_minutes`, `max_context_tokens`), `choose_path`, `check_progress`, `record_outcome`,
+`search_experience`, `explain_node`, `project_insights`, and `approve_project`.
 
 ## CLI
 

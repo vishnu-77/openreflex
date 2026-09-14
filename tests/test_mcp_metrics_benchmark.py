@@ -18,14 +18,14 @@ def tool_text(server, name, arguments):
 def test_mcp_tools_require_approval_then_work(project):
     server = build_server(project)
     names = {tool.name for tool in asyncio.run(server.list_tools())}
-    assert {"get_execution_context", "choose_path", "record_outcome", "search_experience", "explain_node",
-            "project_insights", "approve_project"} <= names
+    assert {"get_execution_context", "choose_path", "check_progress", "record_outcome", "search_experience",
+            "explain_node", "project_insights", "approve_project"} == names
     assert "not enabled" in tool_text(server, "get_execution_context", {"task": "Fix the login redirect loop"})
     assert "Not approved" in tool_text(server, "approve_project", {})
     assert "enabled" in tool_text(server, "approve_project", {"confirm": True})
 
     context = tool_text(server, "get_execution_context", {"task": "Fix the login redirect loop after logout"})
-    assert "Suggested path" in context and "Candidate scores" in context
+    assert "Suggested path" in context and "Candidate paths" in context and "Pareto-efficient" in context
     assert "Recorded chosen path: incremental" in tool_text(server, "choose_path", {"strategy": "incremental"})
     outcome = tool_text(server, "record_outcome", {"status": "success", "evidence": "pytest passed"})
     assert outcome.startswith("Outcome recorded: success")

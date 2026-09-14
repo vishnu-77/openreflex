@@ -104,8 +104,11 @@ class CandidatePath(Model):
     risk: float = unit()
     uncertainty: float = unit()
     reversibility: float = unit()
+    expected_regret: float = non_negative(0.0)
     evidence_count: int = 0
     score: float = 0
+    dominated_by: str | None = None  # a strategy at least as good on every objective and better on one
+    within_limits: bool = True
 
 
 @dataclass(kw_only=True)
@@ -125,6 +128,11 @@ class Execution(Model):
     alerts: list[str] = field(default_factory=list)
     compactions: int = 0
     pending_context: bool = False
+    budget_seconds: float | None = None
+    budget_tool_calls: float | None = None
+    budget_tokens: float | None = None
+    budget_source: str = ""
+    verdicts: list[str] = field(default_factory=list)  # "pivot:<strategy>@<calls>" or "stop@<calls>"
 
 
 @dataclass(kw_only=True)
@@ -176,6 +184,8 @@ class Experience(Model):
     files: list[str] = field(default_factory=list)
     benefited: bool = False
     estimated_regret: float | None = None
+    alerts: list[str] = field(default_factory=list)
+    verdicts: list[str] = field(default_factory=list)
     embedding: list[float]
     created_at: float
 

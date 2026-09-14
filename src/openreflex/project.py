@@ -8,7 +8,8 @@ from pathlib import Path
 
 
 def home() -> Path:
-    return Path(os.environ.get("OPENREFLEX_HOME", str(Path.home() / ".openreflex")))
+    # An empty value (e.g. a blank field in an MCP client's settings) means "not set", not the working directory.
+    return Path(os.environ.get("OPENREFLEX_HOME") or Path.home() / ".openreflex")
 
 
 def project_root(cwd: str | os.PathLike | None = None) -> Path:

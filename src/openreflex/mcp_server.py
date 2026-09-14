@@ -9,11 +9,13 @@ from mcp.server.fastmcp import FastMCP
 from . import metrics
 from .engine import Engine
 from .project import approval, approve, project_root
+from .routing import Limits
 
 INSTRUCTIONS = """OpenReflex is local execution memory for this project. Hooks capture work automatically.
 Use get_execution_context before a substantial task if no [OpenReflex] context was already provided.
-Call choose_path if you deliberately take a different approach than suggested, and record_outcome once the
-result is verified (tests pass, user confirmed). Never call approve_project unless the user asked for it."""
+Call choose_path if you deliberately take a different approach than suggested, check_progress when unsure
+whether more work is paying off, and record_outcome once the result is verified (tests pass, user confirmed).
+Never call approve_project unless the user asked for it."""
 
 
 def build_server(project: Path) -> FastMCP:
@@ -38,17 +40,52 @@ def build_server(project: Path) -> FastMCP:
             instance.close()
 
     @server.tool()
-    def get_execution_context(task: str) -> str:
-        """Retrieve relevant past experience for a task, with 2-3 scored candidate strategies, likely files, and
-        lessons. Call before substantial work when no [OpenReflex] context was injected."""
+    def get_execution_context(task: str, max_tool_calls: int | None = None, max_minutes: float | None = None,
+                              max_context_tokens: int | None = None) -> str:
+        """Retrieve relevant past experience for a task: candidate strategies scored on success, time, tool calls,
+        context, risk, uncertainty and reversibility (dominated ones marked), an execution budget, likely files,
+        and lessons. Call before substantial work when no [OpenReflex] context was injected. Optional max_* limits
+        constrain the plan and budget."""
         def operation(e: Engine):
-            execution, context = e.context_for(task)
-            paths = sorted(e.store.list("CandidatePath", "task_id", execution.task_id), key=lambda p: -p.score)
+            given = [value for value in (max_tool_calls, max_minutes, max_context_tokens) if value is not None]
+            if any(value <= 0 for value in given):
+                raise ValueError("limits must be positive")
+            limits = Limits(max_minutes * 60 if max_minutes else None, max_tool_calls, max_context_tokens) if given else None
+            execution, context = e.context_for(task, limits=limits)
+            paths = e.store.list("CandidatePath", "task_id", execution.task_id)
+            order = [execution.recommended_path_id] + [p.id for p in sorted(paths, key=lambda p: -p.score)]
+            paths = sorted(paths, key=lambda p: order.index(p.id))
+
+            def status(p) -> str:
+                return (f"dominated by {p.dominated_by}" if p.dominated_by else
+                        "over the limits" if not p.within_limits else "Pareto-efficient")
             scored = "\n".join(
-                f"- {p.strategy}: score {p.score:+.3f}, success~{p.success_probability:.0%}, ~{p.tool_calls:.0f} calls, "
-                f"~{p.time_seconds / 60:.0f} min, risk {p.risk:.2f}, uncertainty {p.uncertainty:.2f}, "
-                f"reversibility {p.reversibility:.2f}, evidence n={p.evidence_count}" for p in paths)
-            return f"{context.text}\n\nCandidate scores:\n{scored}\n(execution {execution.id})"
+                f"- {p.strategy}: score {p.score:+.3f} ({status(p)}), success~{p.success_probability:.0%}, "
+                f"~{p.tool_calls:.0f} calls, ~{p.time_seconds / 60:.0f} min, ~{p.context_tokens / 1000:.1f}k tokens, "
+                f"risk {p.risk:.2f}, uncertainty {p.uncertainty:.2f}, reversibility {p.reversibility:.2f}, "
+                f"expected regret {p.expected_regret:.3f}, evidence n={p.evidence_count}" for p in paths)
+            return f"{context.text}\n\nCandidate paths:\n{scored}\n(execution {execution.id})"
+        return run(operation)
+
+    @server.tool()
+    def check_progress() -> str:
+        """Estimate whether more work on the current path is still worth it: continue, pivot to another strategy,
+        or stop and ask the user. Based on progress so far, failures and the execution budget. Records nothing."""
+        def operation(e: Engine):
+            execution, verdict, problems, budget = e.progress()
+            action = verdict.action if problems else "continue"
+            lines = [f"Recommendation: {action}" + ("" if problems else " (no signs of trouble)") + ".",
+                     f"Estimate: {verdict.summary()}.",
+                     f"Marginal value: continue {verdict.value_continue:+.3f}"
+                     + (f", pivot to {verdict.alternative.strategy} {verdict.value_pivot:+.3f}" if verdict.alternative else "")
+                     + ", stop +0.000.",
+                     f"Budget: ~{budget.tool_calls:.0f} tool calls, ~{budget.seconds / 60:.0f} min, "
+                     f"~{budget.context_tokens / 1000:.0f}k tokens of tool output ({budget.source})."]
+            if problems:
+                lines.append("Detected: " + "; ".join(p.detail for p in problems) + ".")
+            if action == "pivot":
+                lines.append(f"{verdict.alternative.strategy}: {' -> '.join(verdict.alternative.steps)}.")
+            return "\n".join(lines) + f"\n(execution {execution.id})"
         return run(operation)
 
     @server.tool()

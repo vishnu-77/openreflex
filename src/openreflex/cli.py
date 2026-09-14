@@ -102,6 +102,8 @@ def cmd_status(args) -> int:
           f"{eff['without_prior_experience']['tool_calls']} (observational)")
     print(f"  mean execution regret: {regret['mean']}   routing agreement: {routing['agreement']}")
     print(f"  live alerts: {data['live_alerts'] or '-'}")
+    control = data["execution_control"]
+    print(f"  verdicts: {control['verdicts'] or '-'}   tasks within tool-call budget: {control['tasks_within_tool_call_budget']}")
     return 0
 
 
