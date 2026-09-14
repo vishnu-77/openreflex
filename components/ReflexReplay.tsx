@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Kind = "cmd" | "tool" | "fail" | "ok" | "alert" | "context" | "recap" | "lesson" | "divider" | "meta";
 type Line = { kind: Kind; text: string; detail?: string; pause?: number };
-type AgentDemo = { id: string; name: string; surface: string; script: Line[] };
+type AgentDemo = { id: string; name: string; script: Line[] };
 
 const SHARED_END: Line[] = [
   { kind: "fail", text: "Bash   python -m pytest tests/test_auth.py -q", detail: "1 failed" },
@@ -17,11 +17,10 @@ const AGENTS: AgentDemo[] = [
   {
     id: "claude",
     name: "Claude Code",
-    surface: "visible recap + hidden additionalContext",
     script: [
       { kind: "cmd", text: 'claude "fix expired authentication tokens still being accepted"', pause: 650 },
       { kind: "recap", text: "↺ OpenReflex · 82", detail: "2 experiences · test-first 95% · ~14 calls · +184 context tokens", pause: 900 },
-      { kind: "context", text: "agent context → likely file src/auth/session.py · test-first recommended" },
+      { kind: "context", text: "OpenReflex context → likely src/auth/session.py · test-first recommended" },
       { kind: "tool", text: "Read   src/auth/session.py" },
       { kind: "tool", text: "Read   src/auth/validator.py" },
       { kind: "tool", text: "Read   tests/test_auth.py" },
@@ -35,46 +34,43 @@ const AGENTS: AgentDemo[] = [
   {
     id: "codex",
     name: "Codex",
-    surface: "hook/MCP context; no Claude-style visible recap",
     script: [
       { kind: "cmd", text: 'codex "fix expired authentication tokens still being accepted"', pause: 650 },
-      { kind: "context", text: "additionalContext → 2 experiences · test-first 95% · likely src/auth/session.py", pause: 850 },
+      { kind: "context", text: "OpenReflex context → 2 experiences · test-first 95% · likely src/auth/session.py", pause: 850 },
       { kind: "tool", text: "Read   src/auth/session.py" },
       { kind: "tool", text: "Read   src/auth/validator.py" },
-      { kind: "meta", text: "… current path keeps exploring …" },
-      { kind: "context", text: "additionalContext → progress stalled · pivot to test-first · budget 52%", pause: 950 },
+      { kind: "meta", text: "… exploration continues without a successful edit or check …" },
+      { kind: "context", text: "OpenReflex → progress stalled · pivot to test-first · budget 52%", pause: 950 },
       ...SHARED_END,
-      { kind: "lesson", text: "OpenReflex stored outcome, chosen path, regret and resolution lesson", pause: 850 },
+      { kind: "lesson", text: 'learned → "expired token accepted" was resolved by an edit in src/auth/session.py', pause: 850 },
     ],
   },
   {
     id: "cursor",
     name: "Cursor",
-    surface: "context delivered after the first tool result",
     script: [
       { kind: "cmd", text: "Cursor task → fix expired authentication tokens still being accepted", pause: 650 },
       { kind: "tool", text: "Read   src/auth/session.py", pause: 450 },
-      { kind: "context", text: "additional_context → 2 experiences · test-first 95% · likely src/auth/session.py", pause: 850 },
+      { kind: "context", text: "OpenReflex context → 2 experiences · test-first 95% · likely src/auth/session.py", pause: 850 },
       { kind: "tool", text: "Read   src/auth/validator.py" },
-      { kind: "meta", text: "… execution evidence accumulates …" },
-      { kind: "context", text: "additional_context → progress stalled · test-first now preferred", pause: 950 },
+      { kind: "meta", text: "… exploration continues without a successful edit or check …" },
+      { kind: "context", text: "OpenReflex → progress stalled · pivot to test-first · budget 52%", pause: 950 },
       ...SHARED_END,
-      { kind: "lesson", text: "OpenReflex stored outcome, path, regret and reusable resolution", pause: 850 },
+      { kind: "lesson", text: 'learned → "expired token accepted" was resolved by an edit in src/auth/session.py', pause: 850 },
     ],
   },
   {
     id: "opencode",
     name: "OpenCode",
-    surface: "plugin event context + MCP",
     script: [
       { kind: "cmd", text: 'opencode → "fix expired authentication tokens still being accepted"', pause: 650 },
-      { kind: "context", text: "plugin context → 2 experiences · test-first 95% · likely src/auth/session.py", pause: 850 },
+      { kind: "context", text: "OpenReflex context → 2 experiences · test-first 95% · likely src/auth/session.py", pause: 850 },
       { kind: "tool", text: "Read   src/auth/session.py" },
       { kind: "tool", text: "Read   src/auth/validator.py" },
-      { kind: "meta", text: "… execution evidence accumulates …" },
-      { kind: "context", text: "plugin context → pivot recommendation: test-first · budget 52%", pause: 950 },
+      { kind: "meta", text: "… exploration continues without a successful edit or check …" },
+      { kind: "context", text: "OpenReflex → progress stalled · pivot to test-first · budget 52%", pause: 950 },
       ...SHARED_END,
-      { kind: "lesson", text: "OpenReflex stored outcome, path, regret and reusable resolution", pause: 850 },
+      { kind: "lesson", text: 'learned → "expired token accepted" was resolved by an edit in src/auth/session.py', pause: 850 },
     ],
   },
 ];
@@ -215,10 +211,6 @@ export function ReflexReplay() {
         </div>
       </div>
 
-      <div className="border-b border-white/10 px-4 py-2 font-mono text-[0.68rem] text-term-dim sm:px-5">
-        {agent.surface} · representative flow, values illustrative
-      </div>
-
       <div
         className="min-h-[27.5rem] space-y-1 px-4 py-4 font-mono text-[0.72rem] leading-relaxed sm:min-h-[26rem] sm:px-5 sm:text-[0.78rem]"
         aria-live="off"
@@ -229,8 +221,12 @@ export function ReflexReplay() {
         {!done && <span className="caret inline-block h-4 w-2 translate-y-0.5 bg-term-text/70" aria-hidden="true" />}
       </div>
 
-      <div className="border-t border-white/10 px-4 py-3 font-mono text-[0.68rem] text-term-dim sm:px-5">
-        memory → route → observe → pivot → verify → learn
+      <div className="grid grid-cols-4 border-t border-white/10 font-mono text-[0.64rem] uppercase tracking-[0.1em] text-term-dim sm:text-[0.68rem]">
+        {["Retrieve", "Route", "Observe", "Learn"].map((step) => (
+          <div key={step} className="border-r border-white/10 px-2 py-3 text-center last:border-r-0 sm:px-4">
+            {step}
+          </div>
+        ))}
       </div>
     </figure>
   );

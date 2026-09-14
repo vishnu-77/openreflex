@@ -1,7 +1,7 @@
 import { CopyButton } from "@/components/CopyButton";
 import { JsonLd } from "@/components/JsonLd";
 import { PageShell } from "@/components/PageShell";
-import { GUIDES } from "@/lib/guides";
+import { EXECUTION_STORY, GUIDES } from "@/lib/guides";
 import { articleJsonLd, breadcrumbJsonLd, pageMetadata } from "@/lib/seo";
 import { LINKS } from "@/lib/site";
 
@@ -13,22 +13,28 @@ export const metadata = pageMetadata({ title: TITLE, description: DESCRIPTION, p
 
 const CLI = [
   ["openreflex install <agent>", "Write hooks and MCP config for claude-code, codex, cursor or opencode, and enable the project. Add --dry-run to preview."],
+  ["openreflex uninstall <agent>", "Remove OpenReflex-owned hooks and MCP entries for an agent while preserving local project memory."],
   ["openreflex approve", "Enable capture for the current project (needed after a plugin install)."],
   ["openreflex revoke", "Disable capture for the current project. Existing data is kept."],
   ["openreflex context \"<task>\"", "Preview the Execution Context a task would receive, without recording anything."],
   ["openreflex status [--json]", "Show what has been captured, reused and learned in this project."],
-  ["openreflex doctor", "Check the installation and show recent hook errors."],
+  ["openreflex why", "Explain the latest recommendation, Reflex Score, confidence, signals and next-best route."],
+  ["openreflex trace", "Show the latest execution decision timeline."],
+  ["openreflex doctor", "Check installation, project resolution and recent hook activity."],
   ["openreflex forget --yes", "Delete all captured data for the project."],
-  ["openreflex benchmark", "Run the simulated benchmark suite."],
+  ["openreflex benchmark", "Run the assumption-driven execution-policy simulator."],
   ["openreflex mcp", "Start the MCP server over stdio (used by agent configs)."],
 ];
 
 const MCP_TOOLS = [
-  ["get_execution_context", "Retrieve relevant past experience, candidate strategies (dominated ones marked), an execution budget, likely files and lessons for a task. Optional max_tool_calls, max_minutes and max_context_tokens limit the plan."],
+  ["get_execution_context", "Retrieve relevant past experience, candidate strategies, an execution budget, likely files and lessons for a task."],
   ["choose_path", "Declare the strategy the agent is following, so the outcome is compared against the right plan."],
   ["check_progress", "Estimate whether more work on the current path is worth it, and recommend continue, pivot or stop."],
   ["record_outcome", "Record a verified outcome, such as tests passing, with short evidence."],
   ["search_experience", "Search past tasks in the project by description."],
+  ["explain_decision", "Explain the latest OpenReflex recommendation, Reflex Score signals, confidence and next-best route."],
+  ["get_execution_trace", "Return the current execution's OpenReflex decision timeline without raw tool output."],
+  ["get_reflex_score", "Return the latest structured Reflex Score and its component signals."],
   ["explain_node", "Show an Experience Graph node and its relations."],
   ["project_insights", "Summarise capture, reuse, outcomes and learning for the project."],
   ["approve_project", "Enable the project, only when the user explicitly asks."],
@@ -118,11 +124,25 @@ export default function DocsPage() {
 
         <section className="mt-14">
           <h2 id="agents" className={h2}>Set up your agent</h2>
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <p className="mt-3 max-w-[48rem] leading-relaxed text-text">
+            OpenReflex follows the same execution loop in every supported agent. Choose an integration below only for its setup and hook details.
+          </p>
+
+          <div className="mt-6 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
+            {EXECUTION_STORY.map((step, index) => (
+              <div key={step.title} className="bg-panel p-5">
+                <span className="font-mono text-[0.7rem] tabular-nums text-accent">0{index + 1}</span>
+                <h3 className="mt-3 font-semibold text-ink">{step.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted">{step.body}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 grid gap-4 sm:grid-cols-2">
             {GUIDES.map((guide) => (
               <a key={guide.slug} href={`/${guide.slug}`} className="block rounded-lg border border-line bg-panel p-5 hover:border-line-strong">
                 <span className="block font-semibold text-ink">OpenReflex for {guide.agent}</span>
-                <span className="mt-1 block leading-relaxed text-muted">{guide.description}</span>
+                <span className="mt-1 block leading-relaxed text-muted">Installation, hook events and troubleshooting for {guide.agent}.</span>
               </a>
             ))}
           </div>
