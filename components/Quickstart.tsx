@@ -138,8 +138,8 @@ export function Quickstart() {
                 Full setup guide for {agent.name.replace(" (project)", "")}
               </a>
               <br />
-              Check the setup any time with openreflex doctor. Claude Code is verified in live sessions; the other
-              integrations follow each agent&apos;s documented hook protocol.
+              Check the setup any time with openreflex doctor. Claude Code and Codex are verified in live sessions;
+              Cursor and OpenCode follow each agent&apos;s documented hook protocol.
             </p>
           </div>
         </div>

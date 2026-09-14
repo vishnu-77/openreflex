@@ -77,7 +77,7 @@ export const GUIDES: Guide[] = [
       "offered to Codex before a similar task starts.",
     benefits: [
       { title: "Shared project memory", body: "Codex reads from the same local Experience Graph as your other agents, so a fix found elsewhere is not rediscovered." },
-      { title: "Failure loops caught", body: "Codex reports failures inside tool results; OpenReflex reads exit codes from them and alerts when a loop forms." },
+      { title: "Failure loops caught", body: "Codex returns shell results without an exit status, so OpenReflex reads test, lint and build failures from the output and alerts when a loop forms." },
       { title: "Private by design", body: "Only tool categories, project-relative paths, pass or fail and masked error lines are kept." },
     ],
     install: [
@@ -91,19 +91,19 @@ export const GUIDES: Guide[] = [
     },
     events: [
       { event: "UserPromptSubmit", what: "Starts a task and injects the Execution Context when relevant experience exists." },
-      { event: "PreToolUse / PostToolUse", what: "Records each tool call; failures are detected from the exit code in the tool response." },
+      { event: "PreToolUse / PostToolUse", what: "Records each tool call. Failures come from the exit code when Codex reports one, and otherwise from test, lint, build and shell errors in the output." },
       { event: "PreCompact", what: "Notes context compaction." },
       { event: "Stop / SessionEnd", what: "Works out the outcome and stores lessons." },
     ],
     notes: [
       "Codex asks you to trust new hooks once. Until then, the hooks do not run.",
-      "The Codex integration follows Codex's documented hook protocol and is covered by OpenReflex's protocol and fuzz tests.",
+      "Codex is verified in live codex exec sessions by OpenReflex's end-to-end test suite: capture, context delivery, the failure-loop alert and the MCP tools.",
     ],
     faq: [
       { q: "Can Codex use lessons learned in Claude Code?", a: "Yes. All agents in a project share one local Experience Graph." },
       { q: "Where is the data stored?", a: "In ~/.openreflex/projects/<hash>/experience.sqlite3 on your machine." },
     ],
-    verified: false,
+    verified: true,
   },
   {
     slug: "cursor",
