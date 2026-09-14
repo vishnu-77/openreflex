@@ -25,6 +25,7 @@ const PAGES = [
     links: [
       { href: "/#idea", label: "The idea" },
       { href: "/#graph", label: "Graph explorer" },
+      { href: "/#evidence", label: "Research" },
       { href: "/#prior-work", label: "Prior work" },
     ],
   },

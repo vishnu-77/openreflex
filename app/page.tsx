@@ -9,6 +9,7 @@ import { Privacy } from "@/components/Privacy";
 import { PriorWork } from "@/components/PriorWork";
 import { Quickstart } from "@/components/Quickstart";
 import { ReflexRecap } from "@/components/ReflexRecap";
+import { ResearchEvidence } from "@/components/ResearchEvidence";
 import { ResearchIdea } from "@/components/ResearchIdea";
 import { ResearchRoadmap } from "@/components/ResearchRoadmap";
 import { Shipped } from "@/components/Shipped";
@@ -42,6 +43,7 @@ export default function Home() {
           <ReflexRecap />
           <ResearchRoadmap />
           <GraphExplorer />
+          <ResearchEvidence />
           <PriorWork />
         </div>
       </main>

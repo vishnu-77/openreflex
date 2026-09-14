@@ -80,7 +80,7 @@ function SourceRefs({ keys }: { keys: Row["sources"] }) {
 
 export function PriorWork() {
   return (
-    <section id="prior-work" aria-labelledby="prior-work-title" className="border-b border-line bg-bg-soft">
+    <section id="prior-work" aria-labelledby="prior-work-title" className="border-b border-line">
       <div className="mx-auto max-w-[1320px] px-5 py-20 sm:px-10 sm:py-28">
         <SectionHeader
           id="prior-work"

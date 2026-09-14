@@ -3,7 +3,7 @@ export type View = "builder" | "research";
 export const VIEW_EVENT = "openreflex:view";
 export const VIEW_STORAGE_KEY = "openreflex-view";
 export const BUILDER_ANCHORS = ["how", "quickstart", "privacy", "shipped"];
-export const RESEARCH_ANCHORS = ["idea", "graph", "prior-work"];
+export const RESEARCH_ANCHORS = ["idea", "graph", "evidence", "prior-work"];
 
 export function currentView(): View {
   return document.documentElement.dataset.view === "research" ? "research" : "builder";

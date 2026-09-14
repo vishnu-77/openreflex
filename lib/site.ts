@@ -21,6 +21,31 @@ export const RESEARCH_SOURCES = {
   openhands: { label: "OpenHands Stuck Detector (docs)", href: "https://docs.openhands.dev/sdk/guides/agent-stuck-detector" },
 } as const;
 
+// Papers quoted in the Researcher view's evidence section. Separate from RESEARCH_SOURCES, which lists compared work.
+export const EVIDENCE_SOURCES = {
+  trajectories: {
+    authors: "Majgaonkar, Fei, Li, Sarro and Ye",
+    year: 2025,
+    title: "Understanding Code Agent Behaviour: An Empirical Study of Success and Failure Trajectories",
+    id: "arXiv:2511.00197",
+    href: "https://arxiv.org/abs/2511.00197",
+  },
+  failures: {
+    authors: "Liu, Liu, Li, Tan, Zhu, Lian and Zhang",
+    year: 2025,
+    title: "An Empirical Study on Failures in Automated Issue Solving",
+    id: "arXiv:2509.13941",
+    href: "https://arxiv.org/abs/2509.13941",
+  },
+  reflexion: {
+    authors: "Shinn, Cassano, Berman, Gopinath, Narasimhan and Yao",
+    year: 2023,
+    title: "Reflexion: Language Agents with Verbal Reinforcement Learning",
+    id: "arXiv:2303.11366",
+    href: "https://arxiv.org/abs/2303.11366",
+  },
+} as const;
+
 export const TAGLINE = "Muscle memory for AI coding agents";
 
 export const TITLE = "OpenReflex: AI Coding Agents That Learn From Every Task";

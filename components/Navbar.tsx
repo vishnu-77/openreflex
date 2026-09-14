@@ -18,6 +18,7 @@ const BUILDER_SECTIONS = [
 const RESEARCH_SECTIONS = [
   { href: "/#idea", label: "The idea" },
   { href: "/#graph", label: "Graph explorer" },
+  { href: "/#evidence", label: "Research" },
   { href: "/#prior-work", label: "Prior work" },
   { href: "/docs", label: "Docs" },
 ];
