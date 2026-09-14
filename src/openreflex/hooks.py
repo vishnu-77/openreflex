@@ -29,7 +29,7 @@ AGENTS = ("claude-code", "codex", "cursor", "opencode")
 
 @dataclass
 class Event:
-    kind: str  # session_start | prompt | tool_start | tool_end | compaction | stop | ignored
+    kind: str
     session: str
     cwd: str | None
     prompt: str = ""
@@ -60,7 +60,6 @@ def _size(value: object) -> int:
 
 
 def response_failure(response: object) -> tuple[bool, str | None]:
-    """Best-effort failure detection for agents that report failures inside a normal tool result."""
     if isinstance(response, dict):
         if response.get("is_error") or response.get("isError") or response.get("success") is False \
                 or response.get("interrupted") is True:
@@ -78,22 +77,20 @@ def response_failure(response: object) -> tuple[bool, str | None]:
     return False, None
 
 
-# Summary lines that tools print when a run fails. Codex reports shell results as plain output with no exit
-# code, so for verification commands the output itself is the only failure signal.
 OUTPUT_FAILURE = re.compile(
     r"(?im)"
-    r"\b\d+ (failed|errors?)\b.*\bin \d"                      # pytest summary: "1 failed, 2 passed in 0.1s"
-    r"|^={3,} (FAILURES|ERRORS) ={3,}"                        # pytest sections
-    r"|^FAILED \((failures|errors)="                          # unittest
-    r"|^Tests?:\s+\d+ failed"                                 # jest / vitest
-    r"|^(--- )?FAIL\b"                                        # go test, jest file lines
-    r"|test result: FAILED"                                   # cargo test
-    r"|error(\[E\d+\])?: could not compile|^error\[E\d+\]"    # rustc
-    r"|\berror TS\d+:"                                        # tsc
-    r"|✖ \d+ problems?"                                  # eslint
-    r"|^Found \d+ errors?\b"                                  # ruff, mypy
+    r"\b\d+ (failed|errors?)\b.*\bin \d"
+    r"|^={3,} (FAILURES|ERRORS) ={3,}"
+    r"|^FAILED \((failures|errors)="
+    r"|^Tests?:\s+\d+ failed"
+    r"|^(--- )?FAIL\b"
+    r"|test result: FAILED"
+    r"|error(\[E\d+\])?: could not compile|^error\[E\d+\]"
+    r"|\berror TS\d+:"
+    r"|✖ \d+ problems?"
+    r"|^Found \d+ errors?\b"
     r"|npm ERR!|ERR_PNPM_|Command failed with exit code [1-9]"
-    r"|BUILD FAILED|^FAILURE: Build failed"                   # ant, gradle
+    r"|BUILD FAILED|^FAILURE: Build failed"
 )
 SHELL_FAILURE = re.compile(
     r"(?i)is not recognized as (the name of a cmdlet|an internal or external command)"
@@ -102,9 +99,7 @@ SHELL_FAILURE = re.compile(
 
 
 def output_failure(category: str, output: str) -> tuple[bool, str | None]:
-    """Failure inferred from command output, for agents whose hook payloads carry no exit status."""
     tail = output[-6000:]
-    # Only short outputs: a long listing or log that merely contains "not found" text is not a failed command.
     if len(output) < 800 and SHELL_FAILURE.search(output):
         return True, output
     if category in {"test", "lint", "build"} and OUTPUT_FAILURE.search(tail):
@@ -113,7 +108,6 @@ def output_failure(category: str, output: str) -> tuple[bool, str | None]:
 
 
 def detect_agent(agent: str, payload: dict) -> str:
-    # Cursor can execute Claude Code hook configs; attribute those calls to Cursor so events deduplicate.
     if "cursor_version" in payload or ("conversation_id" in payload and "session_id" not in payload):
         return "cursor"
     return agent
@@ -139,7 +133,6 @@ def _arguments(value: object) -> object:
 
 
 def normalize(agent: str, name: str, payload: dict) -> Event:
-    """Map a native payload to an Event. Wrong-typed fields are coerced, so one odd field never drops an event."""
     if agent in ("claude-code", "codex"):
         name = name or _text(payload, "hook_event_name")
         event = Event(CLAUDE_KINDS.get(name, "ignored"), _ident(payload.get("session_id")), _text(payload, "cwd") or None,
@@ -155,7 +148,6 @@ def normalize(agent: str, name: str, payload: dict) -> Event:
             event.output_chars = _size(response)
             failed, error = response_failure(response)
             if agent == "codex" and not failed and isinstance(response, str) and not EXIT_CODE.search(response[:400]):
-                # Codex shell results are plain output without an exit status (verified live on codex-cli 0.154).
                 failed, error = output_failure(categorize(event.tool, event.arguments), response)
             event.success, event.error = not failed, error
         return event
@@ -198,7 +190,6 @@ def normalize(agent: str, name: str, payload: dict) -> Event:
 
 
 def render(agent: str, name: str, context: str | None, notice: str | None = None) -> str:
-    """Produce stdout in the agent's native hook output format. Empty output means 'no opinion'."""
     if agent in ("claude-code", "codex"):
         output: dict = {}
         if context and name in {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure"}:
@@ -234,8 +225,11 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
     engine = engine_factory(project)
     try:
         context = None
+        notice = None
         if event.kind == "prompt":
             context = engine.prompt(agent, event.session, event.prompt, can_inject=agent != "cursor")
+            if agent == "claude-code":
+                notice = engine.take_notice(agent, event.session)
         elif event.kind == "tool_start":
             context = engine.tool_start(agent, event.session, event.tool_id, event.tool, event.arguments)
         elif event.kind == "tool_end":
@@ -243,11 +237,15 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
                                     event.success, event.error, event.output_chars)
             pending = engine.take_pending_context(agent, event.session) if agent == "cursor" else None
             context = "\n\n".join(part for part in (pending, alert) if part) or None
+            if agent == "claude-code":
+                notice = engine.take_notice(agent, event.session)
         elif event.kind == "compaction":
             engine.compaction(agent, event.session)
         elif event.kind == "stop":
             engine.stop(agent, event.session)
-        return render(agent, name, context)
+            if agent == "claude-code":
+                notice = engine.take_notice(agent, event.session)
+        return render(agent, name, context, notice)
     finally:
         engine.close()
 
@@ -262,8 +260,6 @@ def safe_handle(agent: str, name: str, raw: str) -> str:
             try:
                 return handle(agent, name, payload)
             except sqlite3.OperationalError as error:
-                # SQLite can report "locked" immediately (without waiting) under heavy parallel hooks. Engine
-                # operations are idempotent, so a brief retry is safe; slow lock waits are not retried.
                 if "locked" not in str(error) or time.monotonic() - started > 3:
                     raise
                 time.sleep(random.uniform(0.05, 0.3))
