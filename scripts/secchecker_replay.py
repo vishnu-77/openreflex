@@ -86,17 +86,19 @@ def run_replay(target: Path) -> dict:
                                                        "old_string": "case", "new_string": "regression"})
 
             alert = None
-            for index in range(2, 17):
+            # The first read can start on the exact timestamp of the preceding edit completion,
+            # so run sixteen reads to guarantee fifteen strictly post-progress reads.
+            for index in range(2, 18):
                 alert = tool(engine, clock, session, index, "Read",
                              {"file_path": "secchecker/llm_scanner.py", "offset": index * 20}) or alert
 
             pivot_recommended = bool(alert and "pivot to test-first" in alert)
 
-            tool(engine, clock, session, 17, "Bash", {"command": "pytest tests/test_llm_scanner.py -q"},
+            tool(engine, clock, session, 18, "Bash", {"command": "pytest tests/test_llm_scanner.py -q"},
                  success=False, error="AssertionError: poisoned docstring false positive")
-            tool(engine, clock, session, 18, "Edit", {"file_path": "secchecker/llm_scanner.py",
+            tool(engine, clock, session, 19, "Edit", {"file_path": "secchecker/llm_scanner.py",
                                                         "old_string": "docstring", "new_string": "mcp_tool_docstring"})
-            tool(engine, clock, session, 19, "Bash", {"command": "pytest tests/test_llm_scanner.py -q"}, success=True)
+            tool(engine, clock, session, 20, "Bash", {"command": "pytest tests/test_llm_scanner.py -q"}, success=True)
             outcome = engine.stop("replay", session)
 
             lessons = engine.store.list("Lesson", limit=100)
