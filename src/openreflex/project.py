@@ -3,17 +3,16 @@
 import hashlib
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
 
 def home() -> Path:
-    # An empty value (e.g. a blank field in an MCP client's settings) means "not set", not the working directory.
     return Path(os.environ.get("OPENREFLEX_HOME") or Path.home() / ".openreflex")
 
 
 def _repo_root(start: Path) -> tuple[Path, str]:
-    """Return the nearest project boundary and how it was identified."""
     for candidate in (start, *start.parents):
         if (candidate / ".openreflex.json").exists():
             return candidate, "openreflex-marker"
@@ -25,8 +24,8 @@ def _repo_root(start: Path) -> tuple[Path, str]:
 def project_resolution(cwd: str | os.PathLike | None = None) -> dict[str, str | None]:
     """Resolve project identity and retain provenance for diagnostics.
 
-    OPENREFLEX_PROJECT is an authoritative user override. Agent project-directory
-    variables are hints only and are used when a hook payload did not provide cwd.
+    OPENREFLEX_PROJECT is authoritative. Agent project-directory variables are only
+    fallbacks when the hook payload does not provide cwd.
     """
     override = os.environ.get("OPENREFLEX_PROJECT")
     agent_hint = os.environ.get("CLAUDE_PROJECT_DIR") or os.environ.get("CURSOR_PROJECT_DIR")
@@ -35,7 +34,6 @@ def project_resolution(cwd: str | os.PathLike | None = None) -> dict[str, str | 
             root = Path(override).resolve()
             return {"project": str(root), "source": "OPENREFLEX_PROJECT", "cwd": str(cwd) if cwd else None,
                     "agent_hint": agent_hint}
-
         start = Path(cwd or agent_hint or os.getcwd()).resolve()
         root, boundary = _repo_root(start)
         if cwd:
@@ -47,7 +45,6 @@ def project_resolution(cwd: str | os.PathLike | None = None) -> dict[str, str | 
         return {"project": str(root), "source": source, "cwd": str(cwd) if cwd else None,
                 "agent_hint": agent_hint}
     except (OSError, ValueError):
-        # Unusable path from a payload (embedded NUL, name too long, ...): fall back safely to process cwd.
         fallback = Path(os.getcwd()).resolve()
         root, boundary = _repo_root(fallback)
         return {"project": str(root), "source": f"fallback/{boundary}", "cwd": str(cwd) if cwd else None,
@@ -56,7 +53,13 @@ def project_resolution(cwd: str | os.PathLike | None = None) -> dict[str, str | 
 
 def project_root(cwd: str | os.PathLike | None = None) -> Path:
     """The nearest repository root, unless OPENREFLEX_PROJECT explicitly overrides it."""
-    return Path(project_resolution(cwd)["project"])
+    resolution = project_resolution(cwd)
+    # Only actual hook subprocesses create hook-health traces. Doctor/status must not make themselves look healthy.
+    if len(sys.argv) > 1 and sys.argv[1] == "hook":
+        agent = sys.argv[2] if len(sys.argv) > 2 else "unknown"
+        event = sys.argv[3] if len(sys.argv) > 3 else "unknown"
+        log_hook_resolution(agent, event, "", resolution)
+    return Path(resolution["project"])
 
 
 def _key(project: Path) -> str:
@@ -107,8 +110,6 @@ def revoke(project: Path) -> bool:
 
 
 def should_notify_unapproved(project: Path, interval: float = 86400) -> bool:
-    """Rate-limits the 'not enabled for this project' notice so it never nags."""
-    # hashlib, not hash(): str hashes are randomized per process and hooks are separate processes.
     marker = home() / "notices" / (hashlib.sha256(_key(project).encode()).hexdigest()[:24] + ".txt")
     try:
         if time.time() - marker.stat().st_mtime < interval:
