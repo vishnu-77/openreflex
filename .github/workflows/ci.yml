@@ -72,3 +72,25 @@ jobs:
         with:
           name: benchmark-results
           path: benchmark-results.json
+
+  secchecker-replay:
+    name: controlled replay (SecChecker)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout OpenReflex
+        uses: actions/checkout@v4
+      - name: Checkout SecChecker target
+        uses: actions/checkout@v4
+        with:
+          repository: vishnu-77/secchecker
+          path: target/secchecker
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e .
+      - name: Replay OpenReflex on SecChecker task families
+        run: python scripts/secchecker_replay.py --target target/secchecker --out secchecker-replay.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: secchecker-replay
+          path: secchecker-replay.json
