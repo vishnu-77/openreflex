@@ -6,8 +6,8 @@ export type GuideFaq = { q: string; a: string };
 export type Guide = {
   slug: "claude-code" | "codex" | "cursor" | "opencode";
   agent: string;
-  title: string; // <title>, under ~60 characters
-  description: string; // meta description, under ~155 characters
+  title: string;
+  description: string;
   h1: string;
   lead: string;
   benefits: { title: string; body: string }[];
@@ -21,6 +21,25 @@ export type Guide = {
 
 const INSTALL: GuideStep = { note: "Install the OpenReflex CLI (Python 3.11 or newer)", command: "pipx install openreflex" };
 
+export const EXECUTION_STORY = [
+  {
+    title: "Retrieve",
+    body: "Find similar past tasks, successful files and reusable lessons from local project memory.",
+  },
+  {
+    title: "Route",
+    body: "Score candidate approaches and recommend the best fit for success, cost, risk, uncertainty and the current budget.",
+  },
+  {
+    title: "Observe",
+    body: "Watch tool calls, verification, failures, context growth and progress, then intervene when the current path degrades.",
+  },
+  {
+    title: "Learn",
+    body: "Verify the outcome, record path, cost and regret, then turn successful resolutions into evidence for the next similar task.",
+  },
+];
+
 export const GUIDES: Guide[] = [
   {
     slug: "claude-code",
@@ -32,11 +51,7 @@ export const GUIDES: Guide[] = [
     lead:
       "OpenReflex plugs into Claude Code's lifecycle hooks and MCP. It records how each task went, hands the next similar task what worked, and interrupts " +
       "only when Claude is stuck retrying the same failing step. Everything stays in a local SQLite file.",
-    benefits: [
-      { title: "Context before the first tool call", body: "Similar past tasks, the files that mattered and known fixes arrive as additional context when you submit a prompt." },
-      { title: "Continue, pivot or stop", body: "Repeated failing commands, identical retries, stalled progress or work past the budget raise one alert that recommends whether to continue, pivot to another approach, or stop and check in." },
-      { title: "Lessons checked by your tests", body: "A task only counts as a success when a test, lint or build passes after the last edit, so guesses never become advice." },
-    ],
+    benefits: EXECUTION_STORY,
     install: [
       INSTALL,
       { note: "Add the OpenReflex plugin marketplace", command: "claude plugin marketplace add vishnu-77/openreflex" },
@@ -75,11 +90,7 @@ export const GUIDES: Guide[] = [
     lead:
       "OpenReflex connects to Codex through its hooks and MCP support. Lessons learned in any agent working on the project, including Claude Code, are " +
       "offered to Codex before a similar task starts.",
-    benefits: [
-      { title: "Shared project memory", body: "Codex reads from the same local Experience Graph as your other agents, so a fix found elsewhere is not rediscovered." },
-      { title: "Failure loops caught", body: "Codex returns shell results without an exit status, so OpenReflex reads test, lint and build failures from the output and alerts when a loop forms." },
-      { title: "Private by design", body: "Only tool categories, project-relative paths, pass or fail and masked error lines are kept." },
-    ],
+    benefits: EXECUTION_STORY,
     install: [
       INSTALL,
       { note: "Write hooks to .codex/hooks.json and the MCP server to .codex/config.toml", command: "openreflex install codex" },
@@ -114,11 +125,7 @@ export const GUIDES: Guide[] = [
     h1: "OpenReflex for Cursor",
     lead:
       "OpenReflex uses Cursor's agent hooks and MCP support to learn from each task in your project and bring what worked into the next one.",
-    benefits: [
-      { title: "Context on the first tool result", body: "Cursor cannot add context when a prompt is submitted, so OpenReflex delivers it with the agent's first tool result instead." },
-      { title: "Alerts where Cursor listens", body: "Loop and stagnation alerts are returned as additional context after tool calls." },
-      { title: "No double counting", body: "If Cursor also runs Claude Code hook configs, those events are attributed to Cursor and de-duplicated." },
-    ],
+    benefits: EXECUTION_STORY,
     install: [
       INSTALL,
       { note: "Write hooks to .cursor/hooks.json and the MCP server to .cursor/mcp.json", command: "openreflex install cursor" },
@@ -148,11 +155,7 @@ export const GUIDES: Guide[] = [
     h1: "OpenReflex for OpenCode",
     lead:
       "OpenReflex installs a small OpenCode plugin that forwards session events to the local OpenReflex engine, plus an MCP server for direct queries.",
-    benefits: [
-      { title: "Context in the system prompt", body: "Relevant experience is added to the system prompt for the turn it applies to." },
-      { title: "Alerts in tool output", body: "Loop alerts are appended to the output of the tool call that triggered them." },
-      { title: "Failures captured", body: "Tool errors are read from OpenCode's message events, since the after-tool hook only runs on success." },
-    ],
+    benefits: EXECUTION_STORY,
     install: [
       INSTALL,
       { note: "Add .opencode/plugins/openreflex.ts and the MCP server to opencode.json", command: "openreflex install opencode" },
