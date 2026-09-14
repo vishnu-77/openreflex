@@ -13,22 +13,28 @@ export const metadata = pageMetadata({ title: TITLE, description: DESCRIPTION, p
 
 const CLI = [
   ["openreflex install <agent>", "Write hooks and MCP config for claude-code, codex, cursor or opencode, and enable the project. Add --dry-run to preview."],
+  ["openreflex uninstall <agent>", "Remove OpenReflex-owned hooks and MCP entries for an agent while preserving local project memory."],
   ["openreflex approve", "Enable capture for the current project (needed after a plugin install)."],
   ["openreflex revoke", "Disable capture for the current project. Existing data is kept."],
   ["openreflex context \"<task>\"", "Preview the Execution Context a task would receive, without recording anything."],
   ["openreflex status [--json]", "Show what has been captured, reused and learned in this project."],
-  ["openreflex doctor", "Check the installation and show recent hook errors."],
+  ["openreflex why", "Explain the latest recommendation, Reflex Score, confidence, signals and next-best route."],
+  ["openreflex trace", "Show the latest execution decision timeline."],
+  ["openreflex doctor", "Check installation, project resolution and recent hook activity."],
   ["openreflex forget --yes", "Delete all captured data for the project."],
   ["openreflex benchmark", "Run the assumption-driven execution-policy simulator."],
   ["openreflex mcp", "Start the MCP server over stdio (used by agent configs)."],
 ];
 
 const MCP_TOOLS = [
-  ["get_execution_context", "Retrieve relevant past experience, candidate strategies (dominated ones marked), an execution budget, likely files and lessons for a task. Optional max_tool_calls, max_minutes and max_context_tokens limit the plan."],
+  ["get_execution_context", "Retrieve relevant past experience, candidate strategies, an execution budget, likely files and lessons for a task."],
   ["choose_path", "Declare the strategy the agent is following, so the outcome is compared against the right plan."],
   ["check_progress", "Estimate whether more work on the current path is worth it, and recommend continue, pivot or stop."],
   ["record_outcome", "Record a verified outcome, such as tests passing, with short evidence."],
   ["search_experience", "Search past tasks in the project by description."],
+  ["explain_decision", "Explain the latest OpenReflex recommendation, Reflex Score signals, confidence and next-best route."],
+  ["get_execution_trace", "Return the current execution's OpenReflex decision timeline without raw tool output."],
+  ["get_reflex_score", "Return the latest structured Reflex Score and its component signals."],
   ["explain_node", "Show an Experience Graph node and its relations."],
   ["project_insights", "Summarise capture, reuse, outcomes and learning for the project."],
   ["approve_project", "Enable the project, only when the user explicitly asks."],
