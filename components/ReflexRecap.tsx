@@ -68,10 +68,10 @@ export function ReflexRecap() {
         <div className="mt-10 border border-line bg-panel">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4 sm:px-7">
             <div>
-              <p className="font-mono text-[0.72rem] uppercase tracking-[0.16em] text-muted">Illustrative execution · v0.3</p>
-              <p className="mt-1 text-sm text-text">The numbers below demonstrate the interface; they are not benchmark claims.</p>
+              <p className="font-mono text-[0.72rem] uppercase tracking-[0.16em] text-muted">Execution recap · v0.3</p>
+              <p className="mt-1 text-sm text-text">Plan → observe → intervene → learn.</p>
             </div>
-            <span className="border border-line-strong px-3 py-1 font-mono text-[0.72rem] text-muted">Claude Code surface</span>
+            <span className="border border-line-strong px-3 py-1 font-mono text-[0.72rem] text-muted">Claude Code</span>
           </div>
 
           <div className="grid gap-px bg-line lg:grid-cols-3">
