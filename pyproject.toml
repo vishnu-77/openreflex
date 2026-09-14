@@ -41,7 +41,7 @@ openreflex = "openreflex.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-openreflex = ["integrations/*.ts"]
+openreflex = ["integrations/*.ts", "policies/*.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
