@@ -139,18 +139,34 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
 
 def render_recap(snapshot: DecisionSnapshot, previous: DecisionSnapshot | None = None) -> str:
     if snapshot.phase == "complete":
-        bits = []
-        if snapshot.actual_tool_calls is not None:
-            bits.append(f"{snapshot.actual_tool_calls} calls")
-        if snapshot.actual_tokens is not None:
-            bits.append(f"{snapshot.actual_tokens / 1000:.1f}k tokens")
-        if snapshot.elapsed_seconds is not None:
-            bits.append(f"{snapshot.elapsed_seconds / 60:.1f}m")
+        summary = []
         if snapshot.outcome:
-            bits.append(snapshot.outcome)
+            summary.append(snapshot.outcome)
+        if snapshot.strategy:
+            summary.append(snapshot.strategy)
+
+        cost = []
+        if snapshot.actual_tool_calls is not None:
+            cost.append(f"{snapshot.actual_tool_calls} calls")
+        if snapshot.actual_tokens is not None:
+            cost.append(f"{snapshot.actual_tokens / 1000:.1f}k tokens")
+        if snapshot.elapsed_seconds is not None:
+            cost.append(f"{snapshot.elapsed_seconds / 60:.1f}m")
+
+        comparison = None
         if snapshot.expected_regret is not None:
-            bits.append(f"regret {snapshot.expected_regret:.2f}")
-        return "↺ OpenReflex · COMPLETE\n" + " · ".join(bits)
+            comparison = f"regret {snapshot.expected_regret:.2f}"
+            if snapshot.next_best_strategy:
+                comparison += f" vs {snapshot.next_best_strategy}"
+
+        lines = ["↺ OpenReflex · COMPLETE"]
+        if summary:
+            lines.append(" · ".join(summary))
+        if cost:
+            lines.append(" · ".join(cost))
+        if comparison:
+            lines.append(comparison)
+        return "\n".join(lines)
 
     delta = ""
     if previous is not None and previous.reflex_score != snapshot.reflex_score:
