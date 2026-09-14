@@ -106,7 +106,7 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
         return DecisionSnapshot(
             timestamp=now, phase=phase, action=action, policy_version=policy.version,
             policy_sources=policy.sources, strategy=None, next_best_strategy=None, reflex_score=score,
-            success_probability=None, decision_confidence=0.0, evidence_count=0, evidence_quality=0.0,
+            success_probability=None, decision_confidence=0.0, evidence_count=len(experiences), evidence_quality=0.0,
             evidence_relevance=0.0, route_advantage=0.0, uncertainty=1.0, expected_regret=expected_regret,
             estimated_tool_calls=None, estimated_tokens=None, context_tokens=context_tokens,
             budget_used=_clamp(budget_used), budget_pressure=_clamp(budget_used), score_components=components,
@@ -125,7 +125,7 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
         timestamp=now, phase=phase, action=action, policy_version=policy.version, policy_sources=policy.sources,
         strategy=best.strategy, next_best_strategy=next_best.strategy if next_best else None,
         reflex_score=score, success_probability=best.success_probability,
-        decision_confidence=components["confidence"], evidence_count=best.evidence_count,
+        decision_confidence=components["confidence"], evidence_count=len(experiences),
         evidence_quality=components["evidence"], evidence_relevance=components["relevance"],
         route_advantage=components["route_advantage"], uncertainty=best.uncertainty,
         expected_regret=best.expected_regret if expected_regret is None else expected_regret,
