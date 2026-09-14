@@ -8,7 +8,9 @@ import { Navbar } from "@/components/Navbar";
 import { Privacy } from "@/components/Privacy";
 import { PriorWork } from "@/components/PriorWork";
 import { Quickstart } from "@/components/Quickstart";
+import { ReflexRecap } from "@/components/ReflexRecap";
 import { ResearchIdea } from "@/components/ResearchIdea";
+import { ResearchRoadmap } from "@/components/ResearchRoadmap";
 import { Shipped } from "@/components/Shipped";
 import { softwareJsonLd, websiteJsonLd } from "@/lib/seo";
 import { DESCRIPTION } from "@/lib/site";
@@ -37,6 +39,8 @@ export default function Home() {
         </div>
         <div className="view-research">
           <ResearchIdea />
+          <ReflexRecap />
+          <ResearchRoadmap />
           <GraphExplorer />
           <PriorWork />
         </div>
