@@ -5,19 +5,38 @@ import { viewScript } from "@/lib/view";
 import "./globals.css";
 
 const grotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-grotesk", display: "swap" });
-const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains", display: "swap" });
+// Only the UI font is preloaded; mono and serif faces load after first paint to keep LCP fast.
+const jetbrains = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains", display: "swap", preload: false });
 const newsreader = Newsreader({
   subsets: ["latin"],
   variable: "--font-newsreader",
   display: "swap",
+  preload: false,
 });
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: { default: TITLE, template: "%s | OpenReflex" },
   description: DESCRIPTION,
-  keywords: ["AI coding agents", "Claude Code", "Codex", "Cursor", "OpenCode", "MCP", "agent memory", "open source"],
+  applicationName: "OpenReflex",
+  keywords: [
+    "AI coding agents",
+    "Claude Code plugin",
+    "Claude Code hooks",
+    "Codex CLI hooks",
+    "Cursor hooks",
+    "OpenCode plugin",
+    "MCP server",
+    "agent memory",
+    "self-improving coding agent",
+    "agent loop detection",
+    "local-first",
+    "open source",
+  ],
   authors: [{ name: "vishnu-77", url: "https://github.com/vishnu-77" }],
+  creator: "vishnu-77",
+  category: "technology",
+  robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 } },
   openGraph: {
     type: "website",
     url: SITE_URL,

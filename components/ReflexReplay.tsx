@@ -1,7 +1,6 @@
 "use client";
 
 import { RotateCcw } from "lucide-react";
-import { useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Kind = "cmd" | "tool" | "fail" | "ok" | "alert" | "context" | "lesson" | "divider";
@@ -73,7 +72,15 @@ function Row({ line }: { line: Line }) {
 }
 
 export function ReflexReplay() {
-  const reduceMotion = useReducedMotion();
+  const [reduceMotion, setReduceMotion] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReduceMotion(query.matches);
+    const onChange = (event: MediaQueryListEvent) => setReduceMotion(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
   const [shown, setShown] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -90,6 +97,7 @@ export function ReflexReplay() {
   }, []);
 
   useEffect(() => {
+    if (reduceMotion === null) return;
     if (reduceMotion) {
       setShown(SCRIPT.length);
       return;

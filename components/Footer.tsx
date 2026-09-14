@@ -1,5 +1,6 @@
 import { Coffee } from "lucide-react";
 import { LINKS, TAGLINE } from "@/lib/site";
+import { GUIDES } from "@/lib/guides";
 import { Wordmark } from "./Logo";
 
 const PROJECT = [
@@ -13,18 +14,18 @@ const PAGES = [
   {
     className: "view-builder",
     links: [
-      { href: "#how", label: "How it works" },
-      { href: "#quickstart", label: "Quickstart" },
-      { href: "#privacy", label: "Privacy" },
-      { href: "#shipped", label: "What's shipped" },
+      { href: "/#how", label: "How it works" },
+      { href: "/#quickstart", label: "Quickstart" },
+      { href: "/#privacy", label: "Privacy" },
+      { href: "/#shipped", label: "What's shipped" },
     ],
   },
   {
     className: "view-research",
     links: [
-      { href: "#idea", label: "The idea" },
-      { href: "#graph", label: "Graph explorer" },
-      { href: "#prior-work", label: "Prior work" },
+      { href: "/#idea", label: "The idea" },
+      { href: "/#graph", label: "Graph explorer" },
+      { href: "/#prior-work", label: "Prior work" },
     ],
   },
 ];
@@ -32,7 +33,7 @@ const PAGES = [
 export function Footer() {
   return (
     <footer className="bg-bg-soft">
-      <div className="mx-auto grid max-w-[1320px] gap-12 px-5 py-16 sm:px-10 md:grid-cols-[1.6fr_1fr_1fr_1.2fr]">
+      <div className="mx-auto grid max-w-[1320px] gap-12 px-5 py-16 sm:px-10 sm:grid-cols-2 md:grid-cols-[1.5fr_1fr_1fr_1fr_1.3fr]">
         <div>
           <Wordmark className="h-[30px] w-auto" />
           <p className="mt-4 max-w-[22rem] leading-relaxed text-muted">{TAGLINE}. Open source and local-first.</p>
@@ -51,8 +52,26 @@ export function Footer() {
           </ul>
         </nav>
 
-        <nav aria-label="On this page">
-          <h2 className="text-sm font-semibold text-ink">On this page</h2>
+        <nav aria-label="Guides">
+          <h2 className="text-sm font-semibold text-ink">Guides</h2>
+          <ul className="mt-4 space-y-2.5 text-muted">
+            {GUIDES.map((guide) => (
+              <li key={guide.slug}>
+                <a href={`/${guide.slug}`} className="hover:text-ink">
+                  {guide.agent}
+                </a>
+              </li>
+            ))}
+            <li>
+              <a href="/docs" className="hover:text-ink">
+                Docs
+              </a>
+            </li>
+          </ul>
+        </nav>
+
+        <nav aria-label="Homepage sections">
+          <h2 className="text-sm font-semibold text-ink">Homepage</h2>
           {PAGES.map((page) => (
             <ul key={page.className} className={`${page.className} mt-4 space-y-2.5 text-muted`}>
               {page.links.map((link) => (

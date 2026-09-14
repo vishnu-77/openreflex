@@ -9,16 +9,17 @@ import { ThemeToggle } from "./ThemeToggle";
 import { ViewToggle } from "./ViewToggle";
 
 const BUILDER_SECTIONS = [
-  { href: "#how", label: "How it works" },
-  { href: "#quickstart", label: "Quickstart" },
-  { href: "#privacy", label: "Privacy" },
-  { href: "#shipped", label: "What's shipped" },
+  { href: "/#how", label: "How it works" },
+  { href: "/#quickstart", label: "Quickstart" },
+  { href: "/#privacy", label: "Privacy" },
+  { href: "/docs", label: "Docs" },
 ];
 
 const RESEARCH_SECTIONS = [
-  { href: "#idea", label: "The idea" },
-  { href: "#graph", label: "Graph explorer" },
-  { href: "#prior-work", label: "Prior work" },
+  { href: "/#idea", label: "The idea" },
+  { href: "/#graph", label: "Graph explorer" },
+  { href: "/#prior-work", label: "Prior work" },
+  { href: "/docs", label: "Docs" },
 ];
 
 const VIEWS = [
@@ -26,13 +27,13 @@ const VIEWS = [
   { className: "view-research", sections: RESEARCH_SECTIONS },
 ];
 
-export function Navbar() {
+export function Navbar({ showViewToggle = true }: { showViewToggle?: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-md">
       <nav className="mx-auto flex h-16 max-w-[1320px] items-center justify-between gap-6 px-5 sm:px-10" aria-label="Main">
-        <a href="#top" className="rounded" aria-label="OpenReflex home">
+        <a href="/" className="rounded" aria-label="OpenReflex home">
           <Wordmark className="h-[26px] w-auto" />
         </a>
 
@@ -49,7 +50,7 @@ export function Navbar() {
         ))}
 
         <div className="flex items-center gap-2">
-          <ViewToggle className="hidden md:flex" />
+          {showViewToggle && <ViewToggle className="hidden md:flex" />}
           <ThemeToggle />
           <a
             href={LINKS.coffee}
@@ -84,7 +85,7 @@ export function Navbar() {
 
       {open && (
         <div id="mobile-menu" className="border-t border-line bg-bg px-5 pb-5 pt-4 xl:hidden">
-          <ViewToggle className="mb-2 w-full md:hidden [&>button]:flex-1 [&>button]:justify-center" />
+          {showViewToggle && <ViewToggle className="mb-2 w-full md:hidden [&>button]:flex-1 [&>button]:justify-center" />}
           {VIEWS.map((view) => (
             <ul key={view.className} className={`${view.className} flex flex-col text-[1.02rem]`}>
               {view.sections.map((section) => (

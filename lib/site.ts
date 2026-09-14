@@ -23,8 +23,7 @@ export const RESEARCH_SOURCES = {
 
 export const TAGLINE = "Muscle memory for AI coding agents";
 
-export const TITLE = "OpenReflex: muscle memory for AI coding agents";
+export const TITLE = "OpenReflex: AI Coding Agents That Learn From Every Task";
 
 export const DESCRIPTION =
-  "OpenReflex learns from every task your coding agent finishes and hands the next one what worked: the approach, " +
-  "the files that mattered, and the fix for the last error. It flags failure loops live and runs entirely on your machine.";
+  "Open-source plugin for Claude Code, Codex, Cursor and OpenCode. Reuses what worked, catches failure loops live, and keeps all data local.";

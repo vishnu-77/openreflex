@@ -5,13 +5,14 @@ import { CopyButton } from "./CopyButton";
 import { SectionHeader } from "./SectionHeader";
 
 type Step = { note: string; command?: string; code?: string };
-type Agent = { id: string; name: string; summary: string; steps: Step[] };
+type Agent = { id: string; name: string; summary: string; guide: string; steps: Step[] };
 
 const INSTALL: Step = { note: "Install the OpenReflex CLI", command: "pipx install openreflex" };
 
 const AGENTS: Agent[] = [
   {
     id: "claude-plugin",
+    guide: "/claude-code",
     name: "Claude Code",
     summary: "Plugin: hooks, MCP server and skill",
     steps: [
@@ -23,12 +24,14 @@ const AGENTS: Agent[] = [
   },
   {
     id: "claude-project",
+    guide: "/claude-code",
     name: "Claude Code (project)",
     summary: "Project settings, no plugin",
     steps: [INSTALL, { note: "Write hooks and MCP config into this project", command: "openreflex install claude-code" }],
   },
   {
     id: "codex",
+    guide: "/codex",
     name: "Codex",
     summary: "Hooks and MCP in .codex/",
     steps: [
@@ -39,18 +42,21 @@ const AGENTS: Agent[] = [
   },
   {
     id: "cursor",
+    guide: "/cursor",
     name: "Cursor",
     summary: "Hooks and MCP in .cursor/",
     steps: [INSTALL, { note: "Write hooks and MCP config into this project", command: "openreflex install cursor" }],
   },
   {
     id: "opencode",
+    guide: "/opencode",
     name: "OpenCode",
     summary: "Plugin and MCP in opencode.json",
     steps: [INSTALL, { note: "Add the OpenReflex plugin and MCP server", command: "openreflex install opencode" }],
   },
   {
     id: "mcp",
+    guide: "/docs#mcp",
     name: "Any MCP client",
     summary: "Tools only, no hooks",
     steps: [
@@ -128,6 +134,10 @@ export function Quickstart() {
               ))}
             </ol>
             <p className="mt-8 border-t border-white/10 pt-5 font-mono text-[0.78rem] leading-relaxed text-term-dim">
+              <a href={agent.guide} className="text-term-text underline underline-offset-4 hover:text-white">
+                Full setup guide for {agent.name.replace(" (project)", "")}
+              </a>
+              <br />
               Check the setup any time with openreflex doctor. Claude Code is verified in live sessions; the other
               integrations follow each agent&apos;s documented hook protocol.
             </p>
