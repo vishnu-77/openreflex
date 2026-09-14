@@ -67,7 +67,7 @@ def score_components(best: CandidatePath, rest: Iterable[CandidatePath], experie
     relevance_values = [score for _, score in experiences]
     threshold = policy.number("retrieval.threshold")
     mean_relevance = sum(relevance_values) / len(relevance_values) if relevance_values else threshold
-    relevance = _clamp((mean_relevance - threshold) / max(1.0 - threshold, 1e-12))
+    relevance = _clamp((mean_relevance - threshold) / max(1.0 - threshold, policy.number("routing.epsilon")))
     return {
         "evidence": evidence_strength,
         "confidence": confidence,
@@ -98,7 +98,8 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
                   paths: list[CandidatePath], experiences: list[tuple[Experience, float]], policy: Policy,
                   context_tokens: int = 0, budget_used: float = 0.0, event: str = "",
                   actual_tool_calls: int | None = None, actual_tokens: int | None = None,
-                  elapsed_seconds: float | None = None, outcome: str | None = None) -> DecisionSnapshot:
+                  elapsed_seconds: float | None = None, outcome: str | None = None,
+                  expected_regret: float | None = None) -> DecisionSnapshot:
     if best is None:
         components = {name: 0.0 for name in policy.table("score.weights")}
         score = reflex_score(components, policy)
@@ -106,7 +107,7 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
             timestamp=now, phase=phase, action=action, policy_version=policy.version,
             policy_sources=policy.sources, strategy=None, next_best_strategy=None, reflex_score=score,
             success_probability=None, decision_confidence=0.0, evidence_count=0, evidence_quality=0.0,
-            evidence_relevance=0.0, route_advantage=0.0, uncertainty=1.0, expected_regret=None,
+            evidence_relevance=0.0, route_advantage=0.0, uncertainty=1.0, expected_regret=expected_regret,
             estimated_tool_calls=None, estimated_tokens=None, context_tokens=context_tokens,
             budget_used=_clamp(budget_used), budget_pressure=_clamp(budget_used), score_components=components,
             reason_codes=[], visibility=_visibility(phase, event, policy), event=event,
@@ -127,8 +128,8 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
         decision_confidence=components["confidence"], evidence_count=best.evidence_count,
         evidence_quality=components["evidence"], evidence_relevance=components["relevance"],
         route_advantage=components["route_advantage"], uncertainty=best.uncertainty,
-        expected_regret=best.expected_regret, estimated_tool_calls=best.tool_calls,
-        estimated_tokens=best.context_tokens, context_tokens=context_tokens,
+        expected_regret=best.expected_regret if expected_regret is None else expected_regret,
+        estimated_tool_calls=best.tool_calls, estimated_tokens=best.context_tokens, context_tokens=context_tokens,
         budget_used=max(0.0, budget_used), budget_pressure=_clamp(budget_used),
         score_components=components, reason_codes=reason_codes, visibility=_visibility(phase, event, policy),
         event=event, actual_tool_calls=actual_tool_calls, actual_tokens=actual_tokens,
