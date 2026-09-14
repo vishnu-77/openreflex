@@ -56,6 +56,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
 
   verify-testpypi:
     needs: [build, testpypi]
@@ -99,3 +100,6 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # A GitHub Release for a version that is already on PyPI is a no-op instead of a failed run.
+          skip-existing: true
