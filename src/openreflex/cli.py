@@ -12,7 +12,6 @@ AGENT_CHOICES = ["claude-code", "codex", "cursor", "opencode"]
 
 
 def _project(value: str | None) -> Path:
-    # An unexpanded ${VAR} placeholder from an agent config means "not provided".
     return project_root(None if not value or "${" in value else value)
 
 
@@ -32,7 +31,7 @@ def cmd_hook(args) -> int:
     if output:
         sys.stdout.write(output)
         sys.stdout.flush()
-    return 0  # never block the agent
+    return 0
 
 
 def cmd_mcp(args) -> int:
@@ -142,6 +141,28 @@ def cmd_context(args) -> int:
     engine = Engine(_project(args.project))
     try:
         print(engine.preview(args.task))
+    finally:
+        engine.close()
+    return 0
+
+
+def cmd_why(args) -> int:
+    from .engine import Engine
+
+    engine = Engine(_project(args.project))
+    try:
+        print(engine.why())
+    finally:
+        engine.close()
+    return 0
+
+
+def cmd_trace(args) -> int:
+    from .engine import Engine
+
+    engine = Engine(_project(args.project))
+    try:
+        print(engine.trace())
     finally:
         engine.close()
     return 0
@@ -264,7 +285,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name, func, text in (("approve", cmd_approve, "Enable capture for a project"),
                              ("revoke", cmd_revoke, "Disable capture for a project"),
-                             ("doctor", cmd_doctor, "Check installation, project resolution, and recent hook activity")):
+                             ("doctor", cmd_doctor, "Check installation, project resolution, and recent hook activity"),
+                             ("why", cmd_why, "Explain the latest OpenReflex execution decision"),
+                             ("trace", cmd_trace, "Show the latest execution decision timeline")):
         command = sub.add_parser(name, help=text)
         command.add_argument("--project")
         command.set_defaults(func=func)
