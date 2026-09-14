@@ -56,6 +56,19 @@ def _merge_hooks(existing: dict, ours: dict) -> dict:
     return merged
 
 
+def _remove_hooks(existing: dict) -> dict:
+    """Remove only OpenReflex hook entries, preserving all user-owned config."""
+    merged = dict(existing)
+    hooks = {event: [entry for entry in entries if not _ours(entry)]
+             for event, entries in (existing.get("hooks") or {}).items()}
+    hooks = {event: entries for event, entries in hooks.items() if entries}
+    if hooks:
+        merged["hooks"] = hooks
+    else:
+        merged.pop("hooks", None)
+    return merged
+
+
 def _write(path: Path, data: dict | str, dry_run: bool, changes: list[str]) -> None:
     text = data if isinstance(data, str) else json.dumps(data, indent=2) + "\n"
     if path.exists() and path.read_text(encoding="utf-8") == text:
@@ -64,6 +77,22 @@ def _write(path: Path, data: dict | str, dry_run: bool, changes: list[str]) -> N
     if not dry_run:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
+
+
+def _remove_json_key(path: Path, container: str, key: str, dry_run: bool, changes: list[str]) -> None:
+    if not path.exists():
+        return
+    data = _load(path)
+    section = data.get(container)
+    if not isinstance(section, dict) or key not in section:
+        return
+    section = dict(section)
+    section.pop(key, None)
+    if section:
+        data[container] = section
+    else:
+        data.pop(container, None)
+    _write(path, data, dry_run, changes)
 
 
 def install(agent: str, project: Path, dry_run: bool = False) -> list[str]:
@@ -81,7 +110,6 @@ def install(agent: str, project: Path, dry_run: bool = False) -> list[str]:
         config = project / ".codex" / "config.toml"
         text = config.read_text(encoding="utf-8") if config.exists() else ""
         if not re.search(r"^\[mcp_servers\.openreflex\]", text, re.MULTILINE):
-            # Codex starts MCP servers with a filtered environment, so a data-directory override must be forwarded.
             block = '[mcp_servers.openreflex]\ncommand = "openreflex"\nargs = ["mcp"]\nenv_vars = ["OPENREFLEX_HOME"]\n'
             _write(config, (text.rstrip() + "\n\n" if text.strip() else "") + block, dry_run, changes)
     elif agent == "cursor":
@@ -112,4 +140,40 @@ def install(agent: str, project: Path, dry_run: bool = False) -> list[str]:
         raise ValueError(f"Unsupported agent: {agent}")
     if not dry_run:
         approve(project, source=f"install:{agent}")
+    return changes
+
+
+def uninstall(agent: str, project: Path, dry_run: bool = False) -> list[str]:
+    """Remove OpenReflex-owned integration entries without deleting project memory or user config."""
+    changes: list[str] = []
+    if agent == "claude-code":
+        settings = project / ".claude" / "settings.json"
+        if settings.exists():
+            _write(settings, _remove_hooks(_load(settings)), dry_run, changes)
+        _remove_json_key(project / ".mcp.json", "mcpServers", "openreflex", dry_run, changes)
+    elif agent == "codex":
+        hooks = project / ".codex" / "hooks.json"
+        if hooks.exists():
+            _write(hooks, _remove_hooks(_load(hooks)), dry_run, changes)
+        config = project / ".codex" / "config.toml"
+        if config.exists():
+            text = config.read_text(encoding="utf-8")
+            cleaned = re.sub(r"(?ms)^\[mcp_servers\.openreflex\]\n.*?(?=^\[|\Z)", "", text).strip()
+            cleaned = cleaned + ("\n" if cleaned else "")
+            if cleaned != text:
+                _write(config, cleaned, dry_run, changes)
+    elif agent == "cursor":
+        hooks = project / ".cursor" / "hooks.json"
+        if hooks.exists():
+            _write(hooks, _remove_hooks(_load(hooks)), dry_run, changes)
+        _remove_json_key(project / ".cursor" / "mcp.json", "mcpServers", "openreflex", dry_run, changes)
+    elif agent == "opencode":
+        plugin = project / ".opencode" / "plugins" / "openreflex.ts"
+        if plugin.exists():
+            changes.append(str(plugin))
+            if not dry_run:
+                plugin.unlink()
+        _remove_json_key(project / "opencode.json", "mcp", "openreflex", dry_run, changes)
+    else:
+        raise ValueError(f"Unsupported agent: {agent}")
     return changes

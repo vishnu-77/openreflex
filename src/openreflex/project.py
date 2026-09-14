@@ -3,29 +3,63 @@
 import hashlib
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
 
 def home() -> Path:
-    # An empty value (e.g. a blank field in an MCP client's settings) means "not set", not the working directory.
     return Path(os.environ.get("OPENREFLEX_HOME") or Path.home() / ".openreflex")
 
 
-def project_root(cwd: str | os.PathLike | None = None) -> Path:
-    """The enclosing repository root when there is one, so subdirectory sessions share one memory."""
-    explicit = os.environ.get("OPENREFLEX_PROJECT") or os.environ.get("CLAUDE_PROJECT_DIR")
+def _repo_root(start: Path) -> tuple[Path, str]:
+    for candidate in (start, *start.parents):
+        if (candidate / ".openreflex.json").exists():
+            return candidate, "openreflex-marker"
+        if (candidate / ".git").exists():
+            return candidate, "git-root"
+    return start, "directory"
+
+
+def project_resolution(cwd: str | os.PathLike | None = None) -> dict[str, str | None]:
+    """Resolve project identity and retain provenance for diagnostics.
+
+    OPENREFLEX_PROJECT is authoritative. Agent project-directory variables are only
+    fallbacks when the hook payload does not provide cwd.
+    """
+    override = os.environ.get("OPENREFLEX_PROJECT")
+    agent_hint = os.environ.get("CLAUDE_PROJECT_DIR") or os.environ.get("CURSOR_PROJECT_DIR")
     try:
-        start = Path(explicit or cwd or os.getcwd()).resolve()
-        if explicit:
-            return start
-        for candidate in (start, *start.parents):
-            if (candidate / ".git").exists() or (candidate / ".openreflex.json").exists():
-                return candidate
-        return start
+        if override:
+            root = Path(override).resolve()
+            return {"project": str(root), "source": "OPENREFLEX_PROJECT", "cwd": str(cwd) if cwd else None,
+                    "agent_hint": agent_hint}
+        start = Path(cwd or agent_hint or os.getcwd()).resolve()
+        root, boundary = _repo_root(start)
+        if cwd:
+            source = f"hook-cwd/{boundary}"
+        elif agent_hint:
+            source = f"agent-hint/{boundary}"
+        else:
+            source = f"process-cwd/{boundary}"
+        return {"project": str(root), "source": source, "cwd": str(cwd) if cwd else None,
+                "agent_hint": agent_hint}
     except (OSError, ValueError):
-        # Unusable path from a payload (embedded NUL, name too long, ...): hooks run in the project directory.
-        return Path(os.getcwd()).resolve()
+        fallback = Path(os.getcwd()).resolve()
+        root, boundary = _repo_root(fallback)
+        return {"project": str(root), "source": f"fallback/{boundary}", "cwd": str(cwd) if cwd else None,
+                "agent_hint": agent_hint}
+
+
+def project_root(cwd: str | os.PathLike | None = None) -> Path:
+    """The nearest repository root, unless OPENREFLEX_PROJECT explicitly overrides it."""
+    resolution = project_resolution(cwd)
+    # Only actual hook subprocesses create hook-health traces. Doctor/status must not make themselves look healthy.
+    if len(sys.argv) > 1 and sys.argv[1] == "hook":
+        agent = sys.argv[2] if len(sys.argv) > 2 else "unknown"
+        event = sys.argv[3] if len(sys.argv) > 3 else "unknown"
+        log_hook_resolution(agent, event, "", resolution)
+    return Path(resolution["project"])
 
 
 def _key(project: Path) -> str:
@@ -76,8 +110,6 @@ def revoke(project: Path) -> bool:
 
 
 def should_notify_unapproved(project: Path, interval: float = 86400) -> bool:
-    """Rate-limits the 'not enabled for this project' notice so it never nags."""
-    # hashlib, not hash(): str hashes are randomized per process and hooks are separate processes.
     marker = home() / "notices" / (hashlib.sha256(_key(project).encode()).hexdigest()[:24] + ".txt")
     try:
         if time.time() - marker.stat().st_mtime < interval:
@@ -92,13 +124,31 @@ def should_notify_unapproved(project: Path, interval: float = 86400) -> bool:
     return True
 
 
-def log_error(message: str) -> None:
-    path = home() / "logs" / "errors.log"
+def _append_log(name: str, message: str, max_bytes: int = 1_000_000) -> None:
+    path = home() / "logs" / name
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists() and path.stat().st_size > 1_000_000:
-            path.replace(path.with_suffix(".log.1"))
+        if path.exists() and path.stat().st_size > max_bytes:
+            path.replace(path.with_suffix(path.suffix + ".1"))
         with path.open("a", encoding="utf-8") as handle:
             handle.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {message}\n")
     except OSError:
         pass
+
+
+def log_error(message: str) -> None:
+    _append_log("errors.log", message)
+
+
+def log_hook_resolution(agent: str, event: str, session: str, resolution: dict[str, str | None]) -> None:
+    """Write a metadata-only hook trace; never persist prompts, tool arguments, or tool output."""
+    fields = {
+        "agent": agent,
+        "event": event,
+        "session": session[:64],
+        "project": resolution.get("project"),
+        "source": resolution.get("source"),
+        "cwd": resolution.get("cwd"),
+        "agent_hint": resolution.get("agent_hint"),
+    }
+    _append_log("hooks.log", json.dumps(fields, separators=(",", ":"), ensure_ascii=False))

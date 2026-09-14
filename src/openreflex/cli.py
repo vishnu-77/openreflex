@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 from . import __version__
-from .project import approval, approve, home, project_root, revoke
+from .project import approval, approve, home, project_resolution, project_root, revoke
 
 AGENT_CHOICES = ["claude-code", "codex", "cursor", "opencode"]
 
@@ -60,17 +60,46 @@ def cmd_install(args) -> int:
 
     project = _project(args.project)
     changes = install(args.agent, project, dry_run=args.dry_run)
-    verb = "Would write" if args.dry_run else "Wrote"
-    for change in changes:
-        print(f"{verb} {change}")
-    if not changes:
-        print("Already installed; nothing to change.")
+    verb = "would update" if args.dry_run else "updated"
+    print("OPENREFLEX / CONNECT")
+    print(f"  agent       {args.agent}")
+    print(f"  project     {project}")
+    if changes:
+        print(f"  config      {verb} {len(changes)} file{'s' if len(changes) != 1 else ''}")
+        for change in changes:
+            print(f"              {change}")
+    else:
+        print("  config      already connected")
     if not args.dry_run:
-        print(f"Enabled for {project}.")
+        print("  memory      enabled")
+        print("  storage     local")
+        print("\n  [ok] reflex active")
         if args.agent == "codex":
-            print("Codex asks you to trust new hooks once: open /hooks in Codex and approve the OpenReflex entries.")
+            print("\nCodex requires one trust step: open /hooks and approve the OpenReflex entries.")
     if shutil.which("openreflex") is None:
-        print("Warning: `openreflex` is not on PATH; hooks will not run. Install with `uv tool install .` or `pipx install .`.")
+        print("\nWarning: `openreflex` is not on PATH; hooks will not run. Install with `uv tool install .` or `pipx install .`.")
+    return 0
+
+
+def cmd_uninstall(args) -> int:
+    from .install import uninstall
+
+    project = _project(args.project)
+    changes = uninstall(args.agent, project, dry_run=args.dry_run)
+    verb = "would remove" if args.dry_run else "removed"
+    print("OPENREFLEX / DISCONNECT")
+    print(f"  agent       {args.agent}")
+    print(f"  project     {project}")
+    if changes:
+        print(f"  config      {verb} OpenReflex entries from {len(changes)} file{'s' if len(changes) != 1 else ''}")
+        for change in changes:
+            print(f"              {change}")
+    else:
+        print("  config      no project integration found")
+    print("  memory      preserved")
+    if not args.dry_run:
+        print("\n  [ok] disconnected")
+        print("\nRun `openreflex forget --yes` separately if you also want to delete local experience data.")
     return 0
 
 
@@ -118,22 +147,69 @@ def cmd_context(args) -> int:
     return 0
 
 
+def _json(path: Path) -> dict:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _claude_plugin_enabled() -> bool:
+    settings = _json(Path.home() / ".claude" / "settings.json")
+    enabled = settings.get("enabledPlugins")
+    if isinstance(enabled, dict):
+        return any("openreflex" in str(name).lower() and value is not False for name, value in enabled.items())
+    if isinstance(enabled, list):
+        return any("openreflex" in str(name).lower() for name in enabled)
+    return False
+
+
+def _recent_hook_trace(project: Path) -> str | None:
+    path = home() / "logs" / "hooks.log"
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-100:]
+    except OSError:
+        return None
+    target = str(project)
+    for line in reversed(lines):
+        if target in line:
+            return line
+    return lines[-1] if lines else None
+
+
 def cmd_doctor(args) -> int:
     from .store import database_path
 
     project = _project(args.project)
+    resolution = project_resolution(args.project)
+    claude_project = "openreflex hook" in _read(project / ".claude" / "settings.json")
+    claude_plugin = _claude_plugin_enabled()
+    trace = _recent_hook_trace(project)
     checks = [
         ("openreflex on PATH", shutil.which("openreflex") is not None),
         ("project enabled", approval(project) is not None),
         ("database exists", database_path(project).exists()),
-        ("Claude Code hooks (project)", "openreflex hook" in _read(project / ".claude" / "settings.json")),
+        ("Claude Code integration", claude_project or claude_plugin),
         ("Codex hooks (project)", "openreflex hook" in _read(project / ".codex" / "hooks.json")),
         ("Cursor hooks (project)", "openreflex hook" in _read(project / ".cursor" / "hooks.json")),
         ("OpenCode plugin (project)", (project / ".opencode" / "plugins" / "openreflex.ts").exists()),
+        ("hook activity observed", trace is not None),
     ]
-    print(f"Project: {project}\nData:    {database_path(project)}")
+    print("OPENREFLEX / DOCTOR")
+    print(f"  project     {project}")
+    print(f"  resolution  {resolution['source']}")
+    if resolution.get("cwd"):
+        print(f"  hook cwd    {resolution['cwd']}")
+    if resolution.get("agent_hint"):
+        print(f"  agent hint  {resolution['agent_hint']}")
+    print(f"  data        {database_path(project)}")
+    if claude_plugin and not claude_project:
+        print("  Claude      plugin/global install detected")
     for name, ok in checks:
         print(f"  [{'ok' if ok else '--'}] {name}")
+    if trace:
+        print(f"Last hook trace:\n  {trace}")
     log = home() / "logs" / "errors.log"
     if log.exists():
         tail = log.read_text(encoding="utf-8", errors="replace").splitlines()[-5:]
@@ -178,7 +254,6 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     hook = sub.add_parser("hook", help="Handle a lifecycle hook (JSON on stdin); used by agent configs")
-    # No `choices`: argparse exits 2 on bad input, and exit code 2 means "block" to Claude Code and Codex.
     hook.add_argument("agent", help=", ".join(AGENT_CHOICES))
     hook.add_argument("event", nargs="?")
     hook.set_defaults(func=cmd_hook)
@@ -189,16 +264,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name, func, text in (("approve", cmd_approve, "Enable capture for a project"),
                              ("revoke", cmd_revoke, "Disable capture for a project"),
-                             ("doctor", cmd_doctor, "Check installation and recent hook errors")):
+                             ("doctor", cmd_doctor, "Check installation, project resolution, and recent hook activity")):
         command = sub.add_parser(name, help=text)
         command.add_argument("--project")
         command.set_defaults(func=func)
 
-    install = sub.add_parser("install", help="Write project hook + MCP config for an agent and enable the project")
-    install.add_argument("agent", choices=AGENT_CHOICES)
-    install.add_argument("--project")
-    install.add_argument("--dry-run", action="store_true")
-    install.set_defaults(func=cmd_install)
+    for name, func, text in (("install", cmd_install, "Connect OpenReflex hooks + MCP for an agent"),
+                             ("uninstall", cmd_uninstall, "Disconnect OpenReflex hooks + MCP while preserving memory")):
+        command = sub.add_parser(name, help=text)
+        command.add_argument("agent", choices=AGENT_CHOICES)
+        command.add_argument("--project")
+        command.add_argument("--dry-run", action="store_true")
+        command.set_defaults(func=func)
 
     status = sub.add_parser("status", help="Show capture, reuse, regret, and routing metrics")
     status.add_argument("--project")
@@ -227,7 +304,6 @@ def main(argv: list[str] | None = None) -> int:
     _utf8_stdio()
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["hook"]:
-        # Hook invocations must never fail loudly or return a blocking exit code, whatever the arguments.
         try:
             return cmd_hook(argparse.Namespace(agent=argv[1] if len(argv) > 1 else "", event=argv[2] if len(argv) > 2 else ""))
         except BaseException:  # noqa: BLE001
