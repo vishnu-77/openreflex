@@ -1,7 +1,7 @@
 import { CopyButton } from "@/components/CopyButton";
 import { JsonLd } from "@/components/JsonLd";
 import { PageShell } from "@/components/PageShell";
-import { GUIDES } from "@/lib/guides";
+import { EXECUTION_STORY, GUIDES } from "@/lib/guides";
 import { articleJsonLd, breadcrumbJsonLd, pageMetadata } from "@/lib/seo";
 import { LINKS } from "@/lib/site";
 
@@ -19,7 +19,7 @@ const CLI = [
   ["openreflex status [--json]", "Show what has been captured, reused and learned in this project."],
   ["openreflex doctor", "Check the installation and show recent hook errors."],
   ["openreflex forget --yes", "Delete all captured data for the project."],
-  ["openreflex benchmark", "Run the simulated benchmark suite."],
+  ["openreflex benchmark", "Run the assumption-driven execution-policy simulator."],
   ["openreflex mcp", "Start the MCP server over stdio (used by agent configs)."],
 ];
 
@@ -118,11 +118,25 @@ export default function DocsPage() {
 
         <section className="mt-14">
           <h2 id="agents" className={h2}>Set up your agent</h2>
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <p className="mt-3 max-w-[48rem] leading-relaxed text-text">
+            OpenReflex follows the same execution loop in every supported agent. Choose an integration below only for its setup and hook details.
+          </p>
+
+          <div className="mt-6 grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-2 xl:grid-cols-4">
+            {EXECUTION_STORY.map((step, index) => (
+              <div key={step.title} className="bg-panel p-5">
+                <span className="font-mono text-[0.7rem] tabular-nums text-accent">0{index + 1}</span>
+                <h3 className="mt-3 font-semibold text-ink">{step.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted">{step.body}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 grid gap-4 sm:grid-cols-2">
             {GUIDES.map((guide) => (
               <a key={guide.slug} href={`/${guide.slug}`} className="block rounded-lg border border-line bg-panel p-5 hover:border-line-strong">
                 <span className="block font-semibold text-ink">OpenReflex for {guide.agent}</span>
-                <span className="mt-1 block leading-relaxed text-muted">{guide.description}</span>
+                <span className="mt-1 block leading-relaxed text-muted">Installation, hook events and troubleshooting for {guide.agent}.</span>
               </a>
             ))}
           </div>
