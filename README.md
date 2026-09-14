@@ -96,6 +96,17 @@ OpenReflex installs per project with `openreflex install <agent>`, or as a plugi
 With a plugin install, enable each project with `openreflex approve`. Claude Code and Codex are verified in live
 sessions; the Cursor and OpenCode integrations follow each agent's documented hook protocol.
 
+## See it work
+
+A real Claude Code session in a repository where OpenReflex has seen one similar task before. The
+`UserPromptSubmit` line shows the past experience found and the context added; the `Stop` line shows the verified
+outcome, the path taken and the cost.
+
+![Claude Code session with OpenReflex](https://raw.githubusercontent.com/vishnu-77/openreflex/main/docs/screenshots/claude-code-session-2.png)
+
+The full walkthrough, with both sessions, the exact context the model received and the CLI output, is in
+[docs/walkthrough.md](docs/walkthrough.md).
+
 ## How it works
 
 Hooks send lifecycle events (prompt, tool start, tool end, compaction, stop) to the OpenReflex engine, which
@@ -125,21 +136,31 @@ Execution -caused-> Outcome -caused-> Experience -caused-> Lesson
   best plausible alternative; it is withheld when the outcome is unknown, and feeds back into how strategies
   are ranked next time, along with success, cost, and how often a strategy ran into trouble.
 
+Every recommendation is stored as a decision snapshot with a **Reflex Score** (0-100): how strong the
+recommendation is, which is separate from the estimated chance that the task succeeds. `openreflex why` explains
+the latest decision and `openreflex trace` shows the timeline. In Claude Code, a short recap appears when a task
+starts, when OpenReflex recommends a pivot or stop or detects trouble, and when the task completes.
+
 Set optional limits for every task with `OPENREFLEX_BUDGET`, for example `calls=40,minutes=20,tokens=60000`.
+Routing, scoring, budget and recap settings come from a versioned policy: the packaged defaults, overridden by
+`~/.openreflex/config.toml` and then by `.openreflex.toml` in the project.
 
 Agents can also query OpenReflex directly through its MCP server: `get_execution_context` (optionally with
-`max_tool_calls`, `max_minutes`, `max_context_tokens`), `choose_path`, `check_progress`, `record_outcome`,
-`search_experience`, `explain_node`, `project_insights`, and `approve_project`.
+`max_tool_calls`, `max_minutes`, `max_context_tokens`), `choose_path`, `check_progress`, `explain_decision`,
+`get_execution_trace`, `get_reflex_score`, `record_outcome`, `search_experience`, `explain_node`,
+`project_insights`, and `approve_project`.
 
 ## CLI
 
 | Command | Purpose |
 |---|---|
 | `install <agent> [--dry-run]` | Write project hooks and MCP config, and enable the project |
+| `uninstall <agent> [--dry-run]` | Remove OpenReflex's project hooks and MCP config; captured memory is kept |
 | `approve` / `revoke` | Enable or disable capture for the current project |
 | `context "<task>"` | Preview the Execution Context a task would receive |
 | `status [--json]` | What has been captured, reused, and learned |
-| `doctor` | Installation checks and recent hook errors |
+| `why` / `trace` | Explain the latest recommendation, or show the decision timeline |
+| `doctor` | Installation, project resolution, and recent hook activity checks |
 | `forget --yes` | Delete the project's data |
 | `benchmark` | Run the simulated benchmark |
 | `hook <agent> <event>` / `mcp` | Used by agent configs |

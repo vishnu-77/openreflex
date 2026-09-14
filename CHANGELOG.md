@@ -2,6 +2,31 @@
 
 All notable changes to OpenReflex are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.3.0 (2026-09-14)
+
+Observable, configurable execution policy: every recommendation is recorded with its evidence and can be
+explained, and the numbers behind routing and alerts live in a versioned policy file.
+
+- **Decision snapshots and Reflex Score.** Each recommendation is stored with the chosen route, the next-best
+  route, confidence, evidence, budget pressure and context overhead. The Reflex Score (0-100) describes how strong
+  the recommendation is, separately from the estimated chance of success, and breaks down into component signals.
+- **Explain decisions.** New `openreflex why` and `openreflex trace` commands, and new MCP tools
+  `explain_decision`, `get_execution_trace` and `get_reflex_score`, read the same stored snapshots.
+- **Recaps in Claude Code.** Short recaps appear when a task starts, when OpenReflex recommends a pivot or stop or
+  detects trouble, and when the task completes, with the outcome, the path taken, observed cost and the regret
+  comparison.
+- **Versioned policy.** Routing, scoring, budget, detection and recap settings moved from code into a TOML policy.
+  The packaged defaults can be overridden in `~/.openreflex/config.toml` and per project in `.openreflex.toml`.
+- **Project identity.** Hook events resolve to the nearest repository (or `.openreflex.json` marker) from the
+  event's working directory; `OPENREFLEX_PROJECT` still overrides it, and agent workspace variables are only a
+  fallback. Hook traces record metadata only.
+- **`openreflex uninstall <agent>`** removes OpenReflex's project hooks and MCP entries and keeps captured memory.
+  `doctor` now reports how the project was resolved, plugin installs, and recent hook activity.
+- **MCP tool descriptions.** Every tool now documents its parameters, return value, when to use it instead of its
+  siblings, and whether it reads or writes, with MCP read-only and idempotency annotations.
+- Recaps stay quiet for prompts that are not tasks, such as a greeting that only triggered a memory read.
+- `docs/walkthrough.md` shows two real Claude Code sessions end to end, with the exact context the model received.
+
 ## 0.2.0 (2026-09-14)
 
 Budget-aware execution: OpenReflex now chooses between paths on several objectives, gives each task a budget,

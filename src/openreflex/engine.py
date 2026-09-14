@@ -398,6 +398,9 @@ class Engine:
                                  budget_used=budget_used, event=event, actual_tool_calls=actual_tool_calls,
                                  actual_tokens=actual_tokens, elapsed_seconds=elapsed_seconds, outcome=outcome,
                                  expected_regret=expected_regret)
+        if not task.substantial:
+            # A greeting or a follow-up that only triggered a tool call is not a task; keep its snapshot quiet.
+            snapshot = DecisionSnapshot.from_dict({**snapshot.as_dict(), "visibility": "ambient"})
         execution.decision_history.append(snapshot.as_dict())
         self.store.put(execution)
         return snapshot

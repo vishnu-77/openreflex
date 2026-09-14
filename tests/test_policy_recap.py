@@ -134,3 +134,16 @@ def test_cli_exposes_why_and_trace():
     parser = build_parser()
     assert parser.parse_args(["why"]).command == "why"
     assert parser.parse_args(["trace"]).command == "trace"
+
+
+def test_trivial_prompts_get_no_recap(engine, clock):
+    """A greeting that happens to trigger a tool call (e.g. a memory read) is not a task and must stay quiet."""
+    assert engine.prompt("claude-code", "s", "Hi") is None
+    assert engine.take_notice("claude-code", "s") is None
+    read = ("Read", {"file_path": "MEMORY.md"})
+    engine.tool_start("claude-code", "s", "t1", *read)
+    clock.advance(2)
+    engine.tool_end("claude-code", "s", "t1", *read, False, "file not found")
+    engine.stop("claude-code", "s")
+    assert engine.take_notice("claude-code", "s") is None
+    assert all(item["visibility"] == "ambient" for item in engine.store.latest("claude-code", "s").decision_history)

@@ -59,3 +59,15 @@ def test_benchmark_guided_arm_learns_in_simulation():
     assert guided["success_rate"] >= baseline["success_rate"] - 0.05
     assert guided["regret_last_quarter"] < guided["regret_first_quarter"]
     assert "not evidence of real-world gains" in benchmark.format_report(report)
+
+
+def test_every_mcp_tool_is_fully_described(project):
+    tools = asyncio.run(build_server(project).list_tools())
+    for tool in tools:
+        assert tool.title and len(tool.description) > 200, tool.name
+        assert tool.annotations is not None and tool.annotations.openWorldHint is False, tool.name
+        for name, schema in tool.inputSchema.get("properties", {}).items():
+            assert schema.get("description"), f"{tool.name}.{name} has no description"
+    read_only = {t.name for t in tools if t.annotations.readOnlyHint}
+    assert read_only == {"check_progress", "explain_decision", "get_execution_trace", "get_reflex_score",
+                         "search_experience", "explain_node", "project_insights"}
