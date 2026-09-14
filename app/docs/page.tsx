@@ -24,8 +24,9 @@ const CLI = [
 ];
 
 const MCP_TOOLS = [
-  ["get_execution_context", "Retrieve relevant past experience, scored candidate strategies, likely files and lessons for a task."],
+  ["get_execution_context", "Retrieve relevant past experience, candidate strategies (dominated ones marked), an execution budget, likely files and lessons for a task. Optional max_tool_calls, max_minutes and max_context_tokens limit the plan."],
   ["choose_path", "Declare the strategy the agent is following, so the outcome is compared against the right plan."],
+  ["check_progress", "Estimate whether more work on the current path is worth it, and recommend continue, pivot or stop."],
   ["record_outcome", "Record a verified outcome, such as tests passing, with short evidence."],
   ["search_experience", "Search past tasks in the project by description."],
   ["explain_node", "Show an Experience Graph node and its relations."],
@@ -141,6 +142,11 @@ export default function DocsPage() {
             <code>{'{\n  "mcpServers": {\n    "openreflex": { "command": "openreflex", "args": ["mcp"] }\n  }\n}'}</code>
           </pre>
           <RefTable head={["Tool", "What it does"]} rows={MCP_TOOLS} />
+          <p className="mt-6 leading-relaxed text-text">
+            To limit every task without an MCP call, set <code className="font-mono text-[0.9em]">OPENREFLEX_BUDGET</code>,
+            for example <code className="font-mono text-[0.9em]">calls=40,minutes=20,tokens=60000</code>. The recommended
+            path is the best one that fits, and the execution budget never exceeds these limits.
+          </p>
         </section>
 
         <section className="mt-14">

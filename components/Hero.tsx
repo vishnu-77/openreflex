@@ -18,9 +18,10 @@ export function Hero() {
             Muscle memory for AI&nbsp;coding agents.
           </h1>
           <p className="mt-7 max-w-[36rem] text-[1.08rem] leading-[1.7] text-muted">
-            OpenReflex learns from every task your coding agent finishes. When a similar task starts, it hands the
-            agent what worked before: the approach, the files that mattered, and how the last error was fixed. It
-            notices failure loops while they happen, and it keeps everything on your machine.
+            AI coding agents often solve the task, but not efficiently: they search the same code again, reread files,
+            retry failed commands and keep going after the evidence is in. OpenReflex learns how each task gets done,
+            recommends a more efficient path for the next one, and tells the agent when to continue, pivot or stop.
+            Everything stays on your machine.
           </p>
 
           <div className="mt-9 flex max-w-[26rem] items-center gap-3 rounded-lg bg-term py-2 pl-4 pr-2 font-mono text-[0.9rem] text-term-text">

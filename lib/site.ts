@@ -26,4 +26,4 @@ export const TAGLINE = "Muscle memory for AI coding agents";
 export const TITLE = "OpenReflex: AI Coding Agents That Learn From Every Task";
 
 export const DESCRIPTION =
-  "Open-source plugin for Claude Code, Codex, Cursor and OpenCode. Reuses what worked, catches failure loops live, and keeps all data local.";
+  "Open-source plugin for Claude Code, Codex, Cursor and OpenCode. Recommends efficient paths from past tasks, says when to pivot or stop, and keeps data local.";

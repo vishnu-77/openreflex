@@ -15,7 +15,7 @@ const SCRIPT: Line[] = [
   { kind: "fail", text: "Bash   python -m pytest -q", detail: "1 failed", pause: 500 },
   {
     kind: "alert",
-    text: "OpenReflex: 3 consecutive tool failures. Stop retrying the same fix and re-read the error.",
+    text: "OpenReflex: 3 consecutive tool failures. Don't retry the same fix: re-read the error. Recommendation: continue on this path.",
     pause: 1300,
   },
   { kind: "tool", text: "Edit   dates.py" },

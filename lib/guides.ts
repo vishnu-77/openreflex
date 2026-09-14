@@ -34,7 +34,7 @@ export const GUIDES: Guide[] = [
       "only when Claude is stuck retrying the same failing step. Everything stays in a local SQLite file.",
     benefits: [
       { title: "Context before the first tool call", body: "Similar past tasks, the files that mattered and known fixes arrive as additional context when you submit a prompt." },
-      { title: "Loop alerts while it works", body: "Repeated failing commands, identical retries or stalled progress raise one specific alert with a different approach to try." },
+      { title: "Continue, pivot or stop", body: "Repeated failing commands, identical retries, stalled progress or work past the budget raise one alert that recommends whether to continue, pivot to another approach, or stop and check in." },
       { title: "Lessons checked by your tests", body: "A task only counts as a success when a test, lint or build passes after the last edit, so guesses never become advice." },
     ],
     install: [
@@ -55,7 +55,7 @@ export const GUIDES: Guide[] = [
       { event: "Stop / SessionEnd", what: "Works out the outcome and stores lessons from the task." },
     ],
     notes: [
-      "The MCP server adds tools Claude can call directly: get_execution_context, choose_path, record_outcome, search_experience, explain_node and project_insights.",
+      "The MCP server adds tools Claude can call directly: get_execution_context, choose_path, check_progress, record_outcome, search_experience, explain_node and project_insights.",
       "Claude Code is verified in live, headless sessions by OpenReflex's end-to-end test suite.",
     ],
     faq: [

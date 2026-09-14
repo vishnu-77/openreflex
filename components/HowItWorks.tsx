@@ -1,45 +1,47 @@
 import { SectionHeader } from "./SectionHeader";
 
+// Sample lines are trimmed from real OpenReflex 0.2 engine output.
 const STEPS = [
   {
     when: "Before a task",
-    title: "It hands over what worked",
+    title: "It recommends a more efficient path",
     body:
-      "OpenReflex finds similar past tasks and gives your agent a short briefing: an approach to try, the files that " +
-      "were changed last time, and lessons from earlier attempts. If there is nothing relevant yet, it stays silent.",
+      "OpenReflex finds similar past tasks and compares candidate approaches by expected success, time, tool calls, " +
+      "context cost, risk and uncertainty. Your agent gets the best path, a budget, the files that mattered and " +
+      "lessons from earlier attempts. If there is nothing relevant yet, it stays silent.",
     sample: [
-      "[OpenReflex] debug task, 2 similar past tasks, 2 succeeded",
-      "Suggested path: test-first",
+      "[OpenReflex] debug task | 2 similar past tasks, 2 succeeded",
+      "Suggested path: test-first (success~95%, ~14 tool calls)",
+      "Alternatives: inspect-first (dominated by test-first)",
+      "Budget: ~31 tool calls, ~20 min, ~30k tokens",
       "Likely relevant files: src/auth/session.py",
-      "Lesson: token expiry failures were fixed in session.py",
     ],
     tone: "context",
   },
   {
     when: "During a task",
-    title: "It steps in when the agent is stuck",
+    title: "It says continue, pivot or stop",
     body:
-      "Repeated failing commands, identical retries, stalled progress and runaway context each raise one specific " +
-      "alert with a different path to try. It speaks up once, not on every tool call.",
+      "Repeated failures, excessive exploration, context growth and stalled progress are caught as they happen. " +
+      "OpenReflex then weighs whether more work on the current path is still worth it, and recommends continuing, " +
+      "pivoting to another approach, or stopping to check in with you. It speaks up once, not on every tool call.",
     sample: [
-      "OpenReflex: 3 consecutive tool failures.",
-      "Stop retrying the same fix: re-read the error",
-      "and question the assumption behind it.",
-      "Alternative path: inspect-first",
+      "OpenReflex: 15 calls over 5 min without a successful edit or check (only read).",
+      "Recommendation: pivot to test-first (success estimate ~24% on inspect-first, ~95% for test-first, budget 52% used)",
     ],
     tone: "alert",
   },
   {
     when: "After a task",
-    title: "It keeps the lesson",
+    title: "It learns from the outcome",
     body:
       "When the task ends, OpenReflex works out whether it succeeded from the checks that actually ran, compares the " +
-      "path taken with the alternatives, and saves what it learned for next time.",
+      "chosen route with plausible alternatives, and feeds both into the next recommendation.",
     sample: [
-      "outcome: success (tests passed after the last edit)",
+      "outcome: success (test passed after the last edit)",
       "path taken: test-first",
-      "lesson: changes landed in src/auth/session.py",
-      "lesson: expiry failure resolved by an edit",
+      "regret: 0.0 against inspect-first",
+      "lesson: \"AssertionError: expired token accepted\" was resolved by an edit in src/auth/session.py",
     ],
     tone: "lesson",
   },
@@ -57,8 +59,8 @@ export function HowItWorks() {
       <div className="mx-auto max-w-[1320px] px-5 py-20 sm:px-10 sm:py-28">
         <SectionHeader
           id="how"
-          title="Every task leaves a trace your agent can use"
-          intro="OpenReflex listens to your agent's lifecycle hooks. It never reads your files or transcripts; it learns from what the agent did and how it turned out."
+          title="Muscle memory for how work gets done"
+          intro="OpenReflex runs alongside Claude Code, Codex, Cursor and OpenCode through plugins, lifecycle hooks and MCP. Install it once and keep working normally. It never reads your files or transcripts; it learns from what the agent did and how it turned out."
         />
         <ol className="grid gap-px overflow-hidden rounded-lg border border-line bg-line lg:grid-cols-3">
           {STEPS.map((step, index) => (
@@ -77,6 +79,10 @@ export function HowItWorks() {
             </li>
           ))}
         </ol>
+        <p className="mt-10 max-w-[46rem] text-[1.12rem] leading-[1.7] text-text">
+          The goal is simple: help your agents reach the same or better results with fewer unnecessary tool calls, less
+          context, less time and less repeated work.
+        </p>
       </div>
     </section>
   );

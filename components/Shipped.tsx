@@ -10,12 +10,12 @@ const FACTS = [
   },
   {
     title: "Works with four agents",
-    body: "Claude Code, Codex, Cursor and OpenCode, through lifecycle hooks and an MCP server with seven tools.",
+    body: "Claude Code, Codex, Cursor and OpenCode, through lifecycle hooks and an MCP server with eight tools.",
     link: { href: LINKS.readme, label: "Read the setup guide" },
   },
   {
-    title: "Verified in real Claude Code sessions",
-    body: "An end-to-end suite drives headless Claude Code and checks that context and alerts actually reach the model.",
+    title: "Verified in real Claude Code and Codex sessions",
+    body: "End-to-end suites drive headless Claude Code and Codex, and check that context, alerts and recommendations actually reach the model.",
     link: { href: LINKS.liveTests, label: "See the test harness" },
   },
   {
@@ -29,9 +29,9 @@ const FACTS = [
     link: { href: "#privacy", label: "How data is handled" },
   },
   {
-    title: "MIT licensed",
-    body: "Open source and free to use, modify and ship.",
-    link: { href: LINKS.license, label: "Read the license" },
+    title: "Budget-aware execution",
+    body: "Pareto-efficient path selection, a budget for every task, and a continue, pivot or stop recommendation when work stops paying off.",
+    link: { href: "/docs#mcp", label: "See the MCP tools" },
   },
 ];
 
@@ -42,7 +42,7 @@ export function Shipped() {
         <SectionHeader
           id="shipped"
           title="What's shipped"
-          intro="OpenReflex 0.1 is available today. Here is what you get."
+          intro="OpenReflex 0.2 is available today, MIT licensed. Here is what you get."
         />
         <dl className="grid sm:grid-cols-2 lg:grid-cols-3">
           {FACTS.map((fact) => {

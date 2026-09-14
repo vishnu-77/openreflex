@@ -27,7 +27,7 @@ const ROWS: Row[] = [
     kind: "Research, 2025",
     what: "Distils reusable reasoning strategies from an agent's successful and failed experiences; evaluated on web browsing and software engineering benchmarks.",
     how: "The agent judges its own trajectories with an LLM-as-a-judge, then retrieves distilled memories for new tasks.",
-    differs: "Judges success by checks that actually passed, and runs as a plugin inside everyday coding agents.",
+    differs: "Judges success by checks that actually passed, weighs execution cost as well as success when choosing a path, and runs inside everyday coding agents.",
     sources: ["reasoningBank"],
   },
   {
@@ -43,7 +43,7 @@ const ROWS: Row[] = [
     kind: "Research, 2025",
     what: "Treats context as an evolving playbook that accumulates and refines strategies.",
     how: "Generation, reflection and curation, adapting from natural execution feedback.",
-    differs: "Keeps a structured graph of paths and outcomes and scores alternative strategies, without an LLM curator.",
+    differs: "Keeps a structured graph of paths and outcomes, picks among Pareto-efficient strategies within a budget and records regret, without an LLM curator.",
     sources: ["ace"],
   },
   {
@@ -59,7 +59,7 @@ const ROWS: Row[] = [
     kind: "Agent framework feature",
     what: "Flags repeating action-observation or action-error cycles, monologues and alternating patterns, and can halt the run.",
     how: "Pattern checks over a single conversation's event history.",
-    differs: "Works across four agents through their hooks, and an alert can point to a fix learned in an earlier task.",
+    differs: "Works across four agents through their hooks, weighs whether more work is worth it (continue, pivot or stop), and can point to a fix learned in an earlier task.",
     sources: ["openhands"],
   },
 ];
