@@ -1,12 +1,4 @@
-"""The engine: the single place where lifecycle events become Experience Graph state.
-
-Graph shape written here:
-    Task -caused-> Execution -used-> Context -used-> Experience
-    CandidatePath -recommended_for-> Task          Lesson -recommended_for-> Task (when surfaced)
-    Execution -used-> ToolCall, Execution -used-> CandidatePath (chosen)
-    Execution -failed_with-> ToolCall -resolved_by-> ToolCall
-    Execution -caused-> Outcome -caused-> Experience -caused-> Lesson
-"""
+"""The engine: lifecycle events become local execution memory and explainable decisions."""
 
 import math
 import re
@@ -15,15 +7,15 @@ from collections import Counter
 from pathlib import Path
 
 from . import control, detect, learning
+from .decision import DecisionSnapshot, make_snapshot, render_recap, render_trace, render_why
 from .models import CandidatePath, Context, Execution, Experience, Lesson, Outcome, Status, Task, ToolCall, uid
+from .policy import load_policy
 from .privacy import PROGRESS, categorize, error_signature, file_paths, fingerprint, redact
 from .routing import Budget, Limits, budget_for, candidates, classify, embed, limits_from_env, similarity
 from .store import Store, database_path
 
 FOLLOW_UP = re.compile(r"^\s*(yes|no|ok(ay)?|thanks|thank you|continue|go on|go ahead|proceed|sure|lgtm|do it|"
                        r"looks good|try again|retry|again|next|y|n)\b", re.IGNORECASE)
-RETRIEVAL_THRESHOLD = 0.2
-MAX_CONTEXT_CHARS = 1400
 UNTRACKED = "(task started without a captured prompt)"
 
 
@@ -42,6 +34,7 @@ class Engine:
         self.project = project
         self.store = store or Store(database_path(project))
         self.clock = clock
+        self.policy = load_policy(project)
 
     def close(self):
         self.store.close()
@@ -49,20 +42,15 @@ class Engine:
     # ------------------------------------------------------------------ lifecycle events
 
     def prompt(self, agent: str, session: str, prompt: str, can_inject: bool = True) -> str | None:
-        """A user prompt. Substantial prompts start a new task; follow-ups continue the current one.
-
-        Agents that cannot inject context at prompt time pass can_inject=False; the context is then kept
-        pending and delivered with the first tool result instead.
-        """
         now = self.clock()
         with self.store.transaction():
             current = self.store.latest(agent, session)
             if current is not None and not is_substantial(prompt):
                 self._reopen(current)
                 return None
-            if current is not None and now - current.started_at < 15 and \
+            if current is not None and now - current.started_at < self.policy.number("engine.duplicate_prompt_window_seconds") and \
                     self._task(current).description == redact(prompt, 1000):
-                return None  # the same prompt delivered twice (e.g. native + third-party hook configs)
+                return None
             if current is not None and self._task(current).description == UNTRACKED and current.ended_at is None:
                 context = self._describe(current, prompt, now)
                 execution = current
@@ -83,6 +71,22 @@ class Engine:
             self.store.put(execution)
             context = next(iter(self.store.list("Context", "task_id", execution.task_id, limit=1)), None)
             return context.text if context is not None and context.injected else None
+
+    def take_notice(self, agent: str, session: str) -> str | None:
+        """Return the newest visible recap/intervention once, advancing past ambient snapshots too."""
+        with self.store.transaction():
+            execution = self.store.latest(agent, session)
+            if execution is None or execution.visible_decisions >= len(execution.decision_history):
+                return None
+            pending = execution.decision_history[execution.visible_decisions:]
+            previous = DecisionSnapshot.from_dict(execution.decision_history[execution.visible_decisions - 1]) \
+                if execution.visible_decisions else None
+            execution.visible_decisions = len(execution.decision_history)
+            self.store.put(execution)
+            visible = [DecisionSnapshot.from_dict(item) for item in pending if item.get("visibility") != "ambient"]
+            if not visible:
+                return None
+            return render_recap(visible[-1], previous)
 
     def tool_start(self, agent: str, session: str, tool_id: str | None, name: str, arguments: object) -> str | None:
         now = self.clock()
@@ -110,8 +114,9 @@ class Engine:
                                 name=name[:100], category=categorize(name, arguments), fingerprint=fp,
                                 files=file_paths(arguments, self.project), started_at=now)
             elif call.status != "running":
-                return None  # duplicate delivery
-            tokens = max(0, int(output_chars)) // 4
+                return None
+            divisor = self.policy.number("context.chars_per_token")
+            tokens = max(0, round(int(output_chars) / divisor))
             call.ended_at, call.status = now, "success" if success else "failure"
             call.duration_ms = round((now - call.started_at) * 1000, 1)
             call.output_tokens_estimate = tokens
@@ -139,29 +144,30 @@ class Engine:
                 self.store.put(execution)
 
     def stop(self, agent: str, session: str) -> Outcome | None:
-        """End of an agent turn or session. Finalization is idempotent; later activity reopens the execution."""
         with self.store.transaction():
             execution = self.store.active(agent, session)
             return self._finalize(execution) if execution is not None else None
 
-    # ------------------------------------------------------------------ explicit agent-facing operations (MCP)
+    # ------------------------------------------------------------------ explicit agent-facing operations
 
-    def current_execution(self, agent: str | None = None, session: str | None = None, max_age: float = 7200):
+    def current_execution(self, agent: str | None = None, session: str | None = None,
+                          max_age: float | None = None):
         if agent and session:
             execution = self.store.latest(agent, session)
             if execution is not None:
                 return execution
         now = self.clock()
-        recent = [e for e in self.store.list("Execution", limit=50) if now - e.started_at < max_age]
+        age = max_age if max_age is not None else self.policy.number("engine.recent_execution_max_age_seconds")
+        limit = self.policy.integer("engine.recent_execution_limit")
+        recent = [e for e in self.store.list("Execution", limit=limit) if now - e.started_at < age]
         return max(recent, key=lambda e: (e.ended_at is None, e.started_at), default=None)
 
     def context_for(self, description: str, agent: str = "mcp", session: str | None = None,
                     limits: Limits | None = None) -> tuple[Execution, Context]:
-        """Explicit request for an Execution Context; always returns the full text, even without experience.
-        Limits, when given, re-plan the current task so its path and budget fit them."""
         now = self.clock()
         with self.store.transaction():
-            current = self.current_execution(agent if session else None, session, max_age=1800)
+            current = self.current_execution(agent if session else None, session,
+                                             max_age=self.policy.number("engine.mcp_current_max_age_seconds"))
             if current is not None and current.ended_at is None:
                 task = self._task(current)
                 if task.description == UNTRACKED or not task.substantial or limits is not None:
@@ -172,17 +178,17 @@ class Engine:
             return self._start(agent, session or f"mcp-{int(now)}", description, now, substantial=True, limits=limits)
 
     def progress(self, agent: str | None = None, session: str | None = None):
-        """Explicit progress check: (execution, verdict, detected problems, budget). Records nothing."""
         with self.store.transaction():
             execution = self.current_execution(agent if session else None, session)
             if execution is None:
                 raise ValueError("No current execution; request an execution context first")
             calls, now = self._calls(execution.id), self.clock()
             budget, active = self._budget(execution), learning.active_seconds(execution, calls, now)
-            problems = detect.detect(execution, calls, budget, now, active)
+            problems = detect.detect(execution, calls, budget, now, active, self.policy)
             return execution, self._verdict(execution, calls, budget, active), problems, budget
 
-    def choose_path(self, strategy: str, steps: list[str] | None = None, execution_id: str | None = None) -> CandidatePath:
+    def choose_path(self, strategy: str, steps: list[str] | None = None,
+                    execution_id: str | None = None) -> CandidatePath:
         with self.store.transaction():
             execution = self.store.get(execution_id) if execution_id else self.current_execution()
             if execution is None:
@@ -197,8 +203,8 @@ class Engine:
                 self.store.put(path)
             execution.chosen_path_id, execution.chosen_inferred = path.id, False
             limit = self._budget(execution) if execution.budget_source == "limit" else None
-            self._set_budget(execution, budget_for(path, Limits(limit.seconds, limit.tool_calls, limit.context_tokens)
-                                                   if limit else limits_from_env()))
+            configured = Limits(limit.seconds, limit.tool_calls, limit.context_tokens) if limit else limits_from_env()
+            self._set_budget(execution, budget_for(path, configured, self.policy))
             self.store.put(execution)
             self.store.link(execution.id, "used", path.id)
             return path
@@ -211,30 +217,52 @@ class Engine:
             return self._finalize(execution, status=status, evidence=redact(evidence, 500), verified=True)
 
     def preview(self, description: str) -> str:
-        """The Execution Context a task would receive, without recording anything."""
         task = Task(description=redact(description, 1000), task_class=classify(description), session_id="preview",
                     agent="preview", started_at=self.clock())
         retrieved = self.retrieve(task.description, task.task_class)
         limits = limits_from_env()
-        paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits)
-        return render_context(task, paths, retrieved, self.lessons([x for x, _ in retrieved]), budget_for(paths[0], limits))
+        paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits,
+                           self.policy)
+        return render_context(task, paths, retrieved, self.lessons([x for x, _ in retrieved]),
+                              budget_for(paths[0], limits, self.policy), self.policy)
 
-    def retrieve(self, description: str, task_class: str | None = None, k: int = 5) -> list[tuple[Experience, float]]:
+    def decision_snapshots(self, execution_id: str | None = None) -> list[DecisionSnapshot]:
+        execution = self.store.get(execution_id) if execution_id else self.current_execution(max_age=float("inf"))
+        if execution is None:
+            return []
+        return [DecisionSnapshot.from_dict(item) for item in execution.decision_history]
+
+    def why(self, execution_id: str | None = None) -> str:
+        snapshots = self.decision_snapshots(execution_id)
+        if not snapshots:
+            return "OPENREFLEX / WHY\n\nNo decision snapshot recorded yet."
+        return render_why(snapshots[-1])
+
+    def trace(self, execution_id: str | None = None) -> str:
+        return render_trace(self.decision_snapshots(execution_id))
+
+    def retrieve(self, description: str, task_class: str | None = None,
+                 k: int | None = None) -> list[tuple[Experience, float]]:
         query = embed(description)
         now = self.clock()
         scored = []
-        for experience in self.store.list("Experience", limit=5000):
+        threshold = self.policy.number("retrieval.threshold")
+        scan = self.policy.integer("engine.max_store_scan")
+        for experience in self.store.list("Experience", limit=scan):
             sim = similarity(query, experience.embedding)
-            if sim < RETRIEVAL_THRESHOLD:
+            if sim < threshold:
                 continue
-            age_weeks = max(0.0, now - experience.created_at) / 604800
-            score = (sim + (0.1 if experience.task_class == task_class else 0)
-                     + (0.05 if experience.status == "success" else 0) - min(0.1, 0.01 * age_weeks))
+            age_weeks = max(0.0, now - experience.created_at) / (7 * 24 * 60 * 60)
+            score = (sim
+                     + (self.policy.number("retrieval.task_class_bonus") if experience.task_class == task_class else 0)
+                     + (self.policy.number("retrieval.success_bonus") if experience.status == "success" else 0)
+                     - min(self.policy.number("retrieval.age_bonus_limit"),
+                           self.policy.number("retrieval.age_decay_per_week") * age_weeks))
             scored.append((experience, round(score, 4)))
-        return sorted(scored, key=lambda pair: -pair[1])[:k]
+        limit = k if k is not None else self.policy.integer("retrieval.max_experiences")
+        return sorted(scored, key=lambda pair: -pair[1])[:limit]
 
-    def lessons(self, experiences: list[Experience], limit: int = 4) -> list[tuple[Lesson, float, int]]:
-        """Lessons aggregated by key across experiences: (latest lesson, combined confidence, support)."""
+    def lessons(self, experiences: list[Experience], limit: int | None = None) -> list[tuple[Lesson, float, int]]:
         grouped: dict[str, list[Lesson]] = {}
         for experience in experiences:
             for lesson in self.store.list("Lesson", "experience_id", experience.id):
@@ -244,19 +272,20 @@ class Engine:
             combined = 1 - math.prod(1 - lesson.confidence for lesson in items)
             ranked.append((items[0], round(min(combined, 0.99), 3), len(items)))
         order = {"resolution": 0, "failure-loop": 1, "strategy": 2, "context": 3, "repetition": 4, "files": 5}
-        return sorted(ranked, key=lambda r: (-r[1], order.get(r[0].kind, 9)))[:limit]
+        count = limit if limit is not None else self.policy.integer("context.max_lessons")
+        return sorted(ranked, key=lambda r: (-r[1], order.get(r[0].kind, 9)))[:count]
 
-    # ------------------------------------------------------------------ internals (callers hold the transaction)
+    # ------------------------------------------------------------------ internals
 
     def _task(self, execution: Execution) -> Task:
         return self.store.get(execution.task_id)
 
     def _calls(self, execution_id: str) -> list[ToolCall]:
-        return sorted(self.store.list("ToolCall", "execution_id", execution_id, limit=5000),
+        return sorted(self.store.list("ToolCall", "execution_id", execution_id,
+                                      limit=self.policy.integer("engine.max_store_scan")),
                       key=lambda c: (c.started_at, c.id))
 
     def _find_call(self, execution_id: str, tool_id: str | None, fp: str, running_only: bool) -> ToolCall | None:
-        # Filter in SQLite: hooks hold the write lock here, and parsing every call in a long task is slow.
         if tool_id:
             return next(iter(self.store.find("ToolCall", limit=1, execution_id=execution_id, external_id=tool_id)), None)
         matches = [c for c in self.store.find("ToolCall", execution_id=execution_id, fingerprint=fp)
@@ -277,20 +306,24 @@ class Engine:
 
     def _evidence(self, task_class: str, description: str, exclude: str | None = None) -> list[Experience]:
         query = embed(description)
-        same = [e for e in self.store.list("Experience", "task_class", task_class, limit=5000)
+        scan = self.policy.integer("engine.max_store_scan")
+        same = [e for e in self.store.list("Experience", "task_class", task_class, limit=scan)
                 if e.execution_id != exclude and e.description != UNTRACKED]
-        similar = [e for e in same if similarity(query, e.embedding) >= RETRIEVAL_THRESHOLD]
-        return similar if len(similar) >= 3 else same
+        threshold = self.policy.number("retrieval.threshold")
+        similar = [e for e in same if similarity(query, e.embedding) >= threshold]
+        minimum = self.policy.integer("retrieval.minimum_similar_evidence")
+        return similar if len(similar) >= minimum else same
 
     def _start(self, agent: str, session: str, description: str, now: float,
                substantial: bool, limits: Limits | None = None) -> tuple[Execution, Context]:
         task = Task(description=redact(description, 1000), task_class=classify(description), session_id=session,
                     agent=agent, started_at=now, substantial=substantial)
         limits = limits or limits_from_env()
-        paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits)
+        paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits,
+                           self.policy)
         execution = Execution(task_id=task.id, agent=agent, session_id=session, recommended_path_id=paths[0].id,
                               started_at=now, last_progress_at=now)
-        self._set_budget(execution, budget_for(paths[0], limits))
+        self._set_budget(execution, budget_for(paths[0], limits, self.policy))
         self.store.put(task)
         for path in paths:
             self.store.put(path)
@@ -299,11 +332,15 @@ class Engine:
         self.store.link(task.id, "caused", execution.id)
         context = self._write_context(task, paths, self._budget(execution))
         self.store.link(execution.id, "used", context.id)
+        execution.context_tokens = self._injected_context_tokens(context)
+        if substantial:
+            self._record_decision(execution, "start", "recommend", paths[0], paths, now,
+                                  context_tokens=execution.context_tokens)
+        self.store.put(execution)
         self.store.bind_session(agent, session, execution.id)
         return execution, context
 
     def _describe(self, execution: Execution, description: str, now: float, limits: Limits | None = None) -> Context:
-        """Attach a real description to a task that began without one (or new limits), and re-plan it."""
         task = self._task(execution)
         task.description, task.task_class = redact(description, 1000), classify(description)
         task.substantial = is_substantial(description) or task.substantial
@@ -311,16 +348,20 @@ class Engine:
         for node in self.store.list("CandidatePath", "task_id", task.id) + self.store.list("Context", "task_id", task.id):
             self.store.delete(node.id)
         limits = limits or limits_from_env()
-        paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits)
+        paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits,
+                           self.policy)
         for path in paths:
             self.store.put(path)
             self.store.link(path.id, "recommended_for", task.id)
         execution.recommended_path_id = paths[0].id
-        # A declared path was deleted with the old plan above; re-planning starts from the new recommendation.
         execution.chosen_path_id, execution.chosen_inferred = None, False
-        self._set_budget(execution, budget_for(paths[0], limits))
-        self.store.put(execution)
+        self._set_budget(execution, budget_for(paths[0], limits, self.policy))
         context = self._write_context(task, paths, self._budget(execution))
+        execution.context_tokens = self._injected_context_tokens(context)
+        if task.substantial:
+            self._record_decision(execution, "start", "recommend", paths[0], paths, now,
+                                  context_tokens=execution.context_tokens)
+        self.store.put(execution)
         self.store.link(execution.id, "used", context.id)
         return context
 
@@ -328,7 +369,7 @@ class Engine:
         retrieved = self.retrieve(task.description, task.task_class) if task.substantial else []
         experiences = [e for e, _ in retrieved]
         lessons = self.lessons(experiences)
-        text = render_context(task, paths, retrieved, lessons, budget)
+        text = render_context(task, paths, retrieved, lessons, budget, self.policy)
         context = Context(task_id=task.id, text=text, experience_ids=[e.id for e in experiences],
                           lesson_ids=[lesson.id for lesson, _, _ in lessons],
                           injected=task.substantial and bool(experiences))
@@ -340,12 +381,34 @@ class Engine:
                 self.store.link(lesson.id, "recommended_for", task.id)
         return context
 
+    def _injected_context_tokens(self, context: Context) -> int:
+        if not context.injected:
+            return 0
+        return round(len(context.text) / self.policy.number("context.chars_per_token"))
+
+    def _record_decision(self, execution: Execution, phase: str, action: str, best: CandidatePath | None,
+                         paths: list[CandidatePath], now: float, *, context_tokens: int = 0,
+                         budget_used: float = 0.0, event: str = "", actual_tool_calls: int | None = None,
+                         actual_tokens: int | None = None, elapsed_seconds: float | None = None,
+                         outcome: str | None = None, expected_regret: float | None = None) -> DecisionSnapshot:
+        task = self._task(execution)
+        experiences = self.retrieve(task.description, task.task_class) if task.substantial else []
+        snapshot = make_snapshot(now=now, phase=phase, action=action, best=best, paths=paths,
+                                 experiences=experiences, policy=self.policy, context_tokens=context_tokens,
+                                 budget_used=budget_used, event=event, actual_tool_calls=actual_tool_calls,
+                                 actual_tokens=actual_tokens, elapsed_seconds=elapsed_seconds, outcome=outcome,
+                                 expected_regret=expected_regret)
+        execution.decision_history.append(snapshot.as_dict())
+        self.store.put(execution)
+        return snapshot
+
     def _retry_warning(self, execution: Execution, call: ToolCall) -> str | None:
         same = sorted((c for c in self.store.find("ToolCall", execution_id=execution.id, fingerprint=call.fingerprint)
                        if c.id != call.id), key=lambda c: c.started_at)
         failures = [c for c in same if c.status == "failure"]
         marker = "retry:" + call.fingerprint[:12]
-        if len(failures) >= 2 and not any(c.status == "success" for c in same) and marker not in execution.alerts:
+        threshold = self.policy.integer("detectors.repeat_threshold") - 1
+        if len(failures) >= threshold and not any(c.status == "success" for c in same) and marker not in execution.alerts:
             execution.alerts.append(marker)
             self.store.put(execution)
             signature = failures[-1].error_signature or "an error"
@@ -362,7 +425,11 @@ class Engine:
             return Budget(execution.budget_seconds, execution.budget_tool_calls, execution.budget_tokens,
                           execution.budget_source or "estimated")
         recommended = self.store.get(execution.recommended_path_id) if self.store.exists(execution.recommended_path_id) else None
-        return budget_for(recommended) if recommended else Budget(1200.0, 30.0, 30000.0, "estimated")
+        if recommended:
+            return budget_for(recommended, policy=self.policy)
+        values = self.policy.table("routing.budget")
+        return Budget(float(values["minimum_seconds"]), float(values["minimum_tool_calls"]),
+                      float(values["minimum_context_tokens"]), "estimated")
 
     def _verdict(self, execution: Execution, calls: list[ToolCall], budget: Budget, active: float) -> control.Verdict:
         paths = self.store.list("CandidatePath", "task_id", execution.task_id)
@@ -371,28 +438,24 @@ class Engine:
         declared = self.store.get(execution.chosen_path_id) if execution.chosen_path_id and not execution.chosen_inferred \
             and self.store.exists(execution.chosen_path_id) else None
         recommended = next((p for p in paths if p.id == execution.recommended_path_id), None)
-        # Mid-task, running checks before any edit is already test-first, even though no edit confirms it yet.
         inferred = learning.infer_strategy(calls) or ("test-first" if any(c.category == "test" for c in calls) else "")
-        current = (by_strategy.get(history[-1][1]) if history else None) or declared or \
-            by_strategy.get(inferred) or recommended
+        current = (by_strategy.get(history[-1][1]) if history else None) or declared or by_strategy.get(inferred) or recommended
         tried = {name for source, target, _ in history for name in (source, target)}
         since = max(execution.last_progress_at, control.switch_time(execution, calls))
-        return control.assess(execution, calls, current, paths, budget, active, since, tried)
+        return control.assess(execution, calls, current, paths, budget, active, since, tried, self.policy)
 
     def _alert(self, execution: Execution, calls: list[ToolCall], now: float) -> str | None:
-        """At most one message per cooldown: a newly detected problem, or a new pivot/stop verdict when a
-        problem persists after its alert was already given."""
-        if now - execution.last_alert_at < detect.COOLDOWN_SECONDS:
+        if now - execution.last_alert_at < self.policy.number("detectors.cooldown_seconds"):
             return None
         budget, active = self._budget(execution), learning.active_seconds(execution, calls, now)
-        problems = detect.detect(execution, calls, budget, now, active)
+        problems = detect.detect(execution, calls, budget, now, active, self.policy)
         if not problems:
             return None
         verdict = self._verdict(execution, calls, budget, active)
         key = {"pivot": f"pivot:{verdict.current or 'unplanned'}>{verdict.alternative.strategy}" if verdict.alternative else None,
                "stop": "stop"}.get(verdict.action)
         fresh_verdict = key is not None and key not in {v.rpartition("@")[0] for v in execution.verdicts}
-        alert = detect.select(execution, problems, now)
+        alert = detect.select(execution, problems, now, self.policy)
         if alert is None and not fresh_verdict:
             return None
         if alert is not None:
@@ -419,17 +482,29 @@ class Engine:
             parts.append(f"{advice}. Recommendation: continue on this path ({verdict.summary()}).")
         signature = next((c.error_signature for c in reversed(calls) if c.status == "failure"), None)
         if signature and alert.kind == "failure_loop":
-            known = [item for item in self.store.list("Lesson", "kind", "resolution", limit=500) if signature in item.text]
+            known = [item for item in self.store.list("Lesson", "kind", "resolution",
+                                                     limit=self.policy.integer("engine.max_store_scan"))
+                     if signature in item.text]
             if known:
                 parts.append(f"Previously: {known[0].text}")
+
+        paths = self.store.list("CandidatePath", "task_id", execution.task_id)
+        by_strategy = {path.strategy: path for path in paths}
+        best = verdict.alternative if verdict.action == "pivot" else by_strategy.get(verdict.current or "")
+        best = best or next((path for path in paths if path.id == execution.recommended_path_id), None)
+        event = verdict.action if verdict.action in {"pivot", "stop"} else alert.kind
+        self._record_decision(execution, "runtime", verdict.action, best, paths, now,
+                              context_tokens=execution.context_tokens or 0, budget_used=verdict.budget_used,
+                              event=event)
         return " ".join(parts)
 
     def _finalize(self, execution: Execution, status: Status | None = None, evidence: str | None = None,
                   verified: bool = False) -> Outcome:
         now = self.clock()
         calls = self._calls(execution.id)
+        stale = self.policy.number("engine.stale_running_call_seconds")
         for call in calls:
-            if call.status == "running" and now - call.started_at > 600:
+            if call.status == "running" and now - call.started_at > stale:
                 call.status, call.ended_at, call.error_signature = "failure", call.started_at, "no completion observed"
                 self.store.put(call)
         execution.ended_at = execution.ended_at or now
@@ -452,14 +527,24 @@ class Engine:
                           tool_calls=len(calls), failures=sum(c.status == "failure" for c in calls),
                           output_tokens_estimate=execution.output_tokens_estimate,
                           chosen_strategy=chosen.strategy if chosen else None)
-        # Alternatives are re-scored with everything known now except this execution itself (retrospective view).
-        alternatives = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description, execution.id))
+        alternatives = candidates(task.id, task.task_class,
+                                  self._evidence(task.task_class, task.description, execution.id), policy=self.policy)
         outcome.estimated_regret, outcome.best_alternative, outcome.regret_basis = learning.regret(outcome, chosen, alternatives)
         self.store.put(outcome)
-        self.store.put(execution)
         self.store.link(execution.id, "caused", outcome.id)
         if chosen is not None:
             self.store.link(execution.id, "used", chosen.id)
+
+        if not any(item.get("phase") == "complete" for item in execution.decision_history):
+            budget = self._budget(execution)
+            used = budget.usage(outcome.elapsed_seconds, outcome.tool_calls, outcome.output_tokens_estimate)
+            self._record_decision(execution, "complete", "complete", chosen or (paths[0] if paths else None), paths,
+                                  now, context_tokens=execution.context_tokens or 0, budget_used=used,
+                                  event="complete", actual_tool_calls=outcome.tool_calls,
+                                  actual_tokens=outcome.output_tokens_estimate, elapsed_seconds=outcome.elapsed_seconds,
+                                  outcome=outcome.status, expected_regret=outcome.estimated_regret)
+        self.store.put(execution)
+
         if not calls:
             return outcome
 
@@ -489,8 +574,8 @@ class Engine:
 
 
 def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple[Experience, float]],
-                   lessons: list[tuple[Lesson, float, int]], budget: Budget | None = None) -> str:
-    """Compact Execution Context. Budgeted in characters so it stays a small, predictable token cost."""
+                   lessons: list[tuple[Lesson, float, int]], budget: Budget | None = None, policy=None) -> str:
+    cfg = policy or load_policy()
     experiences = [e for e, _ in retrieved]
     succeeded = sum(e.status == "success" for e in experiences)
     best, rest = paths[0], paths[1:]
@@ -508,13 +593,15 @@ def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple
         lines.append(f"Budget: ~{budget.tool_calls:.0f} tool calls, ~{budget.seconds / 60:.0f} min, "
                      f"~{budget.context_tokens / 1000:.0f}k tokens of tool output"
                      + (" (your limit)." if budget.source == "limit" else "."))
-    files = Counter(f for e in experiences if e.status == "success" for f in e.files[:6])
+    max_files = cfg.integer("context.max_likely_files")
+    files = Counter(f for e in experiences if e.status == "success" for f in e.files[:max_files])
     if files:
-        lines.append("Likely relevant files: " + ", ".join(f for f, _ in files.most_common(6)))
+        lines.append("Likely relevant files: " + ", ".join(f for f, _ in files.most_common(max_files)))
     shown = [item for item in lessons if item[0].kind != "files"]
     if shown:
         lines.append("Lessons:")
         lines += [f"- {lesson.text}" + (f" (seen {support}x)" if support > 1 else "") for lesson, _, support in shown]
     lines.append("Advisory only. If you follow a different approach, the choose_path tool records it.")
     text = "\n".join(lines)
-    return text if len(text) <= MAX_CONTEXT_CHARS else text[: MAX_CONTEXT_CHARS - 1] + "..."
+    max_chars = cfg.integer("context.max_chars")
+    return text if len(text) <= max_chars else text[: max_chars - 1] + "..."
