@@ -19,6 +19,7 @@ max_likely_files = 6
 [routing]
 prior_weight = 4.0
 regret_weight = 0.25
+epsilon = 0.000000001
 
 [routing.utility]
 success = 0.55
@@ -99,12 +100,42 @@ success_bonus = 0.08
 
 [control]
 success_value = 0.55
+fallback_success_probability = 0.50
 idle_likelihood_ratio = 0.85
 failure_likelihood_ratio = 0.60
 shared_failure_likelihood_ratio = 0.85
 pivot_reuse = 0.30
 pivot_margin = 0.03
 minimum_remaining = 0.30
+probability_epsilon = 0.000001
+
+[detectors]
+cooldown_seconds = 180.0
+repeat_threshold = 3
+recent_repeat_window = 10
+failure_loop_threshold = 3
+failure_signature_window = 5
+stagnation_calls = 15
+stagnation_seconds = 600.0
+exploration_stagnation_multiplier = 2.0
+minimum_stagnation_calls_with_time = 5
+recent_progress_window = 8
+
+[detectors.severity]
+repeated_action = 0.60
+failure_loop_streak = 0.90
+failure_loop_signature = 0.80
+stagnation = 0.70
+context_growth = 0.50
+over_budget = 0.50
+
+[engine]
+duplicate_prompt_window_seconds = 15.0
+stale_running_call_seconds = 600.0
+max_store_scan = 5000
+recent_execution_limit = 50
+recent_execution_max_age_seconds = 7200.0
+mcp_current_max_age_seconds = 1800.0
 
 [score]
 evidence_saturation = 8.0
