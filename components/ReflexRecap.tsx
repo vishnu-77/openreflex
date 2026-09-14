@@ -26,10 +26,11 @@ const STATES = [
     tone: "text-accent",
     headline: "↺ OpenReflex · COMPLETE",
     lines: [
-      "18 calls · 14.2k tokens · 6.4m · success",
-      "execution regret 0.05",
+      "success · test-first",
+      "18 calls · 14.2k tokens · 6.4m",
+      "regret 0.05 vs inspect-first",
     ],
-    note: "Closes the loop with observed cost and outcome.",
+    note: "Closes the visible loop with realised path, observed cost and comparison route. Reusable lessons are stored immediately after completion.",
   },
 ];
 
@@ -67,7 +68,7 @@ export function ReflexRecap() {
         <div className="mt-10 border border-line bg-panel">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4 sm:px-7">
             <div>
-              <p className="font-mono text-[0.72rem] uppercase tracking-[0.16em] text-muted">Illustrative execution</p>
+              <p className="font-mono text-[0.72rem] uppercase tracking-[0.16em] text-muted">Illustrative execution · v0.3</p>
               <p className="mt-1 text-sm text-text">The numbers below demonstrate the interface; they are not benchmark claims.</p>
             </div>
             <span className="border border-line-strong px-3 py-1 font-mono text-[0.72rem] text-muted">Claude Code surface</span>
