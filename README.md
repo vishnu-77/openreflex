@@ -17,6 +17,8 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/vishnu-77/openreflex/ci.yml?branch=main&style=flat-square&labelColor=black&label=CI)](https://github.com/vishnu-77/openreflex/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=black)](https://github.com/vishnu-77/openreflex/blob/main/LICENSE)
 
+[![OpenReflex MCP server: quality and maintenance score on Glama](https://glama.ai/mcp/servers/vishnu-77/openreflex/badges/card.svg)](https://glama.ai/mcp/servers/vishnu-77/openreflex)
+
 </div>
 
 ***
