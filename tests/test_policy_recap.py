@@ -2,12 +2,16 @@ import json
 
 from openreflex import hooks
 from openreflex.cli import build_parser
+from openreflex.decision import render_recap
 from openreflex.engine import Engine
 from openreflex.models import Experience
 from openreflex.policy import load_policy
 from openreflex.project import approve
 from openreflex.routing import classify, embed
 from openreflex.store import Store
+
+from .conftest import run_task
+from .test_engine import FIX_SCRIPT
 
 
 def test_policy_loads_packaged_defaults_and_project_overrides(project):
@@ -73,6 +77,24 @@ def test_recap_reports_retrieved_experience_and_context_cost(engine, clock):
     assert snapshot.context_tokens > 0
     notice = engine.take_notice("claude-code", "new")
     assert "1 experiences" in notice and f"+{snapshot.context_tokens} context tokens" in notice
+
+
+def test_completion_recap_shows_realised_path_cost_and_comparison(engine, clock):
+    outcome, _ = run_task(
+        engine,
+        clock,
+        "complete",
+        "Fix the login bug where expired tokens are accepted",
+        FIX_SCRIPT,
+    )
+    snapshot = engine.decision_snapshots(outcome.execution_id)[-1]
+    recap = render_recap(snapshot)
+    assert recap.startswith("↺ OpenReflex · COMPLETE")
+    assert "success · test-first" in recap
+    assert "5 calls" in recap
+    assert "regret" in recap
+    if snapshot.next_best_strategy:
+        assert f"vs {snapshot.next_best_strategy}" in recap
 
 
 def test_claude_hook_surfaces_recap_as_system_message(project, tmp_path, clock):
