@@ -31,10 +31,10 @@ There is no account, no service, and no telemetry.
 
 <p align="center">
   <a href="docs/walkthrough.md">
-    <img alt="A real Claude Code session with OpenReflex: the UserPromptSubmit line shows one past experience found and 162 context tokens added; the Stop line shows a verified success, the path taken and the cost" src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/docs/screenshots/claude-code-session-2.png" width="860">
+    <img alt="Recording of a real Claude Code session with OpenReflex: OpenReflex reports one similar past task and adds 162 context tokens, Claude finds and fixes the coupon bug, runs the tests, records the verified outcome through OpenReflex's MCP tool, and OpenReflex shows the completion recap with the path taken, cost and regret" src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/docs/screenshots/claude-code-session.gif" width="860">
   </a>
   <br>
-  <sub>A real Claude Code session in a repository where OpenReflex had seen one similar task. The full walkthrough, with both sessions and the exact context the model received, is in <a href="docs/walkthrough.md">docs/walkthrough.md</a>.</sub>
+  <sub>A real Claude Code session, recorded from the terminal and sped up. OpenReflex had seen one similar task in this repository, so it adds 162 tokens of context before the first tool call; after the fix, Claude records the outcome through OpenReflex's MCP tool. The step-by-step walkthrough is in <a href="docs/walkthrough.md">docs/walkthrough.md</a>.</sub>
 </p>
 
 ## Why OpenReflex
