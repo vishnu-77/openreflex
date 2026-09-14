@@ -36,7 +36,8 @@ const MCP_TOOLS = [
   ["get_execution_trace", "Return the current execution's OpenReflex decision timeline without raw tool output."],
   ["get_reflex_score", "Return the latest structured Reflex Score and its component signals."],
   ["explain_node", "Show an Experience Graph node and its relations."],
-  ["project_insights", "Summarise capture, reuse, outcomes and learning for the project."],
+  ["get_project_insights", "Summarise capture, reuse, outcomes and learning for the project."],
+  ["forget_experience", "Delete one past task from the project's memory, only when the user explicitly asks."],
   ["approve_project", "Enable the project, only when the user explicitly asks."],
 ];
 

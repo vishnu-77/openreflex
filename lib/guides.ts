@@ -70,7 +70,7 @@ export const GUIDES: Guide[] = [
       { event: "Stop / SessionEnd", what: "Works out the outcome and stores lessons from the task." },
     ],
     notes: [
-      "The MCP server adds tools Claude can call directly: get_execution_context, choose_path, check_progress, record_outcome, search_experience, explain_node and project_insights.",
+      "The MCP server adds tools Claude can call directly: get_execution_context, choose_path, check_progress, record_outcome, search_experience, explain_node, explain_decision, get_execution_trace, get_reflex_score and get_project_insights.",
       "Claude Code is verified in live, headless sessions by OpenReflex's end-to-end test suite.",
     ],
     faq: [

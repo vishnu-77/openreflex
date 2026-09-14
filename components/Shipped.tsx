@@ -10,7 +10,7 @@ const FACTS = [
   },
   {
     title: "Works with four agents",
-    body: "Claude Code, Codex, Cursor and OpenCode, through lifecycle hooks and an MCP server with eight tools.",
+    body: "Claude Code, Codex, Cursor and OpenCode, through lifecycle hooks and an MCP server with twelve tools.",
     link: { href: LINKS.readme, label: "Read the setup guide" },
   },
   {

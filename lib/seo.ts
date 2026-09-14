@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { LINKS, SITE_URL } from "./site";
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.3.1";
 export const LAST_UPDATED = "2026-09-14";
 
 export function absoluteUrl(path = "/") {
