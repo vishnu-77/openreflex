@@ -16,8 +16,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/openreflex?style=flat-square&labelColor=black&color=7cc9c8)](https://pypi.org/project/openreflex/)
 [![CI](https://img.shields.io/github/actions/workflow/status/vishnu-77/openreflex/ci.yml?branch=main&style=flat-square&labelColor=black&label=CI)](https://github.com/vishnu-77/openreflex/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-white?style=flat-square&labelColor=black)](https://github.com/vishnu-77/openreflex/blob/main/LICENSE)
-
-[![OpenReflex MCP server: quality and maintenance score on Glama](https://glama.ai/mcp/servers/vishnu-77/openreflex/badges/card.svg)](https://glama.ai/mcp/servers/vishnu-77/openreflex)
+[![Glama score](https://glama.ai/mcp/servers/vishnu-77/openreflex/badges/score.svg)](https://glama.ai/mcp/servers/vishnu-77/openreflex)
 
 </div>
 
@@ -31,6 +30,14 @@ before: the approach, the files that mattered, and the fix for the error you hit
 
 You install it once and keep working normally. Everything stays on your machine in a local SQLite database.
 There is no account, no service, and no telemetry.
+
+<p align="center">
+  <a href="docs/walkthrough.md">
+    <img alt="A real Claude Code session with OpenReflex: the UserPromptSubmit line shows one past experience found and 162 context tokens added; the Stop line shows a verified success, the path taken and the cost" src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/docs/screenshots/claude-code-session-2.png" width="860">
+  </a>
+  <br>
+  <sub>A real Claude Code session in a repository where OpenReflex had seen one similar task. The full walkthrough, with both sessions and the exact context the model received, is in <a href="docs/walkthrough.md">docs/walkthrough.md</a>.</sub>
+</p>
 
 ## Why OpenReflex
 
@@ -97,17 +104,6 @@ OpenReflex installs per project with `openreflex install <agent>`, or as a plugi
 
 With a plugin install, enable each project with `openreflex approve`. Claude Code and Codex are verified in live
 sessions; the Cursor and OpenCode integrations follow each agent's documented hook protocol.
-
-## See it work
-
-A real Claude Code session in a repository where OpenReflex has seen one similar task before. The
-`UserPromptSubmit` line shows the past experience found and the context added; the `Stop` line shows the verified
-outcome, the path taken and the cost.
-
-![Claude Code session with OpenReflex](https://raw.githubusercontent.com/vishnu-77/openreflex/main/docs/screenshots/claude-code-session-2.png)
-
-The full walkthrough, with both sessions, the exact context the model received and the CLI output, is in
-[docs/walkthrough.md](docs/walkthrough.md).
 
 ## How it works
 
@@ -190,6 +186,12 @@ Agents can also query OpenReflex directly through its MCP server: `get_execution
 
 <a href="https://github.com/vishnu-77/openreflex/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=vishnu-77/openreflex" alt="Contributors">
+</a>
+
+OpenReflex is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.vishnu-77/openreflex` and on Glama:
+
+<a href="https://glama.ai/mcp/servers/vishnu-77/openreflex">
+  <img src="https://glama.ai/mcp/servers/vishnu-77/openreflex/badges/card.svg" alt="OpenReflex MCP server: quality and maintenance score on Glama" width="380">
 </a>
 
 ## License
