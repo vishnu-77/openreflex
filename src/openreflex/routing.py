@@ -18,7 +18,7 @@ def _policy(policy: Policy | None) -> Policy:
 
 
 def embed(text: str, dimensions: int = 256) -> list[float]:
-    """Offline lexical feature hashing, not a pretrained semantic model."""
+    """Offline lexical feature hashing, not a pretrained semantic model. Dimension is embedding-format v1."""
     vector = [0.0] * dimensions
     words = re.findall(r"[a-z0-9_]{2,}", text.lower())
     for word in words + [a + " " + b for a, b in zip(words, words[1:])]:
@@ -65,9 +65,10 @@ def marginal_cost(seconds: float, calls: float, tokens: float, policy: Policy | 
             + float(weights["context_tokens"]) * tokens / float(norm["context_tokens"]))
 
 
-def dominates(a: CandidatePath, b: CandidatePath) -> bool:
+def dominates(a: CandidatePath, b: CandidatePath, policy: Policy | None = None) -> bool:
+    cfg = _policy(policy)
     strictly = False
-    epsilon = 1e-9
+    epsilon = cfg.number("routing.epsilon")
     for name, sign in OBJECTIVES:
         x, y = sign * getattr(a, name), sign * getattr(b, name)
         if x < y - epsilon:
@@ -76,9 +77,10 @@ def dominates(a: CandidatePath, b: CandidatePath) -> bool:
     return strictly
 
 
-def mark_dominated(paths: list[CandidatePath]) -> None:
+def mark_dominated(paths: list[CandidatePath], policy: Policy | None = None) -> None:
+    cfg = _policy(policy)
     for path in paths:
-        dominator = next((other for other in paths if other is not path and dominates(other, path)), None)
+        dominator = next((other for other in paths if other is not path and dominates(other, path, cfg)), None)
         path.dominated_by = dominator.strategy if dominator else None
 
 
@@ -179,7 +181,7 @@ def candidates(task_id: str, task_class: str, experiences: list[Experience], lim
                            - regret_weight * expected_regret, 5)
         result.append(path)
 
-    mark_dominated(result)
+    mark_dominated(result, cfg)
     for path in result:
         path.within_limits = limits.fits(path)
     feasible = any(p.within_limits and not p.dominated_by for p in result)
