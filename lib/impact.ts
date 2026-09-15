@@ -60,7 +60,8 @@ function rainScale(tokensSaved: number): { drops: number; tokensPerDrop: number 
 function treeCount(stage: GrowthStage, progress: number): number {
   if (stage === "forest") return 7 + Math.round(progress * 5);
   if (stage === "grove") return 3 + Math.round(progress * 3);
-  return 1;
+  if (stage === "tree") return 1;
+  return 0;
 }
 
 /**
