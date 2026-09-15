@@ -14,22 +14,24 @@ function compact(value: number) {
 
 function Tree({ x, y, scale = 1, mature = true }: { x: number; y: number; scale?: number; mature?: boolean }) {
   return (
-    <g transform={`translate(${x} ${y}) scale(${scale})`} className="impact-tree-enter">
-      <path d="M0 0V-63" fill="none" stroke="var(--ink)" strokeWidth="7" strokeLinecap="round" />
-      <path d="M0-42L-20-57M0-50L19-69M0-28L25-42" fill="none" stroke="var(--ink)" strokeWidth="4" strokeLinecap="round" />
-      {mature ? (
-        <g fill="var(--accent)">
-          <circle cx="-24" cy="-70" r="24" />
-          <circle cx="5" cy="-83" r="29" />
-          <circle cx="31" cy="-64" r="22" />
-          <circle cx="-3" cy="-55" r="26" />
-        </g>
-      ) : (
-        <g fill="var(--accent)">
-          <ellipse cx="-12" cy="-61" rx="14" ry="8" transform="rotate(-24 -12 -61)" />
-          <ellipse cx="14" cy="-70" rx="14" ry="8" transform="rotate(24 14 -70)" />
-        </g>
-      )}
+    <g transform={`translate(${x} ${y}) scale(${scale})`}>
+      <g className="impact-tree-enter">
+        <path d="M0 0V-63" fill="none" stroke="var(--ink)" strokeWidth="7" strokeLinecap="round" />
+        <path d="M0-42L-20-57M0-50L19-69M0-28L25-42" fill="none" stroke="var(--ink)" strokeWidth="4" strokeLinecap="round" />
+        {mature ? (
+          <g fill="var(--accent)">
+            <circle cx="-24" cy="-70" r="24" />
+            <circle cx="5" cy="-83" r="29" />
+            <circle cx="31" cy="-64" r="22" />
+            <circle cx="-3" cy="-55" r="26" />
+          </g>
+        ) : (
+          <g fill="var(--accent)">
+            <ellipse cx="-12" cy="-61" rx="14" ry="8" transform="rotate(-24 -12 -61)" />
+            <ellipse cx="14" cy="-70" rx="14" ry="8" transform="rotate(24 14 -70)" />
+          </g>
+        )}
+      </g>
     </g>
   );
 }
@@ -168,7 +170,7 @@ export function ImpactGlobe({ impact }: { impact: ImpactSnapshot }) {
                 <p className="mt-2 text-[1.05rem] font-medium text-ink">{compact(impact.rain.tokensPerDrop)} tokens</p>
               </div>
               <div className="col-span-2 border-t border-line py-5 sm:col-span-1 sm:border-l sm:border-t-0 sm:pl-5">
-                <p className="font-mono text-[0.72rem] uppercase tracking-[0.1em] text-muted">Trees shown</p>
+                <p className="font-mono text-[0.72rem] uppercase tracking-[0.1em] text-muted">Mature trees</p>
                 <p className="mt-2 text-[1.05rem] font-medium text-ink">{impact.forestTrees}</p>
               </div>
             </div>
