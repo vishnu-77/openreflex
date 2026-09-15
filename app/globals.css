@@ -107,12 +107,76 @@ body {
   animation: caret 1s steps(1) infinite;
 }
 
+/* Website-only impact visual. These selectors are isolated and do not alter existing components. */
+@keyframes impact-rain {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+  22% {
+    opacity: 0.48;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(138px);
+  }
+}
+
+@keyframes impact-tree-enter {
+  from {
+    opacity: 0;
+    transform: translateY(7px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes impact-seed-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.65);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.impact-rain-drop {
+  animation: impact-rain 2.15s linear infinite;
+  transform-box: fill-box;
+}
+
+.impact-tree-enter {
+  animation: impact-tree-enter 720ms ease-out both;
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+.impact-tree-grow {
+  transition: transform 700ms ease-out;
+}
+
+.impact-seed-enter {
+  animation: impact-seed-enter 560ms ease-out both;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
   }
-  .caret {
+  .caret,
+  .impact-rain-drop,
+  .impact-tree-enter,
+  .impact-seed-enter {
     animation: none;
+  }
+  .impact-tree-grow {
+    transition: none;
   }
 }
 
