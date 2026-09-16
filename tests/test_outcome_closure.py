@@ -4,6 +4,7 @@ from pathlib import Path
 from openreflex import hooks, metrics
 from openreflex.engine import Engine
 from openreflex.mcp_contracts import ExperienceReuseMetrics
+from openreflex.privacy import categorize
 from openreflex.project import approve, approval
 from openreflex.store import Store
 
@@ -61,18 +62,33 @@ def test_read_only_exploration_can_finish_unknown_without_continuation(tmp_path,
         assert "additionalContext" not in data.get("hookSpecificOutput", {})
 
 
-def test_verified_edit_finishes_without_closure_continuation(tmp_path, project, clock):
+def test_verified_helm_edit_finishes_without_closure_continuation(tmp_path, project, clock):
     approve(project)
     factory = _factory(tmp_path, clock)
-    _call(factory, project, "UserPromptSubmit", {"prompt": "Fix the Helm chart test failure caused by missing defaults"})
+    _call(factory, project, "UserPromptSubmit", {"prompt": "Fix the Helm chart validation failure caused by missing defaults"})
     _successful_tool(factory, project, "Edit", {"file_path": "charts/app/values.yaml"}, "e1")
     clock.advance(1)
-    _successful_tool(factory, project, "Bash", {"command": "pytest -q"}, "t1")
+    _successful_tool(factory, project, "Bash", {"command": "helm lint charts/app"}, "t1")
 
     output = _call(factory, project, "Stop", {})
     if output:
         data = json.loads(output)
         assert "additionalContext" not in data.get("hookSpecificOutput", {})
+
+
+def test_helm_verification_commands_are_classified_as_verification():
+    cases = {
+        "helm lint charts/app": "lint",
+        "helm template app charts/app -f values.yaml": "build",
+        "helm unittest charts/app": "test",
+        "helm test app": "test",
+        "ct lint --charts charts/app": "lint",
+        "ct install --charts charts/app": "test",
+        "kubeconform -strict rendered.yaml": "lint",
+        "helm upgrade app charts/app --dry-run --install": "build",
+    }
+    for command, expected in cases.items():
+        assert categorize("Bash", {"command": command}) == expected, command
 
 
 def test_reuse_rate_is_coverage_not_a_claim_of_benefit(engine, clock, project):
