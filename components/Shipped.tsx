@@ -42,7 +42,7 @@ export function Shipped() {
         <SectionHeader
           id="shipped"
           title="What's shipped"
-          intro="OpenReflex 0.2 is available today, MIT licensed. Here is what you get."
+          intro="OpenReflex is MIT licensed and available on PyPI. Here’s what ships in the current release."
         />
         <dl className="grid sm:grid-cols-2 lg:grid-cols-3">
           {FACTS.map((fact) => {
