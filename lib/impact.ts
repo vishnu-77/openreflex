@@ -95,7 +95,7 @@ export function getImpactSnapshot(): ImpactSnapshot {
         : {
             co2eKg,
             treeDays: Number(((co2eKg * 365) / EPA_TREE_KG_CO2_PER_YEAR).toFixed(4)),
-            methodology: "supplied CO2e estimate + EPA 60 kg CO2/tree/year equivalence",
+            methodology: "supplied CO2e estimate + EPA urban-tree equivalence at 60 kg CO2/tree/year",
           },
     sourceLabel: process.env.OPENREFLEX_IMPACT_SOURCE?.trim() || "website aggregate",
     updatedAt: process.env.OPENREFLEX_IMPACT_UPDATED_AT?.trim() || null,
