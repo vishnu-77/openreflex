@@ -20,6 +20,8 @@ class InstallPlan:
     method: str
     command: tuple[str, ...] | None
     detail: str
+    reinstall_command: tuple[str, ...] | None = None
+    uninstall_command: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -49,7 +51,7 @@ def _direct_url() -> dict:
 
 
 def detect_install_plan() -> InstallPlan:
-    """Return the safest supported updater for the running OpenReflex install."""
+    """Return the safest supported package-manager plan for this OpenReflex install."""
     direct = _direct_url()
     url = str(direct.get("url") or "")
     dir_info = direct.get("dir_info") if isinstance(direct.get("dir_info"), dict) else {}
@@ -65,16 +67,28 @@ def detect_install_plan() -> InstallPlan:
         return InstallPlan(
             "uvx",
             None,
-            "Ephemeral uvx environment detected; use a persistent `uv tool install openreflex` install to self-update.",
+            "Ephemeral uvx environment detected; use a persistent `uv tool install openreflex` install to self-manage.",
         )
 
     pipx = shutil.which("pipx")
     if pipx and ("/pipx/venvs/openreflex" in prefix or "/pipx/venvs/" in prefix):
-        return InstallPlan("pipx", (pipx, "upgrade", "openreflex"), "Managed by pipx.")
+        return InstallPlan(
+            "pipx",
+            (pipx, "upgrade", "openreflex"),
+            "Managed by pipx.",
+            reinstall_command=(pipx, "reinstall", "openreflex"),
+            uninstall_command=(pipx, "uninstall", "openreflex"),
+        )
 
     uv = shutil.which("uv")
     if uv and "/uv/tools/openreflex" in prefix:
-        return InstallPlan("uv-tool", (uv, "tool", "upgrade", "openreflex"), "Managed by uv tool.")
+        return InstallPlan(
+            "uv-tool",
+            (uv, "tool", "upgrade", "openreflex"),
+            "Managed by uv tool.",
+            reinstall_command=(uv, "tool", "install", "--force", "openreflex"),
+            uninstall_command=(uv, "tool", "uninstall", "openreflex"),
+        )
 
     if direct.get("vcs_info") or (url and not url.startswith("file:")):
         return InstallPlan(
@@ -139,14 +153,30 @@ def check_for_update(current: str, *, latest_fetcher: Callable[[], str] = latest
     return UpdateCheck(current=current, latest=latest, update_available=available)
 
 
-def run_update(plan: InstallPlan, *, runner: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> int:
-    if plan.command is None:
+def run_command(
+    command: tuple[str, ...] | None,
+    *,
+    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+) -> int:
+    if command is None:
         return 2
     try:
-        result = runner(list(plan.command), check=False)
+        result = runner(list(command), check=False)
     except OSError:
         return 1
     return int(result.returncode)
+
+
+def run_update(plan: InstallPlan, *, runner: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> int:
+    return run_command(plan.command, runner=runner)
+
+
+def run_reinstall(plan: InstallPlan, *, runner: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> int:
+    return run_command(plan.reinstall_command, runner=runner)
+
+
+def run_uninstall(plan: InstallPlan, *, runner: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> int:
+    return run_command(plan.uninstall_command, runner=runner)
 
 
 def installed_version_after_update(*, runner: Callable[..., subprocess.CompletedProcess] = subprocess.run) -> str | None:
