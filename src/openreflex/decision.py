@@ -121,6 +121,7 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
     next_best = max(alternatives, key=lambda path: path.score, default=None)
     ranked = sorted(components.items(), key=lambda item: (-item[1], item[0]))
     reason_codes = [name for name, _ in ranked[:3]]
+    completion_regret = expected_regret if phase == "complete" else (best.expected_regret if expected_regret is None else expected_regret)
     return DecisionSnapshot(
         timestamp=now, phase=phase, action=action, policy_version=policy.version, policy_sources=policy.sources,
         strategy=best.strategy, next_best_strategy=next_best.strategy if next_best else None,
@@ -128,7 +129,7 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
         decision_confidence=components["confidence"], evidence_count=len(experiences),
         evidence_quality=components["evidence"], evidence_relevance=components["relevance"],
         route_advantage=components["route_advantage"], uncertainty=best.uncertainty,
-        expected_regret=best.expected_regret if expected_regret is None else expected_regret,
+        expected_regret=completion_regret,
         estimated_tool_calls=best.tool_calls, estimated_tokens=best.context_tokens, context_tokens=context_tokens,
         budget_used=max(0.0, budget_used), budget_pressure=_clamp(budget_used),
         score_components=components, reason_codes=reason_codes, visibility=_visibility(phase, event, policy),
