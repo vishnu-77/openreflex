@@ -51,14 +51,14 @@ def project_resolution(cwd: str | os.PathLike | None = None) -> dict[str, str | 
                 "agent_hint": agent_hint}
 
 
-def project_root(cwd: str | os.PathLike | None = None) -> Path:
+def project_root(cwd: str | os.PathLike | None = None, *, hook_session: str | None = None) -> Path:
     """The nearest repository root, unless OPENREFLEX_PROJECT explicitly overrides it."""
     resolution = project_resolution(cwd)
     # Only actual hook subprocesses create hook-health traces. Doctor/status must not make themselves look healthy.
     if len(sys.argv) > 1 and sys.argv[1] == "hook":
         agent = sys.argv[2] if len(sys.argv) > 2 else "unknown"
         event = sys.argv[3] if len(sys.argv) > 3 else "unknown"
-        log_hook_resolution(agent, event, "", resolution)
+        log_hook_resolution(agent, event, hook_session or "", resolution)
     return Path(resolution["project"])
 
 
