@@ -1,8 +1,8 @@
 import { ArrowUpRight } from "lucide-react";
-import { RESEARCH_SOURCES } from "@/lib/site";
+import { NOVELTY_SOURCES } from "@/lib/site";
 import { SectionHeader } from "./SectionHeader";
 
-type SourceKey = keyof typeof RESEARCH_SOURCES;
+type SourceKey = keyof typeof NOVELTY_SOURCES;
 
 type PriorArt = {
   work: string;
@@ -11,7 +11,7 @@ type PriorArt = {
   sources: SourceKey[];
 };
 
-const SOURCE_ORDER = Object.keys(RESEARCH_SOURCES) as SourceKey[];
+const SOURCE_ORDER = Object.keys(NOVELTY_SOURCES) as SourceKey[];
 
 const CLOSEST_WORK: PriorArt[] = [
   {
@@ -84,7 +84,7 @@ function Refs({ keys }: { keys: SourceKey[] }) {
   return (
     <>
       {keys.map((key) => (
-        <a key={key} href={`#source-${key}`} className="ml-1 font-mono text-[0.72rem] text-accent align-super">
+        <a key={key} href={`#novelty-source-${key}`} className="ml-1 font-mono text-[0.72rem] text-accent align-super">
           [{SOURCE_ORDER.indexOf(key) + 1}]
         </a>
       ))}
@@ -201,15 +201,15 @@ export function NoveltyBoundary() {
           <h3 className="text-sm font-semibold text-ink">Closest-work sources</h3>
           <ol className="mt-3 grid gap-x-10 gap-y-2 text-[0.93rem] sm:grid-cols-2">
             {SOURCE_ORDER.map((key, index) => (
-              <li key={key} id={`source-${key}`} className="flex gap-2 text-muted">
+              <li key={key} id={`novelty-source-${key}`} className="flex gap-2 text-muted">
                 <span className="font-mono text-[0.8rem] tabular-nums">{index + 1}.</span>
                 <a
-                  href={RESEARCH_SOURCES[key].href}
+                  href={NOVELTY_SOURCES[key].href}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-text underline-offset-4 hover:text-accent hover:underline"
                 >
-                  {RESEARCH_SOURCES[key].label}
+                  {NOVELTY_SOURCES[key].label}
                   <ArrowUpRight size={13} aria-hidden="true" />
                 </a>
               </li>
