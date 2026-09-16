@@ -15,7 +15,7 @@ const LOOP = [
   },
   {
     name: "Learn",
-    body: "Persist verified outcomes and estimated execution regret to update later path priors and intervention evidence.",
+    body: "Persist verified outcomes and estimated execution regret to update later path priors.",
   },
 ];
 
@@ -26,27 +26,26 @@ export function ResearchIdea() {
         <SectionHeader
           id="idea"
           title="Execution intelligence for coding agents"
-          intro="OpenReflex studies whether longitudinal execution evidence can improve how coding agents allocate computation and change course during a task. The current system is an engineering baseline; the vNext research programme tests which intervention claims survive controlled evaluation."
+          intro="OpenReflex studies whether evidence from prior executions can help coding agents use computation more deliberately during a task. This page documents only research ideas that are already represented in public releases."
         />
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
           <div className="border border-line bg-panel p-6 sm:p-8">
             <p className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-accent">Research question</p>
             <p className="mt-4 max-w-[48rem] font-serif text-[1.45rem] leading-9 text-ink">
-              Can a coding-agent execution controller learn, from verified prior executions, when another unit of computation is
-              worth spending and when an alternative action should replace the current path?
+              Can verified execution experience improve how a coding agent chooses a path, spends its budget and responds when progress deteriorates?
             </p>
           </div>
           <div className="border border-line bg-panel p-6 sm:p-8">
-            <p className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-accent">Current claim boundary</p>
+            <p className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-accent">Claim boundary</p>
             <p className="mt-4 leading-7 text-text">
-              OpenReflex currently estimates alternative-path regret; it does not claim causal counterfactual effects. Stronger
-              intervention claims require matched-prefix branch experiments and held-out evaluation.
+              Public claims are limited to behaviour and evidence present in tagged OpenReflex releases. Unreleased methods,
+              experiments and research directions are intentionally not described here.
             </p>
           </div>
         </div>
 
-        <h3 className="mt-14 text-[1.2rem] font-semibold tracking-tight text-ink">Current execution loop</h3>
+        <h3 className="mt-14 text-[1.2rem] font-semibold tracking-tight text-ink">Released execution loop</h3>
         <ol className="mt-5 grid gap-px overflow-hidden border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
           {LOOP.map((step, index) => (
             <li key={step.name} className="bg-panel p-5 sm:p-6">
@@ -58,9 +57,8 @@ export function ResearchIdea() {
         </ol>
 
         <p className="mt-8 max-w-[64rem] text-sm leading-7 text-muted">
-          The developer-facing idea remains simple: give coding agents useful execution memory. The research question is narrower:
-          whether observable trajectory evidence can support calibrated, cost-sensitive intervention decisions without adding an
-          LLM controller to the production path.
+          The developer-facing idea remains simple: useful execution memory should make the agent feel more effective. The
+          researcher view exists to document what has been released, how it is measured and where its claims sit relative to prior work.
         </p>
       </div>
     </section>

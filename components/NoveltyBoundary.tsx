@@ -4,17 +4,7 @@ import { SectionHeader } from "./SectionHeader";
 
 type SourceKey = keyof typeof NOVELTY_SOURCES;
 
-const USED_SOURCES: SourceKey[] = [
-  "stair",
-  "bats",
-  "loopArena",
-  "harnessRL",
-  "calibrationControl",
-  "bpo",
-  "causalReplay",
-  "ecLoop",
-  "failureProcess",
-];
+const USED_SOURCES: SourceKey[] = ["stair", "bats", "loopArena", "harnessRL", "ecLoop"];
 
 function Ref({ id }: { id: SourceKey }) {
   return (
@@ -31,7 +21,7 @@ export function NoveltyBoundary() {
         <SectionHeader
           id="novelty"
           title="Novelty and positioning"
-          intro="The novelty claim is intentionally narrow. OpenReflex is not presented as a new form of agent memory, budget awareness, runtime control or counterfactual replay; each has substantial prior work. The research target is a specific intervention-learning regime for deployed coding agents."
+          intro="OpenReflex does not claim novelty for agent memory, budget awareness or runtime control in isolation. The public research position is restricted to the combination and evidence already present in released versions."
         />
 
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
@@ -40,40 +30,33 @@ export function NoveltyBoundary() {
               <p className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-accent">Related work</p>
               <p className="mt-4 max-w-[52rem] leading-7 text-text">
                 Historical coding trajectories can already be abstracted into reusable plans through STAIR<Ref id="stair" />.
-                Budget-aware agents can adapt planning and pivot under resource constraints through BATS<Ref id="bats" />.
-                Runtime controllers for coding agents are directly evaluated by LoopArena<Ref id="loopArena" />, while learned
-                harness control has been formalised as an offline-RL problem with a frozen executor<Ref id="harnessRL" />.
-                Same-prefix intervention advantage is explicit in Calibration Is Not Control<Ref id="calibrationControl" />;
-                BPO branches resumable sandboxes for sibling-return learning<Ref id="bpo" />, and Causal Agent Replay uses
-                intervention and re-execution for causal failure attribution<Ref id="causalReplay" />.
+                Budget-aware agents can adapt planning under resource constraints through BATS<Ref id="bats" />.
+                Runtime controllers for coding agents are evaluated by LoopArena<Ref id="loopArena" />, while learned harness
+                control has also been formalised with a frozen executor<Ref id="harnessRL" />. Evidence-conditioned execution
+                systems such as ECLoop further show that runtime intervention is an active research area<Ref id="ecLoop" />.
               </p>
             </div>
 
             <div>
-              <p className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-accent">Research gap</p>
+              <p className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-accent">Released position</p>
               <p className="mt-4 max-w-[52rem] leading-7 text-text">
-                In the literature reviewed through 16 September 2026, we did not identify a system that combines
-                <strong className="font-semibold text-ink"> longitudinal project-specific execution experience</strong>,
-                offline matched-branch supervision, cost-sensitive intervention, cross-harness evaluation and a
-                privacy-minimised deployment path that requires neither production replay nor an additional LLM controller.
-                Early-failure studies and evidence-conditioned execution motivate the need for timely intervention rather than
-                establishing this combination themselves<Ref id="failureProcess" /><Ref id="ecLoop" />.
+                OpenReflex currently combines project-local execution experience, multi-objective path selection, execution
+                budgets, runtime continue / pivot / stop recommendations, and observable decision evidence. These are treated as
+                an experimental system design rather than as individually novel primitives.
               </p>
             </div>
           </div>
 
           <aside className="border border-line bg-panel p-6 sm:p-8">
-            <p className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-accent">vNext hypothesis</p>
+            <p className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-accent">Publication policy</p>
             <p className="mt-4 font-serif text-[1.35rem] leading-8 text-ink">
-              A lightweight controller trained from verified project history and matched execution branches can predict when
-              continue, pivot or stop improves realised task utility, while safely abstaining when evidence is insufficient.
+              Research claims are added here only after the corresponding capability has shipped and can be inspected or measured.
             </p>
             <div className="mt-7 border-t border-line pt-6">
-              <p className="font-mono text-[0.68rem] uppercase tracking-[0.12em] text-muted">Claim conditions</p>
+              <p className="font-mono text-[0.68rem] uppercase tracking-[0.12em] text-muted">What is intentionally absent</p>
               <p className="mt-3 text-sm leading-6 text-muted">
-                The claim is supported only if held-out experiments show non-inferior task success, lower execution cost or
-                intervention regret, calibrated abstention, and transfer across at least two coding-agent harnesses. Until then,
-                this remains a falsifiable research hypothesis rather than a product claim.
+                Unreleased hypotheses, internal experiments, future evaluation protocols and implementation directions are not
+                published on this page. They will be introduced progressively with releases and supporting evidence.
               </p>
             </div>
           </aside>
