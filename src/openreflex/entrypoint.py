@@ -16,15 +16,9 @@ from pathlib import Path
 from . import cli
 from .claude_ui import configure_statusline, remove_statusline
 from .project import approval, project_root
-from .project_memory import (
-    context_for_task,
-    ensure_background_refresh,
-    load_snapshot,
-    read_state,
-    run_worker,
-    update_state,
-)
+from .project_memory import ensure_background_refresh, load_snapshot, read_state, run_worker, update_state
 from .privacy import categorize
+from .reflex_index import account_project_context, context_for_task, reinforce_latest_execution, sync_counts
 from .tui import claude_project_from_stdin, dashboard, statusline
 
 PROMPT_EVENTS = {"UserPromptSubmit"}
@@ -105,13 +99,14 @@ def _tool_state(project: Path, payload: dict) -> None:
         update_state(project, "watch", execution=execution)
 
 
-def _stop_state(project: Path, output: str) -> None:
+def _stop_state(project: Path, agent: str, session: str, output: str) -> None:
     outcome = "execution captured"
     data = _output_dict(output)
     notice = str(data.get("systemMessage") or "") if isinstance(data, dict) else ""
     match = re.search(r"COMPLETE\s*\n\s*([^\s·]+)", notice)
     if match:
         outcome = match.group(1)
+    reinforce_latest_execution(project, agent, session)
     update_state(project, "remember", outcome=outcome, execution={})
 
 
@@ -124,7 +119,8 @@ def _hook(argv: list[str]) -> int:
     raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
     payload = _payload(raw)
     cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) else None
-    project = project_root(cwd, hook_session=str(payload.get("session_id") or ""))
+    session = str(payload.get("session_id") or "")
+    project = project_root(cwd, hook_session=session)
     enabled = approval(project) is not None
     phase = None
 
@@ -132,6 +128,7 @@ def _hook(argv: list[str]) -> int:
         if agent == "claude-code":
             configure_statusline(project)  # no-op when the user already owns a custom status line
         phase = ensure_background_refresh(project)
+        sync_counts(project)
 
     output = safe_handle(agent, event, raw)
 
@@ -143,11 +140,12 @@ def _hook(argv: list[str]) -> int:
         project_context = context_for_task(project, prompt) if is_substantial(prompt) else None
         if project_context:
             output = _merge_project_context(output, project_context, event)
+            account_project_context(project, agent, session, project_context)
         _prompt_state(project, output, project_context)
     elif enabled and event in TOOL_END_EVENTS:
         _tool_state(project, payload)
     elif enabled and event in STOP_EVENTS:
-        _stop_state(project, output)
+        _stop_state(project, agent, session, output)
 
     if output:
         sys.stdout.write(output)
@@ -169,6 +167,7 @@ def _tui(argv: list[str]) -> int:
     project = project_root(_project_arg(argv))
     if approval(project):
         ensure_background_refresh(project)
+        sync_counts(project)
     print(dashboard(project))
     return 0
 
@@ -181,8 +180,10 @@ def _memory(argv: list[str]) -> int:
             from .project_memory import snapshot_path
             snapshot_path(project).unlink(missing_ok=True)
         result = run_worker(project)
+        sync_counts(project)
         print(f"OPENREFLEX / MEMORY\n  action      {action}\n  state       ready\n  generation  {result.get('generation', 0)}")
         return 0
+    sync_counts(project)
     snapshot, state = load_snapshot(project), read_state(project)
     print("OPENREFLEX / MEMORY")
     print(f"  project     {project}")
@@ -192,6 +193,9 @@ def _memory(argv: list[str]) -> int:
     print(f"  facts       {sum(f.get('state') == 'active' for f in snapshot.get('facts', []))} active / "
           f"{sum(f.get('state') == 'stale' for f in snapshot.get('facts', []))} stale")
     print(f"  files       {len(snapshot.get('indexed_files', []))} indexed")
+    print(f"  experiences {state.get('experiences', 0)}")
+    print(f"  outcomes    {state.get('known_outcomes', 0)} known / {state.get('verified', 0)} verified")
+    print(f"  lessons     {state.get('lessons', 0)}")
     return 0
 
 
