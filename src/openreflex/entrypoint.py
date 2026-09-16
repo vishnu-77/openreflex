@@ -119,7 +119,7 @@ def _hook(argv: list[str]) -> int:
     raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
     payload = _payload(raw)
     cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) else None
-    session = str(payload.get("session_id") or "")
+    session = str(payload.get("session_id") or payload.get("conversation_id") or "")
     project = project_root(cwd, hook_session=session)
     enabled = approval(project) is not None
     phase = None
@@ -154,11 +154,10 @@ def _hook(argv: list[str]) -> int:
 
 
 def _statusline() -> int:
+    """Render from cached state only; never scan, query git, or open the Experience Graph on the refresh path."""
     raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
     hinted = claude_project_from_stdin(raw)
     project = project_root(hinted)
-    if approval(project):
-        ensure_background_refresh(project)
     print(statusline(project, force_colour=True))
     return 0
 
