@@ -4,102 +4,101 @@ type Stage = {
   version: string;
   status: string;
   title: string;
-  question: string;
-  hypothesis: string;
-  mechanism: string[];
-  evaluation: string[];
+  objective: string;
+  change: string[];
+  gate: string[];
   note?: string;
 };
 
 const STAGES: Stage[] = [
   {
-    version: "v0.2",
-    status: "RELEASED FOUNDATION",
-    title: "Execution memory and trajectory evidence",
-    question: "Can local lifecycle telemetry become useful execution memory without storing raw transcripts or code contents?",
-    hypothesis:
-      "A project-local Experience Graph can preserve enough structure about tasks, tools, outcomes and resolutions to improve later execution decisions while remaining privacy-minimised.",
-    mechanism: [
-      "Lifecycle hooks and MCP capture task, tool category, status, project-relative files and verification outcomes.",
-      "Experience Graph nodes connect tasks, candidate paths, executions, tool calls, outcomes and lessons.",
-      "Similar prior executions are retrieved and converted into advisory context for the next task.",
-      "Execution Regret compares the realised route with plausible alternatives when outcome evidence is available.",
-    ],
-    evaluation: [
-      "Experience reuse rate",
-      "Routing agreement",
-      "Known-outcome success rate",
-      "Execution Regret coverage and trend",
-      "Privacy and project-boundary correctness",
-    ],
-  },
-  {
     version: "v0.3",
     status: "CURRENT",
-    title: "Observable, configurable execution policy",
-    question: "Can execution recommendations be made decomposable, reproducible and inspectable rather than hidden in ad-hoc routing logic?",
-    hypothesis:
-      "A versioned policy plus persistent decision snapshots can make route selection, budget use and runtime intervention explainable without changing the agent's normal workflow.",
-    mechanism: [
-      "Versioned TOML policy controls routing objectives, priors, budgets, detectors, scoring and visibility.",
-      "DecisionSnapshot records the chosen route, alternatives, confidence, evidence quality, route edge, budget pressure and context overhead.",
-      "Reflex Score describes recommendation strength separately from estimated task-success probability.",
-      "Claude Code receives compact start/intervention/completion recaps; all agents continue to receive protocol-appropriate execution context.",
-      "`openreflex why`, `openreflex trace` and MCP tools expose the same stored decision evidence.",
+    title: "Observable execution policy",
+    objective: "Preserve the current product baseline before changing the learning model.",
+    change: [
+      "Versioned routing policy, execution budgets and continue / pivot / stop advisories remain the default behaviour.",
+      "Decision snapshots, `why`, `trace` and existing MCP / hook integrations remain backward compatible.",
     ],
-    evaluation: [
-      "Decision stability",
-      "Score decomposition consistency",
-      "Context overhead",
-      "Budget adherence",
-      "Pivot/stop precision",
-      "Cross-agent lifecycle compatibility",
+    gate: ["Current test suite remains green", "No migration required for existing project memory"],
+    note: "vNext is additive. Existing users should not experience a behaviour change merely because research instrumentation lands.",
+  },
+  {
+    version: "v0.3.1",
+    status: "NEXT — MEASUREMENT",
+    title: "Execution-state evidence",
+    objective: "Make every intervention decision reproducible before attempting to learn one.",
+    change: [
+      "Add a stable, privacy-minimised ExecutionState snapshot at decision points.",
+      "Separate observed evidence, heuristic estimates and verified outcomes in persisted records.",
+      "Rename causal-sounding metrics where only estimated alternatives are available.",
     ],
-    note: "This is the current implementation line. Tunable decision values live in the execution policy rather than presentation code.",
+    gate: ["Deterministic decision replay", "No raw transcript or tool-output storage", "No change to intervention policy"],
+  },
+  {
+    version: "v0.3.2",
+    status: "SHADOW MODE",
+    title: "Outcome and intervention dataset",
+    objective: "Collect learning-ready examples without allowing learned predictions to affect the agent.",
+    change: [
+      "Derive compact trajectory-prefix features from existing lifecycle events.",
+      "Record candidate actions and verified downstream utility where it is observable.",
+      "Introduce dataset export for controlled research runs only.",
+    ],
+    gate: ["Schema stability", "Project isolation", "Feature coverage across at least two supported harnesses"],
   },
   {
     version: "v0.4",
-    status: "ACTIVE RESEARCH",
-    title: "Adaptive project execution policy",
-    question: "Can repeated project trajectories teach OpenReflex how this codebase is best worked on rather than relying on permanently hand-authored strategies?",
-    hypothesis:
-      "Project-specific priors, phase patterns and strategy statistics should outperform generic routing once enough comparable verified executions exist.",
-    mechanism: [
-      "Infer execution phases: orient → explore → hypothesise → act → verify → resolve.",
-      "Discover recurring successful phase/tool sequences and promote supported project-specific strategies.",
-      "Calibrate strategy success, expected cost, failure likelihood and pivot sensitivity from completed local trajectories.",
-      "Evaluate continue, retrieve, inspect, verify, pivot and stop as competing actions under one constrained execution policy.",
+    status: "RESEARCH HARNESS",
+    title: "Matched-prefix branch evaluation",
+    objective: "Replace guessed alternatives with realised outcomes during offline experiments.",
+    change: [
+      "Create reproducible repository snapshots at selected intervention points.",
+      "Run matched continue / pivot / stop branches from the same prefix in an isolated benchmark harness.",
+      "Measure task success and execution utility under identical task state and evaluation criteria.",
     ],
-    evaluation: [
-      "Held-out task success",
-      "Tool-call and token efficiency",
-      "Phase-transition quality",
-      "Regret reduction",
-      "Calibration error",
-      "Project-specific strategy support",
+    gate: ["Branch reproducibility", "Evaluator isolation", "Enough paired outcomes to estimate intervention advantage"],
+    note: "Branching is a research/evaluation mechanism, not a production requirement and not claimed as novel by itself.",
+  },
+  {
+    version: "v0.4.1",
+    status: "SHADOW PREDICTION",
+    title: "Calibrated intervention value",
+    objective: "Learn whether an intervention is worth taking before permitting the model to influence execution.",
+    change: [
+      "Train an interpretable baseline estimator for action-conditioned downstream utility.",
+      "Compare learned predictions with the current heuristic controller on held-out branch outcomes.",
+      "Add confidence estimates and an explicit abstain region when action value is uncertain.",
     ],
+    gate: ["Calibration on held-out tasks", "Lower intervention regret than current heuristics", "False-pivot rate reported explicitly"],
+  },
+  {
+    version: "v0.4.2",
+    status: "OPT-IN ADVISORY",
+    title: "Evidence-gated intervention",
+    objective: "Expose learned recommendations gradually while retaining the existing controller as the safety fallback.",
+    change: [
+      "Run the learned value estimator locally at decision points behind a feature flag.",
+      "Intervene only above a calibrated advantage threshold; otherwise abstain or use the existing policy.",
+      "Persist model version, evidence and prediction alongside the decision snapshot for auditability.",
+    ],
+    gate: ["No reduction in verified task success", "Measured cost reduction", "Rollback to v0.3 controller at any time"],
   },
   {
     version: "v0.5",
-    status: "FUTURE RESEARCH",
-    title: "Inference and context economics",
-    question: "Can OpenReflex allocate context and inference-time compute according to expected marginal value rather than fixed retrieval and execution budgets?",
-    hypothesis:
-      "Value-of-information context selection and counterfactual policy replay can reduce wasted computation while preserving or improving task success.",
-    mechanism: [
-      "Score candidate memories by expected utility change minus token cost, redundancy and stale evidence.",
-      "Treat tokens, tool calls, wall time, context growth and repeated exploration as execution compute.",
-      "Retain, replace, compress or drop context as its marginal value changes during the task.",
-      "Replay historical trajectories against candidate policy versions before promotion.",
-      "Calibrate Reflex Score and confidence bands against observed recommendation quality.",
+    status: "VNEXT TARGET",
+    title: "Project-adaptive execution intelligence",
+    objective: "Test the actual novelty hypothesis rather than merely shipping a learned controller.",
+    change: [
+      "Update intervention priors from longitudinal, verified project experience.",
+      "Evaluate transfer across agent harnesses without introducing an LLM controller in the production path.",
+      "Treat tokens, tool calls, elapsed time and verification quality as joint execution utility rather than isolated counters.",
     ],
-    evaluation: [
-      "Context ROI with confidence bounds",
-      "Marginal compute efficiency",
-      "Counterfactual regret",
-      "Policy replay win rate",
-      "Calibration curves",
-      "Task success under matched budgets",
+    gate: [
+      "Held-out repository evaluation",
+      "At least two coding-agent harnesses",
+      "Non-inferior success with lower cost or intervention regret",
+      "Calibrated abstention under distribution shift",
     ],
   },
 ];
@@ -110,64 +109,41 @@ export function ResearchRoadmap() {
       <div className="mx-auto max-w-[1320px] px-5 py-20 sm:px-10 sm:py-28">
         <SectionHeader
           id="roadmap"
-          title="Research roadmap"
-          intro="From execution memory to an adaptive execution policy. Each version states the research question, falsifiable hypothesis, mechanism and evaluation criteria so shipped behaviour stays distinct from future claims."
+          title="vNext research roadmap"
+          intro="The transition is deliberately incremental: measure first, learn in shadow mode, validate with matched branches, then expose evidence-gated recommendations. No stage requires replacing the working OpenReflex core before its successor has earned the right to intervene."
         />
 
         <div className="mt-10 border border-line bg-panel">
-          {STAGES.map((stage, index) => (
-            <details key={stage.version} open={stage.version === "v0.3"} className="group border-b border-line last:border-b-0">
-              <summary className="grid cursor-pointer list-none gap-4 p-5 marker:hidden sm:grid-cols-[5.5rem_minmax(0,1fr)_auto] sm:items-center sm:p-7 [&::-webkit-details-marker]:hidden">
+          {STAGES.map((stage) => (
+            <details key={stage.version} open={stage.version === "v0.3.1"} className="group border-b border-line last:border-b-0">
+              <summary className="grid cursor-pointer list-none gap-4 p-5 marker:hidden sm:grid-cols-[6rem_minmax(0,1fr)_auto] sm:items-center sm:p-7 [&::-webkit-details-marker]:hidden">
                 <span className="font-mono text-sm font-semibold tabular-nums text-accent">{stage.version}</span>
                 <div>
                   <h3 className="font-semibold tracking-tight text-ink">{stage.title}</h3>
                   <p className="mt-1 font-mono text-[0.68rem] uppercase tracking-[0.12em] text-muted">{stage.status}</p>
                 </div>
-                <span className="font-mono text-lg text-muted transition-transform group-open:rotate-45" aria-hidden="true">
-                  +
-                </span>
+                <span className="font-mono text-lg text-muted transition-transform group-open:rotate-45" aria-hidden="true">+</span>
               </summary>
 
               <div className="border-t border-line bg-bg px-5 py-7 sm:px-7 sm:py-8">
-                <div className="grid gap-8 xl:grid-cols-2">
-                  <div className="space-y-7">
-                    <div>
-                      <p className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-accent">Research question</p>
-                      <p className="mt-3 max-w-[42rem] font-serif text-[1.35rem] leading-8 text-ink">{stage.question}</p>
-                    </div>
-                    <div>
-                      <p className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-accent">Hypothesis</p>
-                      <p className="mt-3 max-w-[42rem] leading-7 text-text">{stage.hypothesis}</p>
-                    </div>
-                    {stage.note && (
-                      <p className="border-l-2 border-accent pl-4 text-sm leading-6 text-muted">{stage.note}</p>
-                    )}
+                <p className="max-w-[54rem] font-serif text-[1.28rem] leading-8 text-ink">{stage.objective}</p>
+                {stage.note && <p className="mt-5 max-w-[54rem] border-l-2 border-accent pl-4 text-sm leading-6 text-muted">{stage.note}</p>}
+                <div className="mt-7 grid gap-8 lg:grid-cols-2">
+                  <div>
+                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.13em] text-accent">Increment</p>
+                    <ul className="mt-4 space-y-3">
+                      {stage.change.map((item) => (
+                        <li key={item} className="text-sm leading-6 text-text">{item}</li>
+                      ))}
+                    </ul>
                   </div>
-
-                  <div className="grid gap-7 sm:grid-cols-2">
-                    <div>
-                      <p className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-accent">Mechanism</p>
-                      <ol className="mt-4 space-y-3">
-                        {stage.mechanism.map((item, itemIndex) => (
-                          <li key={item} className="grid grid-cols-[1.8rem_minmax(0,1fr)] gap-2 text-sm leading-6 text-text">
-                            <span className="font-mono text-[0.68rem] tabular-nums text-muted">
-                              {String(itemIndex + 1).padStart(2, "0")}
-                            </span>
-                            <span>{item}</span>
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                    <div>
-                      <p className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-accent">Evaluation</p>
-                      <ul className="mt-4 space-y-3">
-                        {stage.evaluation.map((item) => (
-                          <li key={item} className="border-t border-line pt-3 text-sm leading-6 text-text first:border-t-0 first:pt-0">
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                  <div>
+                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.13em] text-accent">Promotion gate</p>
+                    <ul className="mt-4 space-y-3">
+                      {stage.gate.map((item) => (
+                        <li key={item} className="border-t border-line pt-3 text-sm leading-6 text-text first:border-t-0 first:pt-0">{item}</li>
+                      ))}
+                    </ul>
                   </div>
                 </div>
               </div>
@@ -175,28 +151,10 @@ export function ResearchRoadmap() {
           ))}
         </div>
 
-        <div className="mt-12 border border-line bg-panel p-6 sm:p-8">
-          <p className="font-mono text-[0.72rem] uppercase tracking-[0.15em] text-accent">SYSTEM BOUNDARY</p>
-          <div className="mt-5 grid gap-px overflow-hidden border border-line bg-line md:grid-cols-5">
-            {[
-              ["HARNESS", "Observe actual execution"],
-              ["STATE", "Represent the task now"],
-              ["POLICY", "Evaluate competing actions"],
-              ["DECISION", "Persist evidence + rationale"],
-              ["LEARNING", "Update future priors"],
-            ].map(([title, body]) => (
-              <div key={title} className="bg-bg-soft p-5">
-                <p className="font-mono text-[0.68rem] tracking-[0.12em] text-accent">{title}</p>
-                <p className="mt-2 text-sm leading-6 text-text">{body}</p>
-              </div>
-            ))}
-          </div>
-          <p className="mt-5 max-w-[60rem] text-sm leading-6 text-muted">
-            Harness engineering, context engineering, inference-time compute and routing are not separate product modes.
-            They are observations, resources and actions around one constrained execution policy. The policy decides;
-            the snapshot records; the recap, CLI, MCP and researcher surfaces render that same decision.
-          </p>
-        </div>
+        <p className="mt-8 max-w-[64rem] text-sm leading-7 text-muted">
+          The public roadmap intentionally omits model architecture, branch-selection heuristics, dataset construction details and
+          statistical protocol. Those belong in the experimental report rather than in product documentation.
+        </p>
       </div>
     </section>
   );
