@@ -58,6 +58,7 @@ function rainScale(tokensSaved: number): { drops: number; tokensPerDrop: number 
 }
 
 function treeCount(stage: GrowthStage, progress: number): number {
+  // This controls the illustrative landscape density only. It is never a physical-tree count.
   if (stage === "forest") return 7 + Math.round(progress * 5);
   if (stage === "grove") return 3 + Math.round(progress * 3);
   if (stage === "tree") return 1;
@@ -76,7 +77,7 @@ function treeCount(stage: GrowthStage, progress: number): number {
  *   OPENREFLEX_IMPACT_UPDATED_AT="2026-09-15T14:00:00Z"
  *
  * CO2e is intentionally not inferred from token count here: model, hardware, batching and electricity mix matter.
- * When a defensible upstream estimate is supplied, we convert it to EPA urban-tree sequestration-equivalent days.
+ * When a defensible upstream estimate is supplied, we convert it to EPA urban-tree-equivalent days.
  */
 export function getImpactSnapshot(): ImpactSnapshot {
   const tokensSaved = Math.floor(nonNegativeNumber(process.env.OPENREFLEX_TOKENS_SAVED) ?? 0);
@@ -95,7 +96,7 @@ export function getImpactSnapshot(): ImpactSnapshot {
         : {
             co2eKg,
             treeDays: Number(((co2eKg * 365) / EPA_TREE_KG_CO2_PER_YEAR).toFixed(4)),
-            methodology: "supplied CO2e estimate + EPA urban-tree equivalence at 60 kg CO2/tree/year",
+            methodology: "supplied CO2e estimate + EPA 60 kg CO2/tree/year urban-tree communication equivalence",
           },
     sourceLabel: process.env.OPENREFLEX_IMPACT_SOURCE?.trim() || "website aggregate",
     updatedAt: process.env.OPENREFLEX_IMPACT_UPDATED_AT?.trim() || null,
