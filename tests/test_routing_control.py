@@ -1,3 +1,6 @@
+import pytest
+from mcp.server.fastmcp.exceptions import ToolError
+
 from openreflex.models import Experience
 from openreflex.routing import Limits, budget_for, candidates, dominates, limits_from_env
 
@@ -155,6 +158,7 @@ def test_mcp_limits_and_progress_check(project):
                                                           "max_tool_calls": 15})
     assert "Budget: ~15 tool calls" in context and "(your limit)" in context and "over the limits" in context
     assert "Suggested path: inspect-first" in context
-    assert "limits must be positive" in tool_text(server, "get_execution_context", {"task": "x y z w v", "max_minutes": 0})
+    with pytest.raises(ToolError, match="greater than 0"):
+        tool_text(server, "get_execution_context", {"task": "x y z w v", "max_minutes": 0})
     progress = tool_text(server, "check_progress", {})
     assert progress.startswith("Recommendation: continue (no signs of trouble)") and "Marginal value" in progress
