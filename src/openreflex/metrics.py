@@ -60,7 +60,7 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
     weeks = {int((e.started_at - (approved_at or first_task or now)) // WEEK) for e in executions}
     weeks_elapsed = int((now - (approved_at or first_task or now)) // WEEK) + 1
     substantial = [t for t in tasks if t.substantial]
-    benefited = [t for t in substantial if contexts.get(t.id) and contexts[t.id].experience_ids]
+    reused = [t for t in substantial if contexts.get(t.id) and contexts[t.id].experience_ids]
 
     known = [x for x in experiences if x.status != "unknown"]
     with_prior = [x for x in experiences if x.benefited]
@@ -99,6 +99,7 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
     within_budget = [outcomes_by_execution[e.id].tool_calls <= e.budget_tool_calls for e in executions
                      if e.budget_tool_calls and e.id in outcomes_by_execution]
     with_prior_profile, without_prior_profile = profile(with_prior), profile(without_prior)
+    reuse_rate = round(len(reused) / len(substantial), 3) if substantial else None
     return {
         "project": str(engine.project),
         "activation": {
@@ -110,8 +111,9 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
                        "experiences": len(experiences), "active_weeks": len(weeks), "weeks_since_start": weeks_elapsed,
                        "active_week_ratio": round(len(weeks) / weeks_elapsed, 3) if executions else None,
                        "agents": sorted({t.agent for t in tasks})},
-        "experience_reuse": {"benefit_rate": round(len(benefited) / len(substantial), 3) if substantial else None,
-                             "tasks_with_prior_experience": len(benefited)},
+        "experience_reuse": {"reuse_rate": reuse_rate,
+                             "benefit_rate": reuse_rate,
+                             "tasks_with_prior_experience": len(reused)},
         "outcomes": {"known": len(known), "verified": sum(1 for o in store.list("Outcome", limit=100_000) if o.verified),
                      "success_rate": _avg(x.status == "success" for x in known)},
         "efficiency_observational": {
