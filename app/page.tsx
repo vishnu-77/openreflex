@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Footer } from "@/components/Footer";
 import { GraphExplorer } from "@/components/GraphExplorer";
 import { Hero } from "@/components/Hero";
-import { ImpactGlobe } from "@/components/ImpactGlobe";
 import { JsonLd } from "@/components/JsonLd";
 import { HowItWorks } from "@/components/HowItWorks";
 import { Navbar } from "@/components/Navbar";
@@ -14,7 +13,6 @@ import { ResearchEvidence } from "@/components/ResearchEvidence";
 import { ResearchIdea } from "@/components/ResearchIdea";
 import { ResearchRoadmap } from "@/components/ResearchRoadmap";
 import { Shipped } from "@/components/Shipped";
-import { getImpactSnapshot } from "@/lib/impact";
 import { softwareJsonLd, websiteJsonLd } from "@/lib/seo";
 import { DESCRIPTION } from "@/lib/site";
 
@@ -22,8 +20,6 @@ import { DESCRIPTION } from "@/lib/site";
 export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 export default function Home() {
-  const impact = getImpactSnapshot();
-
   return (
     <>
       <JsonLd data={[softwareJsonLd(DESCRIPTION), websiteJsonLd()]} />
@@ -36,7 +32,6 @@ export default function Home() {
       <Navbar />
       <main id="main">
         <Hero />
-        <ImpactGlobe impact={impact} />
         <div className="view-builder">
           <HowItWorks />
           <Quickstart />
