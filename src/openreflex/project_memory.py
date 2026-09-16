@@ -20,6 +20,8 @@ from .store import database_path
 
 SNAPSHOT_SCHEMA = "project-memory.v1"
 STATE_SCHEMA = "openreflex-ui.v1"
+FRESHNESS_CHECK_SECONDS = 15
+STALE_LOCK_SECONDS = 180
 IGNORE_DIRS = {
     ".git", ".hg", ".svn", ".idea", ".vscode", ".next", ".venv", "venv", "node_modules", "vendor",
     "dist", "build", "target", "coverage", ".terraform", ".tox", ".nox", "__pycache__",
@@ -90,7 +92,7 @@ def update_state(project: Path, phase: str | None = None, **fields) -> dict:
     state = read_state(project)
     state.setdefault("schema_version", STATE_SCHEMA)
     state.setdefault("project", project.name)
-    if phase:
+    if phase and phase != state.get("phase"):
         state["phase"] = phase
         state["phase_changed_at"] = round(time.time(), 3)
     state.update({key: value for key, value in fields.items() if value is not None})
@@ -215,20 +217,23 @@ def build_snapshot(project: Path, *, now: float | None = None) -> dict:
             continue
         rel = path.relative_to(project).as_posix()
         source_hash = _hash_file(path)
+        try:
+            stat = path.stat()
+            source_size, source_mtime = stat.st_size, stat.st_mtime_ns
+        except OSError:
+            source_size, source_mtime = 0, 0
         text = _read_source(path)
-        source_records.append({"path": rel, "role": _role(path, project), "source_hash": source_hash})
+        source_records.append({"path": rel, "role": _role(path, project), "source_hash": source_hash,
+                               "size": source_size, "mtime_ns": source_mtime})
         for command, category, pattern in COMMAND_PATTERNS:
             if pattern.search(text):
                 commands.setdefault(command, {"command": command, "category": category, "source": rel,
                                               "source_hash": source_hash, "confidence": 0.95, "state": "active"})
 
     for technology in technologies:
-        source = next((record for record in source_records if technology.lower().split(".")[0] in record["path"].lower()), "")
-        source_path = source["path"] if isinstance(source, dict) else "repository-structure"
-        source_hash = source.get("source_hash", "") if isinstance(source, dict) else ""
-        facts.append({"id": _fact_key("technology", technology, source_path), "kind": "technology", "value": technology,
-                      "source": source_path, "source_hash": source_hash, "confidence": 0.9, "state": "active",
-                      "last_seen_at": round(built_at, 3)})
+        facts.append({"id": _fact_key("technology", technology, "repository-structure"), "kind": "technology",
+                      "value": technology, "source": "repository-structure", "source_hash": "", "confidence": 0.9,
+                      "state": "active", "last_seen_at": round(built_at, 3)})
     for item in commands.values():
         facts.append({"id": _fact_key("verification", item["command"], item["source"]), "kind": "verification",
                       "value": item["command"], "source": item["source"], "source_hash": item["source_hash"],
@@ -243,12 +248,14 @@ def build_snapshot(project: Path, *, now: float | None = None) -> dict:
             stale["stale_at"] = round(built_at, 3)
             facts.append(stale)
 
-    ranked_files = sorted(
-        ({"path": path.relative_to(project).as_posix(), "role": _role(path, project), "source_hash": _hash_file(path)}
+    file_candidates = sorted(
+        ({"path": path.relative_to(project).as_posix(), "role": _role(path, project), "_path": path}
          for path in paths if _role(path, project) != "source"),
         key=lambda item: ({"agent-instructions": 0, "ci": 1, "manifest": 2, "helm-config": 3, "helm-template": 4,
                            "test": 5, "documentation": 6}.get(item["role"], 9), item["path"]),
     )[:240]
+    ranked_files = [{"path": item["path"], "role": item["role"], "source_hash": _hash_file(item["_path"])}
+                    for item in file_candidates]
 
     head = _git_head(project)
     digest = hashlib.sha256()
@@ -264,27 +271,49 @@ def build_snapshot(project: Path, *, now: float | None = None) -> dict:
         "source_fingerprint": digest.hexdigest(),
         "built_at": round(built_at, 3),
         "files_seen": len(paths),
+        "sources": source_records,
         "indexed_files": ranked_files,
         "commands": sorted(commands.values(), key=lambda item: (item["category"], item["command"])),
         "facts": facts,
     }
     _atomic_json(snapshot_path(project), snapshot)
     update_state(project, "ready", memory="ready", project_kind=project_kind,
-                 facts=sum(fact.get("state") == "active" for fact in facts), indexed_files=len(ranked_files))
+                 facts=sum(fact.get("state") == "active" for fact in facts), indexed_files=len(ranked_files),
+                 refresh_checked_at=round(built_at, 3), last_known_head=head)
     return snapshot
+
+
+def _sources_unchanged(project: Path, snapshot: dict) -> bool:
+    for item in snapshot.get("sources", []):
+        rel = item.get("path")
+        if not isinstance(rel, str) or not rel:
+            continue
+        try:
+            stat = (project / rel).stat()
+        except OSError:
+            return False
+        if stat.st_size != item.get("size") or stat.st_mtime_ns != item.get("mtime_ns"):
+            return False
+    return True
 
 
 def snapshot_is_fresh(project: Path, snapshot: dict | None = None) -> bool:
     snapshot = snapshot or load_snapshot(project)
     if not snapshot:
         return False
+    state = read_state(project)
+    now = time.time()
+    checked = float(state.get("refresh_checked_at") or 0)
+    if state.get("memory") == "ready" and now - checked < FRESHNESS_CHECK_SECONDS:
+        return True
     current_head = _git_head(project)
-    if current_head and snapshot.get("git_head"):
-        return current_head == snapshot.get("git_head")
-    return time.time() - float(snapshot.get("built_at", 0)) < 300
+    source_ok = _sources_unchanged(project, snapshot)
+    head_ok = not (current_head and snapshot.get("git_head")) or current_head == snapshot.get("git_head")
+    update_state(project, refresh_checked_at=round(now, 3), last_known_head=current_head)
+    return source_ok and head_ok
 
 
-def _claim_lock(project: Path, stale_after: float = 180) -> bool:
+def _claim_lock(project: Path, stale_after: float = STALE_LOCK_SECONDS) -> bool:
     path = lock_path(project)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -311,7 +340,8 @@ def run_worker(project: Path) -> dict:
     if not path.exists() and not _claim_lock(project):
         return load_snapshot(project)
     try:
-        update_state(project, "reflexing", memory="building")
+        phase = "refreshing" if load_snapshot(project) else "reflexing"
+        update_state(project, phase, memory="building")
         return build_snapshot(project)
     finally:
         try:
@@ -323,13 +353,15 @@ def run_worker(project: Path) -> dict:
 def ensure_background_refresh(project: Path) -> str:
     """Return immediately; start a detached local primer only when memory is absent/stale."""
     snapshot = load_snapshot(project)
+    state = read_state(project)
     if snapshot_is_fresh(project, snapshot):
-        update_state(project, memory="ready", project_kind=snapshot.get("project_kind"),
-                     facts=sum(f.get("state") == "active" for f in snapshot.get("facts", [])),
-                     indexed_files=len(snapshot.get("indexed_files", [])))
+        if state.get("memory") != "ready":
+            update_state(project, "ready", memory="ready", project_kind=snapshot.get("project_kind"),
+                         facts=sum(f.get("state") == "active" for f in snapshot.get("facts", [])),
+                         indexed_files=len(snapshot.get("indexed_files", [])))
         return "ready"
     if not _claim_lock(project):
-        return "reflexing"
+        return "refreshing" if snapshot else "reflexing"
     phase = "refreshing" if snapshot else "reflexing"
     update_state(project, phase, memory="building")
     command = [sys.executable, "-m", "openreflex", "primer-worker", "--project", str(project)]
