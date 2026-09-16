@@ -50,36 +50,44 @@ def _payload(raw: str) -> dict:
         return {}
 
 
-def _merge_project_context(output: str, project_context: str, event: str) -> str:
+def _output_dict(output: str) -> dict:
     try:
-        data = json.loads(output) if output else {}
-        if not isinstance(data, dict):
-            data = {}
+        value = json.loads(output) if output else {}
+        return value if isinstance(value, dict) else {}
     except ValueError:
-        data = {}
+        return {}
+
+
+def _merge_project_context(output: str, project_context: str, event: str) -> str:
+    data = _output_dict(output)
     hook = data.setdefault("hookSpecificOutput", {"hookEventName": event})
     if not isinstance(hook, dict):
         hook = {"hookEventName": event}
         data["hookSpecificOutput"] = hook
     existing = hook.get("additionalContext")
     hook["hookEventName"] = event
-    hook["additionalContext"] = "\n\n".join(part for part in (existing, project_context) if isinstance(part, str) and part)
+    hook["additionalContext"] = "\n\n".join(part for part in (existing, project_context)
+                                               if isinstance(part, str) and part)
+    return json.dumps(data)
+
+
+def _merge_notice(output: str, notice: str) -> str:
+    data = _output_dict(output)
+    existing = data.get("systemMessage")
+    data["systemMessage"] = "\n\n".join(part for part in (existing, notice) if isinstance(part, str) and part)
     return json.dumps(data)
 
 
 def _prompt_state(project: Path, output: str, project_context: str | None) -> None:
     experiences = 0
     route = None
-    try:
-        data = json.loads(output) if output else {}
-        hook = data.get("hookSpecificOutput") if isinstance(data, dict) else {}
-        text = hook.get("additionalContext", "") if isinstance(hook, dict) else ""
-    except ValueError:
-        text = ""
+    data = _output_dict(output)
+    hook = data.get("hookSpecificOutput") if isinstance(data, dict) else {}
+    text = hook.get("additionalContext", "") if isinstance(hook, dict) else ""
     match = re.search(r"(\d+) similar past task", text)
     if match:
         experiences = int(match.group(1))
-    match = re.search(r"Suggested path:\s*([^\s-]+(?:-[^\s-]+)*)", text)
+    match = re.search(r"Suggested path:\s*([a-z0-9_-]+)", text, re.I)
     if match:
         route = match.group(1)
     update_state(project, "recall" if experiences or project_context else "watch",
@@ -99,18 +107,16 @@ def _tool_state(project: Path, payload: dict) -> None:
 
 def _stop_state(project: Path, output: str) -> None:
     outcome = "execution captured"
-    try:
-        data = json.loads(output) if output else {}
-        notice = str(data.get("systemMessage") or "") if isinstance(data, dict) else ""
-        match = re.search(r"COMPLETE\s*\n\s*([^\s·]+)", notice)
-        if match:
-            outcome = match.group(1)
-    except ValueError:
-        pass
+    data = _output_dict(output)
+    notice = str(data.get("systemMessage") or "") if isinstance(data, dict) else ""
+    match = re.search(r"COMPLETE\s*\n\s*([^\s·]+)", notice)
+    if match:
+        outcome = match.group(1)
     update_state(project, "remember", outcome=outcome, execution={})
 
 
 def _hook(argv: list[str]) -> int:
+    from .engine import is_substantial
     from .hooks import safe_handle
 
     agent = argv[1] if len(argv) > 1 else ""
@@ -120,17 +126,21 @@ def _hook(argv: list[str]) -> int:
     cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) else None
     project = project_root(cwd, hook_session=str(payload.get("session_id") or ""))
     enabled = approval(project) is not None
+    phase = None
 
     if enabled and event in SESSION_EVENTS:
+        if agent == "claude-code":
+            configure_statusline(project)  # no-op when the user already owns a custom status line
         phase = ensure_background_refresh(project)
-        if phase in {"reflexing", "refreshing"}:
-            update_state(project, phase)
 
     output = safe_handle(agent, event, raw)
 
-    if enabled and agent == "claude-code" and event in PROMPT_EVENTS:
+    if enabled and event in SESSION_EVENTS and phase in {"reflexing", "refreshing"}:
+        verb = "understanding this project" if phase == "reflexing" else "refreshing project memory"
+        output = _merge_notice(output, f"↺ OpenReflex · {phase.upper()}\n{verb} · work normally")
+    elif enabled and agent == "claude-code" and event in PROMPT_EVENTS:
         prompt = payload.get("prompt") if isinstance(payload.get("prompt"), str) else ""
-        project_context = context_for_task(project, prompt) if prompt.strip() else None
+        project_context = context_for_task(project, prompt) if is_substantial(prompt) else None
         if project_context:
             output = _merge_project_context(output, project_context, event)
         _prompt_state(project, output, project_context)
@@ -165,7 +175,7 @@ def _tui(argv: list[str]) -> int:
 
 def _memory(argv: list[str]) -> int:
     project = project_root(_project_arg(argv))
-    action = argv[1] if len(argv) > 1 and not argv[1].startswith("-") else "status"
+    action = argv[0] if argv and not argv[0].startswith("-") else "status"
     if action in {"refresh", "rebuild"}:
         if action == "rebuild":
             from .project_memory import snapshot_path
