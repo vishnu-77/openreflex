@@ -55,6 +55,29 @@ def _evidence_state(item: dict) -> str:
     return "discovered"
 
 
+def _counts(engine: Engine) -> dict[str, int]:
+    experiences = engine.store.list("Experience", limit=5000)
+    outcomes = engine.store.list("Outcome", limit=5000)
+    lessons = engine.store.list("Lesson", limit=5000)
+    return {
+        "experiences": len(experiences),
+        "verified": sum(outcome.verified for outcome in outcomes),
+        "known_outcomes": sum(outcome.status != "unknown" for outcome in outcomes),
+        "lessons": len(lessons),
+    }
+
+
+def sync_counts(project: Path) -> dict[str, int]:
+    """Refresh lightweight UI counts from the local Experience Graph."""
+    engine = Engine(project)
+    try:
+        counts = _counts(engine)
+        update_state(project, **counts)
+        return counts
+    finally:
+        engine.close()
+
+
 def reinforce_files(project: Path, files: list[str], *, status: str, verified: bool, now: float | None = None) -> dict:
     """Attach outcome support to indexed project files without changing structural fact provenance."""
     snapshot = load_snapshot(project)
@@ -103,7 +126,7 @@ def reinforce_latest_execution(project: Path, agent: str, session: str) -> dict:
     try:
         execution = engine.current_execution(agent, session)
         if execution is None:
-            return {}
+            return _counts(engine)
         outcomes = engine.store.find("Outcome", execution_id=execution.id)
         experiences = engine.store.find("Experience", execution_id=execution.id)
         outcome = outcomes[0] if outcomes else None
@@ -111,16 +134,7 @@ def reinforce_latest_execution(project: Path, agent: str, session: str) -> dict:
         if outcome is not None and experience is not None:
             reinforce_files(project, experience.files, status=outcome.status, verified=outcome.verified,
                             now=outcome.elapsed_seconds + execution.started_at)
-
-        all_experiences = engine.store.list("Experience", limit=5000)
-        all_outcomes = engine.store.list("Outcome", limit=5000)
-        all_lessons = engine.store.list("Lesson", limit=5000)
-        counts = {
-            "experiences": len(all_experiences),
-            "verified": sum(outcome.verified for outcome in all_outcomes),
-            "known_outcomes": sum(outcome.status != "unknown" for outcome in all_outcomes),
-            "lessons": len(all_lessons),
-        }
+        counts = _counts(engine)
         update_state(project, **counts)
         return counts
     finally:
