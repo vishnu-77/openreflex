@@ -1,6 +1,9 @@
 import asyncio
 import json
 
+import pytest
+from mcp.server.fastmcp.exceptions import ToolError
+
 from openreflex import benchmark, metrics
 from openreflex.engine import Engine
 from openreflex.mcp_server import build_server
@@ -50,7 +53,8 @@ def test_mcp_tools_require_approval_then_work(project, clock):
     forgotten = tool_text(server, "forget_experience", {"experience_id": experience_id, "confirm": True})
     assert forgotten.startswith("Forgotten:") and "1 Task" in forgotten and "1 Experience" in forgotten
     assert json.loads(tool_text(server, "search_experience", {"query": "Fix the expired token bug in the session check"}))["experiences"] == []
-    assert "Unknown graph node" in tool_text(server, "explain_node", {"node_id": experience_id})
+    with pytest.raises(ToolError, match="Unknown graph node"):
+        tool_text(server, "explain_node", {"node_id": experience_id})
     assert json.loads(tool_text(server, "get_project_insights", {}))["engagement"]["tasks"] == 1
 
 

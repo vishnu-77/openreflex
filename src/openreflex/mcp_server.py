@@ -1,7 +1,6 @@
 """MCP stdio server. Hooks do the ambient capture; these tools let an agent ask for and report on execution."""
 
 import inspect
-import json
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -11,6 +10,14 @@ from pydantic import Field
 
 from . import metrics
 from .engine import Engine
+from .mcp_contracts import (
+    ExperienceSummary,
+    ExplainNodeResult,
+    LessonSummary,
+    ProjectInsightsResult,
+    ReflexScoreResult,
+    SearchExperienceResult,
+)
 from .project import approval, approve, project_root
 from .routing import Limits
 
@@ -56,18 +63,32 @@ def build_server(project: Path) -> FastMCP:
         finally:
             instance.close()
 
+    def run_structured(operation):
+        """Structured tools fail as MCP errors instead of returning a string that violates outputSchema."""
+        try:
+            instance = engine()
+        except PermissionError as error:
+            raise RuntimeError(str(error)) from error
+        try:
+            return operation(instance)
+        except ValueError as error:
+            raise RuntimeError(f"OpenReflex: {error}") from error
+        finally:
+            instance.close()
+
     @tool("Get execution context", PLAN)
     def get_execution_context(
-        task: Annotated[str, Field(description="The task in one or two plain sentences, e.g. 'Fix the login redirect "
+        task: Annotated[str, Field(min_length=1, max_length=1000,
+                                   description="The task in one or two plain sentences, e.g. 'Fix the login redirect "
                                                "loop after logout'. Used to find similar past tasks; secrets are "
                                                "redacted before it is stored.")],
-        max_tool_calls: Annotated[int | None, Field(description="Optional cap on tool calls for this task; a "
-                                                                "positive integer. Default: no cap.")] = None,
-        max_minutes: Annotated[float | None, Field(description="Optional cap on active working time in minutes; "
-                                                               "a positive number. Default: no cap.")] = None,
-        max_context_tokens: Annotated[int | None, Field(description="Optional cap on tokens of tool output added "
-                                                                    "to context; a positive integer. Default: no "
-                                                                    "cap.")] = None,
+        max_tool_calls: Annotated[int | None, Field(gt=0, description="Optional cap on tool calls for this task; "
+                                                                    "a positive integer. Default: no cap.")] = None,
+        max_minutes: Annotated[float | None, Field(gt=0, description="Optional cap on active working time in minutes; "
+                                                                  "a positive number. Default: no cap.")] = None,
+        max_context_tokens: Annotated[int | None, Field(gt=0, description="Optional cap on tokens of tool output "
+                                                                        "added to context; a positive integer. "
+                                                                        "Default: no cap.")] = None,
     ) -> str:
         """Plan a task from this project's past experience.
         Returns: plain text: the [OpenReflex] context block (similar past tasks, the suggested strategy with
@@ -79,12 +100,10 @@ def build_server(project: Path) -> FastMCP:
         Side effects: starts or re-plans the current task in the local Experience Graph; touches no project files,
         runs no commands, sends nothing over the network. Calling it again for the same task returns the same plan
         unless new limits are given.
-        Errors: 'limits must be positive' for a zero or negative limit; a 'not enabled' message until the project
-        is approved."""
+        Errors: invalid non-positive limits are rejected by the input schema; a 'not enabled' message is returned
+        until the project is approved."""
         def operation(e: Engine):
             given = [value for value in (max_tool_calls, max_minutes, max_context_tokens) if value is not None]
-            if any(value <= 0 for value in given):
-                raise ValueError("limits must be positive")
             limits = Limits(max_minutes * 60 if max_minutes else None, max_tool_calls, max_context_tokens) if given else None
             execution, context = e.context_for(task, limits=limits)
             paths = e.store.list("CandidatePath", "task_id", execution.task_id)
@@ -139,7 +158,8 @@ def build_server(project: Path) -> FastMCP:
         is, not the chance of success), the estimated success probability, confidence, the signals behind the
         score, the next-best strategy with its route advantage, and the policy version.
         Use when: the user asks why OpenReflex suggested a path, pivot or stop.
-        Not for: the same numbers as JSON (use get_reflex_score) or every decision in order (use get_execution_trace).
+        Not for: the same numbers as structured data (use get_reflex_score) or every decision in order (use
+        get_execution_trace).
         Side effects: none; read-only.
         Errors: 'No decision snapshot recorded yet' before any task was planned; a 'not enabled' message until the
         project is approved."""
@@ -159,40 +179,41 @@ def build_server(project: Path) -> FastMCP:
         return run(lambda e: e.trace())
 
     @tool("Get Reflex Score", READ)
-    def get_reflex_score() -> str:
-        """Return the latest decision's Reflex Score and its components as JSON.
-        Returns: {"available": true, "reflex_score": 0-100 (how strong the recommendation is, not the chance of
-        success), "success_probability", "decision_confidence", "strategy", "next_best_strategy", "route_advantage",
-        "evidence_count", "context_tokens", "budget_used", "signals": {name: 0-1}, "policy_version"}, or
-        {"available": false, "reason"} before any decision exists.
-        Use when: a program needs the numbers.
-        Not for: a readable explanation (use explain_decision).
+    def get_reflex_score() -> ReflexScoreResult:
+        """Return the latest decision's Reflex Score and machine-readable components.
+        Returns: structured fields for availability, Reflex Score (0-100 recommendation strength, not success
+        probability), success probability, confidence, strategy, next-best strategy, route advantage, evidence,
+        context cost, budget use, component signals and policy version. If no decision exists, available=false and
+        reason explains why.
+        Use when: a program or agent needs decision numbers it can inspect without parsing prose.
+        Not for: a readable explanation (use explain_decision) or the full decision timeline (use get_execution_trace).
         Side effects: none; read-only.
-        Errors: a 'not enabled' message until the project is approved."""
+        Errors: an MCP error is returned until the project is approved."""
         def operation(e: Engine):
             snapshots = e.decision_snapshots()
             if not snapshots:
-                return json.dumps({"available": False, "reason": "no decision snapshot recorded yet"})
+                return ReflexScoreResult(available=False, reason="no decision snapshot recorded yet")
             snapshot = snapshots[-1]
-            return json.dumps({
-                "available": True,
-                "reflex_score": snapshot.reflex_score,
-                "success_probability": snapshot.success_probability,
-                "decision_confidence": snapshot.decision_confidence,
-                "strategy": snapshot.strategy,
-                "next_best_strategy": snapshot.next_best_strategy,
-                "route_advantage": snapshot.route_advantage,
-                "evidence_count": snapshot.evidence_count,
-                "context_tokens": snapshot.context_tokens,
-                "budget_used": snapshot.budget_used,
-                "signals": snapshot.score_components,
-                "policy_version": snapshot.policy_version,
-            }, indent=2)
-        return run(operation)
+            return ReflexScoreResult(
+                available=True,
+                reflex_score=snapshot.reflex_score,
+                success_probability=snapshot.success_probability,
+                decision_confidence=snapshot.decision_confidence,
+                strategy=snapshot.strategy,
+                next_best_strategy=snapshot.next_best_strategy,
+                route_advantage=snapshot.route_advantage,
+                evidence_count=snapshot.evidence_count,
+                context_tokens=snapshot.context_tokens,
+                budget_used=snapshot.budget_used,
+                signals=snapshot.score_components,
+                policy_version=snapshot.policy_version,
+            )
+        return run_structured(operation)
 
     @tool("Choose path", WRITE)
     def choose_path(
-        strategy: Annotated[str, Field(description="The strategy being followed: one of the suggested names "
+        strategy: Annotated[str, Field(min_length=1, max_length=60,
+                                       description="The strategy being followed: one of the suggested names "
                                                    "'inspect-first', 'test-first' or 'incremental', or a short "
                                                    "kebab-case name for your own, e.g. 'spike-then-rewrite'.")],
         steps: Annotated[list[str] | None, Field(description="For a custom strategy only: 2-4 short steps, e.g. "
@@ -217,9 +238,9 @@ def build_server(project: Path) -> FastMCP:
                                                                            "passed or the user confirmed the result; "
                                                                            "'failure' when the task failed or was "
                                                                            "abandoned.")],
-        evidence: Annotated[str, Field(description="Short proof of the result, e.g. 'pytest tests/test_auth.py "
-                                                   "passed' or 'user confirmed the fix'. Up to 500 characters; "
-                                                   "secrets are redacted.")],
+        evidence: Annotated[str, Field(min_length=1, max_length=500,
+                                       description="Short proof of the result, e.g. 'pytest tests/test_auth.py "
+                                                   "passed' or 'user confirmed the fix'. Secrets are redacted.")],
     ) -> str:
         """Record the verified outcome of the most recent task and learn from it.
         Returns: one line with the recorded status and the Execution Regret estimate (how much better the best
@@ -240,69 +261,70 @@ def build_server(project: Path) -> FastMCP:
 
     @tool("Search experience", READ)
     def search_experience(
-        query: Annotated[str, Field(description="Words describing the topic, e.g. 'expired token login bug'. "
+        query: Annotated[str, Field(min_length=1, max_length=1000,
+                                    description="Words describing the topic, e.g. 'expired token login bug'. "
                                                 "Matched lexically against past task descriptions.")],
-        limit: Annotated[int, Field(description="Maximum number of past tasks to return, 1-20; values outside the "
-                                                "range are clamped. Default 5.")] = 5,
-    ) -> str:
+        limit: Annotated[int, Field(ge=1, le=20,
+                                    description="Maximum number of past tasks to return. Default 5; allowed 1-20.")] = 5,
+    ) -> SearchExperienceResult:
         """Search this project's past tasks by description similarity.
-        Returns: JSON with 'experiences' (id, score, description, class, agent, strategy, status, tool_calls,
-        minutes, files), best match first, and 'lessons' learned from them (text, confidence, support). Both lists
-        are empty when nothing is similar enough.
+        Returns: structured 'experiences' (id, score, description, class, agent, strategy, status, tool_calls,
+        minutes, files), best match first, plus structured 'lessons' (text, confidence, support). Both lists are empty
+        when nothing is similar enough.
         Use when: the user asks what was learned or what worked before, or to find an experience id for
         explain_node or forget_experience.
         Not for: planning a new task (use get_execution_context).
         Side effects: none; read-only. Matching is lexical, on task descriptions only.
-        Errors: a 'not enabled' message until the project is approved."""
+        Errors: invalid limit values are rejected by the input schema; an MCP error is returned until the project is
+        approved."""
         def operation(e: Engine):
-            found = e.retrieve(query, k=max(1, min(limit, 20)))
+            found = e.retrieve(query, k=limit)
             lessons = e.lessons([x for x, _ in found], limit=8)
-            return json.dumps({
-                "experiences": [{"id": x.id, "score": s, "description": x.description, "class": x.task_class,
-                                 "agent": x.agent, "strategy": x.strategy, "status": x.status,
-                                 "tool_calls": x.tool_calls, "minutes": round(x.elapsed_seconds / 60, 1),
-                                 "files": x.files[:8]} for x, s in found],
-                "lessons": [{"text": item.text, "confidence": c, "support": n} for item, c, n in lessons],
-            }, indent=2)
-        return run(operation)
+            return SearchExperienceResult(
+                experiences=[ExperienceSummary(id=x.id, score=s, description=x.description, class_name=x.task_class,
+                                               agent=x.agent, strategy=x.strategy, status=x.status,
+                                               tool_calls=x.tool_calls, minutes=round(x.elapsed_seconds / 60, 1),
+                                               files=x.files[:8]) for x, s in found],
+                lessons=[LessonSummary(text=item.text, confidence=c, support=n) for item, c, n in lessons],
+            )
+        return run_structured(operation)
 
     @tool("Explain graph node", READ)
     def explain_node(
-        node_id: Annotated[str, Field(description="Id of an Experience Graph node: an experience id from "
+        node_id: Annotated[str, Field(min_length=1, max_length=160,
+                                      description="Id of an Experience Graph node: an experience id from "
                                                   "search_experience (starts with 'exp-'), the execution id from "
                                                   "get_execution_context, or any node id from an earlier "
                                                   "explain_node result.")],
-    ) -> str:
+    ) -> ExplainNodeResult:
         """Show one Experience Graph node with its direct relations.
-        Returns: JSON with 'root', 'nodes' (each with its kind: Task, Execution, ToolCall, Outcome, Experience,
-        Lesson, Context or CandidatePath, plus its stored fields) and 'edges' (used, caused, failed_with,
-        resolved_by, recommended_for). Embeddings are omitted.
+        Returns: structured 'root', 'nodes' (Task, Execution, ToolCall, Outcome, Experience, Lesson, Context or
+        CandidatePath and their stored fields) and typed 'edges' (used, caused, failed_with, resolved_by,
+        recommended_for). Embeddings are omitted.
         Use when: tracing why a lesson or recommendation exists, after finding an id with search_experience or
         get_execution_context.
         Not for: searching by topic (use search_experience).
         Side effects: none; read-only.
-        Errors: 'Unknown graph node' for an id that does not exist; a 'not enabled' message until the project is
-        approved."""
+        Errors: an MCP error reports 'Unknown graph node' for an id that does not exist, and an MCP error is returned
+        until the project is approved."""
         def operation(e: Engine):
             graph = e.store.graph(node_id)
             for node in graph["nodes"]:
                 node.pop("embedding", None)
-            return json.dumps(graph, indent=2, default=str)
-        return run(operation)
+            return ExplainNodeResult.model_validate(graph)
+        return run_structured(operation)
 
     @tool("Get project insights", READ)
-    def get_project_insights() -> str:
+    def get_project_insights() -> ProjectInsightsResult:
         """Summarize what OpenReflex has recorded and learned in this project.
-        Returns: JSON with engagement (tasks, experiences, lessons), experience reuse (share of tasks that received
-        past experience), outcomes (known, verified, success rate), efficiency with and without prior experience
-        (observational, not a controlled comparison), the Execution Regret trend, routing agreement (how often the
-        recommended strategy matched the one that did best afterwards), live alerts, verdicts (continue, pivot,
-        stop) and budget adherence.
-        Use when: the user asks how OpenReflex is doing in this project.
+        Returns: structured activation, engagement, experience reuse, outcomes, observational efficiency with and
+        without prior experience, Execution Regret trends, routing agreement, live alerts, execution-control metrics
+        and lesson count. Efficiency comparisons are observational and are not presented as causal evidence.
+        Use when: the user asks how OpenReflex is doing in this project or a program needs project-level metrics.
         Not for: individual past tasks (use search_experience).
         Side effects: none; read-only.
-        Errors: a 'not enabled' message until the project is approved."""
-        return run(lambda e: json.dumps(metrics.project_metrics(e, approval(project)), indent=2))
+        Errors: an MCP error is returned until the project is approved."""
+        return run_structured(lambda e: ProjectInsightsResult.model_validate(metrics.project_metrics(e, approval(project))))
 
     @tool("Enable project", WRITE)
     def approve_project(
@@ -325,8 +347,9 @@ def build_server(project: Path) -> FastMCP:
 
     @tool("Forget experience", DELETE)
     def forget_experience(
-        experience_id: Annotated[str, Field(description="The experience id to delete, as returned by "
-                                                        "search_experience; starts with 'exp-'.")],
+        experience_id: Annotated[str, Field(min_length=5, max_length=160, pattern=r"^exp-",
+                                             description="The experience id to delete, as returned by "
+                                                         "search_experience; starts with 'exp-'.")],
         confirm: Annotated[bool, Field(description="true only when the user has explicitly asked to forget this "
                                                    "task; with false (the default) nothing is deleted.")] = False,
     ) -> str:
