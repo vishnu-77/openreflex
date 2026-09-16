@@ -168,6 +168,58 @@ def cmd_trace(args) -> int:
     return 0
 
 
+def cmd_update(args) -> int:
+    from .updater import check_for_update, detect_install_plan, installed_version_after_update, run_update
+
+    print("OPENREFLEX / UPDATE")
+    try:
+        status = check_for_update(__version__)
+    except RuntimeError as exc:
+        print(f"  current     {__version__}")
+        print(f"  check       failed ({exc})")
+        print("\nNo changes were made.")
+        return 1
+
+    plan = detect_install_plan()
+    print(f"  current     {status.current}")
+    print(f"  latest      {status.latest}")
+    print(f"  install     {plan.method}")
+
+    if not status.update_available:
+        if status.current == status.latest:
+            print("\n  [ok] already up to date")
+        else:
+            print("\n  [ok] current build is newer than the latest PyPI release")
+        return 0
+
+    if args.check:
+        print("\n  update      available")
+        print("Run `openreflex update` to install it.")
+        return 0
+
+    if plan.command is None:
+        print(f"\n  [--] automatic update unavailable: {plan.detail}")
+        print("No changes were made.")
+        return 2
+
+    print(f"  method      {' '.join(plan.command)}")
+    print("\nUpdating OpenReflex...")
+    returncode = run_update(plan)
+    if returncode != 0:
+        print(f"\n  [--] update failed with exit code {returncode}")
+        print("Your project memory and agent configuration were not modified by OpenReflex.")
+        return returncode or 1
+
+    installed = installed_version_after_update()
+    print(f"\n  [ok] updated to {installed or status.latest}")
+    if installed and installed != status.latest:
+        print(f"  note        expected {status.latest}; executable reports {installed}")
+    print("  memory      preserved")
+    print("  config      preserved")
+    print("\nRestart active Claude Code, Codex, Cursor, or OpenCode sessions to reload hooks and MCP.")
+    return 0
+
+
 def _json(path: Path) -> dict:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -299,6 +351,10 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--project")
         command.add_argument("--dry-run", action="store_true")
         command.set_defaults(func=func)
+
+    update = sub.add_parser("update", help="Check PyPI and safely update the managed OpenReflex installation")
+    update.add_argument("--check", action="store_true", help="Only report whether an update is available")
+    update.set_defaults(func=cmd_update)
 
     status = sub.add_parser("status", help="Show capture, reuse, regret, and routing metrics")
     status.add_argument("--project")
