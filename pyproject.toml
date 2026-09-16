@@ -35,7 +35,7 @@ Issues = "https://github.com/vishnu-77/openreflex/issues"
 dev = ["pytest>=8,<9", "ruff>=0.12", "build>=1.2", "twine>=6"]
 
 [project.scripts]
-openreflex = "openreflex.cli:main"
+openreflex = "openreflex.entrypoint:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
