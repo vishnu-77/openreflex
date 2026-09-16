@@ -11,6 +11,7 @@ import { ViewToggle } from "./ViewToggle";
 const BUILDER_SECTIONS = [
   { href: "/#how", label: "How it works" },
   { href: "/#quickstart", label: "Quickstart" },
+  { href: "/impact", label: "Impact" },
   { href: "/#privacy", label: "Privacy" },
   { href: "/docs", label: "Docs" },
 ];
@@ -19,6 +20,7 @@ const RESEARCH_SECTIONS = [
   { href: "/#idea", label: "The idea" },
   { href: "/#graph", label: "Graph explorer" },
   { href: "/#evidence", label: "Research" },
+  { href: "/impact", label: "Impact" },
   { href: "/#prior-work", label: "Prior work" },
   { href: "/docs", label: "Docs" },
 ];
