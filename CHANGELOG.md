@@ -2,6 +2,13 @@
 
 All notable changes to OpenReflex are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Add `openreflex update` and `openreflex update --check` for managed `pipx` / `uv tool` installs.
+- Add `openreflex update --reinstall` and `openreflex self reinstall` to repair/reinstall the managed package without touching local memory or project configuration.
+- Add `openreflex self uninstall --yes` to remove the managed package while preserving `~/.openreflex` data and project integration files.
+- Self-management fails closed for editable, VCS/source, local-path, ephemeral `uvx`, and unidentified Python environments.
+
 ## 0.3.2 (2026-09-15)
 
 Fixes found by an end-to-end test of the published 0.3.1 package.
