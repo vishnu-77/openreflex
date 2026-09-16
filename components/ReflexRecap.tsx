@@ -147,7 +147,7 @@ export function ReflexRecap() {
             </dl>
             <p className="mt-6 text-sm leading-6 text-muted">
               The implementation reads score weights and thresholds from a versioned execution policy rather than from
-              presentation code. The same snapshot powers the recap, CLI, MCP and future visualisation surfaces.
+              presentation code. The same stored snapshot powers the recap, CLI and MCP explanations.
             </p>
           </aside>
         </div>
