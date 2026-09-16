@@ -86,7 +86,13 @@ Then work as usual. After a few tasks:
 openreflex context "fix the login redirect bug"   # preview the context a task would receive
 openreflex status                                 # what has been captured and learned
 openreflex doctor                                 # installation checks and recent hook errors
+openreflex update --check                         # check the latest stable release
 ```
+
+Package updates preserve local memory and project configuration. Managed `pipx` and `uv tool` installs can use
+`openreflex update`, `openreflex update --reinstall`, or `openreflex self reinstall`. To remove only the package,
+use `openreflex self uninstall --yes`; project memory is preserved. A fresh bootstrap still starts with
+`pipx install openreflex` or `uv tool install openreflex` because the `openreflex` command does not exist before installation.
 
 ## Use it with your agent
 
@@ -169,6 +175,9 @@ Agents can also query OpenReflex directly through its MCP server.
 |---|---|
 | `install <agent> [--dry-run]` | Write project hooks and MCP config, and enable the project |
 | `uninstall <agent> [--dry-run]` | Remove OpenReflex's project hooks and MCP config; captured memory is kept |
+| `update [--check] [--reinstall]` | Check or update a managed pipx/uv-tool installation; optionally force a reinstall |
+| `self reinstall` | Repair/reinstall the managed OpenReflex package while preserving memory/config |
+| `self uninstall --yes` | Remove only the managed OpenReflex package; memory/config remain on disk |
 | `approve` / `revoke` | Enable or disable capture for the current project |
 | `context "<task>"` | Preview the Execution Context a task would receive |
 | `status [--json]` | What has been captured, reused, and learned |
