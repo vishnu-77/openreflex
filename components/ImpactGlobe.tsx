@@ -28,7 +28,7 @@ function Tree({ x, y, scale = 1, mature = true }: { x: number; y: number; scale?
         ) : (
           <g fill="var(--accent)">
             <ellipse cx="-12" cy="-61" rx="14" ry="8" transform="rotate(-24 -12 -61)" />
-            <ellipse cx="14" cy="-70" rx="14" ry="8" transform="rotate(24 14 -70)" />
+            <ellipse cx="14" cy="-70" rx="14" ry="8" fill="var(--accent)" transform="rotate(24 14 -70)" />
           </g>
         )}
       </g>
@@ -170,7 +170,7 @@ export function ImpactGlobe({ impact }: { impact: ImpactSnapshot }) {
                 <p className="mt-2 text-[1.05rem] font-medium text-ink">{compact(impact.rain.tokensPerDrop)} tokens</p>
               </div>
               <div className="col-span-2 border-t border-line py-5 sm:col-span-1 sm:border-l sm:border-t-0 sm:pl-5">
-                <p className="font-mono text-[0.72rem] uppercase tracking-[0.1em] text-muted">Mature trees</p>
+                <p className="font-mono text-[0.72rem] uppercase tracking-[0.1em] text-muted">Visual trees</p>
                 <p className="mt-2 text-[1.05rem] font-medium text-ink">{impact.forestTrees}</p>
               </div>
             </div>
@@ -179,11 +179,12 @@ export function ImpactGlobe({ impact }: { impact: ImpactSnapshot }) {
               <div className="mt-7 border-l-2 border-accent pl-5">
                 <p className="font-mono text-[0.72rem] uppercase tracking-[0.1em] text-accent">Estimated environmental equivalent</p>
                 <p className="mt-2 text-[1.2rem] font-medium text-ink">
-                  {impact.environmental.treeDays.toFixed(2)} tree-days of CO₂ sequestration
+                  {impact.environmental.treeDays.toFixed(2)} EPA urban-tree-equivalent days
                 </p>
                 <p className="mt-1 text-[0.92rem] leading-6 text-muted">
-                  From {impact.environmental.co2eKg.toFixed(3)} kg CO₂e supplied by the impact data source. This is an
-                  equivalence, not a claim that trees were planted, protected or physically saved.
+                  From {impact.environmental.co2eKg.toFixed(3)} kg CO₂e supplied by the impact data source. This is a
+                  communication equivalence using the EPA urban-tree assumption, not a claim that trees were planted,
+                  protected or physically saved.
                 </p>
               </div>
             ) : (
