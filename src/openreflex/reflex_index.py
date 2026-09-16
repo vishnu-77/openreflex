@@ -56,14 +56,13 @@ def _evidence_state(item: dict) -> str:
 
 
 def _counts(engine: Engine) -> dict[str, int]:
-    experiences = engine.store.list("Experience", limit=5000)
-    outcomes = engine.store.list("Outcome", limit=5000)
-    lessons = engine.store.list("Lesson", limit=5000)
+    outcomes = engine.store.count("Outcome")
+    unknown = engine.store.count("Outcome", "status", "unknown")
     return {
-        "experiences": len(experiences),
-        "verified": sum(outcome.verified for outcome in outcomes),
-        "known_outcomes": sum(outcome.status != "unknown" for outcome in outcomes),
-        "lessons": len(lessons),
+        "experiences": engine.store.count("Experience"),
+        "verified": engine.store.count("Outcome", "verified", True),
+        "known_outcomes": outcomes - unknown,
+        "lessons": engine.store.count("Lesson"),
     }
 
 
