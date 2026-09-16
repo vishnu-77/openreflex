@@ -21,6 +21,57 @@ export const RESEARCH_SOURCES = {
   openhands: { label: "OpenHands Stuck Detector (docs)", href: "https://docs.openhands.dev/sdk/guides/agent-stuck-detector" },
 } as const;
 
+export const NOVELTY_SOURCES = {
+  calibrationControl: {
+    label: "Calibration Is Not Control (arXiv 2606.21399)",
+    href: "https://arxiv.org/abs/2606.21399",
+  },
+  bpo: {
+    label: "Branching Policy Optimization (arXiv 2607.14171)",
+    href: "https://arxiv.org/abs/2607.14171",
+  },
+  loopArena: {
+    label: "LoopArena (arXiv 2608.28281)",
+    href: "https://arxiv.org/abs/2608.28281",
+  },
+  harnessRL: {
+    label: "Learning to Control LLM Agent Harnesses with Offline RL (arXiv 2607.05458)",
+    href: "https://arxiv.org/abs/2607.05458",
+  },
+  bats: {
+    label: "Budget-Aware Tool-Use Enables Effective Agent Scaling (arXiv 2511.17006)",
+    href: "https://arxiv.org/abs/2511.17006",
+  },
+  stair: {
+    label: "STAIR: Reusing Past Repairs Through Hierarchical Trajectory Abstraction (arXiv 2607.29658)",
+    href: "https://arxiv.org/abs/2607.29658",
+  },
+  causalReplay: {
+    label: "Causal Agent Replay (arXiv 2606.08275)",
+    href: "https://arxiv.org/abs/2606.08275",
+  },
+  ecLoop: {
+    label: "ECLoop: Evidence-Conditioned Execution Layer (arXiv 2607.28815)",
+    href: "https://arxiv.org/abs/2607.28815",
+  },
+  failureProcess: {
+    label: "Failure as a Process (arXiv 2607.09510)",
+    href: "https://arxiv.org/abs/2607.09510",
+  },
+  qcr: {
+    label: "Query-Conditioned Reuse of Long-Horizon Agent Trajectories (arXiv 2608.12847)",
+    href: "https://arxiv.org/abs/2608.12847",
+  },
+  skillTta: {
+    label: "Skills on the Fly / SkillTTA (arXiv 2605.16986)",
+    href: "https://arxiv.org/abs/2605.16986",
+  },
+  evoHarness: {
+    label: "Evo-Harness: Context-to-Harness Skill Compilation (arXiv 2608.15071)",
+    href: "https://arxiv.org/abs/2608.15071",
+  },
+} as const;
+
 // Papers quoted in the Researcher view's evidence section. Separate from RESEARCH_SOURCES, which lists compared work.
 export const EVIDENCE_SOURCES = {
   trajectories: {
