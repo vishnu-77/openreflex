@@ -79,6 +79,14 @@ def _write(path: Path, data: dict | str, dry_run: bool, changes: list[str]) -> N
         path.write_text(text, encoding="utf-8")
 
 
+def _ensure_project_boundary(project: Path, dry_run: bool, changes: list[str]) -> None:
+    """Create a non-secret project marker without replacing an existing user-owned marker."""
+    marker = project / ".openreflex.json"
+    if marker.exists():
+        return
+    _write(marker, {"version": 1, "scope": "project"}, dry_run, changes)
+
+
 def _remove_json_key(path: Path, container: str, key: str, dry_run: bool, changes: list[str]) -> None:
     if not path.exists():
         return
@@ -97,6 +105,7 @@ def _remove_json_key(path: Path, container: str, key: str, dry_run: bool, change
 
 def install(agent: str, project: Path, dry_run: bool = False) -> list[str]:
     changes: list[str] = []
+    _ensure_project_boundary(project, dry_run, changes)
     if agent == "claude-code":
         settings = project / ".claude" / "settings.json"
         _write(settings, _merge_hooks(_load(settings), claude_style_hooks("claude-code", CLAUDE_EVENTS)), dry_run, changes)
