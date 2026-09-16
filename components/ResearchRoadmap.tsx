@@ -1,105 +1,62 @@
+import { ArrowUpRight } from "lucide-react";
 import { SectionHeader } from "./SectionHeader";
 
-type Stage = {
+type ReleaseNote = {
   version: string;
-  status: string;
   title: string;
-  objective: string;
-  change: string[];
-  gate: string[];
-  note?: string;
+  observation: string;
+  evidence: string[];
+  href: string;
 };
 
-const STAGES: Stage[] = [
+const RELEASES: ReleaseNote[] = [
   {
-    version: "v0.3",
-    status: "CURRENT",
-    title: "Observable execution policy",
-    objective: "Preserve the current product baseline before changing the learning model.",
-    change: [
-      "Versioned routing policy, execution budgets and continue / pivot / stop advisories remain the default behaviour.",
-      "Decision snapshots, `why`, `trace` and existing MCP / hook integrations remain backward compatible.",
+    version: "v0.3.2",
+    title: "Observation integrity",
+    observation:
+      "The released instrumentation was hardened so malformed or context-poor activity does not contaminate the explanation surface.",
+    evidence: [
+      "Malformed hook events without a tool identity are ignored.",
+      "Explanation commands resolve to the latest task that actually contains decision evidence.",
+      "The live Codex harness reports agent refusal causes more accurately.",
     ],
-    gate: ["Current test suite remains green", "No migration required for existing project memory"],
-    note: "vNext is additive. Existing users should not experience a behaviour change merely because research instrumentation lands.",
+    href: "https://github.com/vishnu-77/openreflex/releases/tag/v0.3.2",
   },
   {
     version: "v0.3.1",
-    status: "NEXT — MEASUREMENT",
-    title: "Execution-state evidence",
-    objective: "Make every intervention decision reproducible before attempting to learn one.",
-    change: [
-      "Add a stable, privacy-minimised ExecutionState snapshot at decision points.",
-      "Separate observed evidence, heuristic estimates and verified outcomes in persisted records.",
-      "Rename causal-sounding metrics where only estimated alternatives are available.",
+    title: "Evidence semantics and user control",
+    observation:
+      "The public interface was tightened so research-facing concepts have explicit meanings and stored experience remains user-removable.",
+    evidence: [
+      "MCP tool contracts define return values, intended use and side effects more precisely.",
+      "Execution Regret and Reflex Score are defined where they appear.",
+      "Individual stored experiences can be explicitly forgotten.",
     ],
-    gate: ["Deterministic decision replay", "No raw transcript or tool-output storage", "No change to intervention policy"],
+    href: "https://github.com/vishnu-77/openreflex/releases/tag/v0.3.1",
   },
   {
-    version: "v0.3.2",
-    status: "SHADOW MODE",
-    title: "Outcome and intervention dataset",
-    objective: "Collect learning-ready examples without allowing learned predictions to affect the agent.",
-    change: [
-      "Derive compact trajectory-prefix features from existing lifecycle events.",
-      "Record candidate actions and verified downstream utility where it is observable.",
-      "Introduce dataset export for controlled research runs only.",
+    version: "v0.3.0",
+    title: "Observable execution policy",
+    observation:
+      "Execution recommendations became inspectable rather than opaque, separating recommendation strength from estimated task success.",
+    evidence: [
+      "Decision snapshots persist route, confidence, evidence, budget pressure and context overhead.",
+      "Reflex Score exposes recommendation strength independently of success probability.",
+      "`why` and `trace` read the same stored decision evidence used by the runtime.",
     ],
-    gate: ["Schema stability", "Project isolation", "Feature coverage across at least two supported harnesses"],
+    href: "https://github.com/vishnu-77/openreflex/releases/tag/v0.3.0",
   },
   {
-    version: "v0.4",
-    status: "RESEARCH HARNESS",
-    title: "Matched-prefix branch evaluation",
-    objective: "Replace guessed alternatives with realised outcomes during offline experiments.",
-    change: [
-      "Create reproducible repository snapshots at selected intervention points.",
-      "Run matched continue / pivot / stop branches from the same prefix in an isolated benchmark harness.",
-      "Measure task success and execution utility under identical task state and evaluation criteria.",
+    version: "v0.2.0",
+    title: "Budget-aware execution",
+    observation:
+      "OpenReflex moved from retrieval alone toward execution optimisation by treating agent work as a constrained multi-objective process.",
+    evidence: [
+      "Candidate paths are compared across success, time, tool calls, context, risk, uncertainty and reversibility.",
+      "Tasks receive execution budgets for tool calls, active time and context.",
+      "Runtime advice can recommend continue, pivot or stop when progress deteriorates.",
     ],
-    gate: ["Branch reproducibility", "Evaluator isolation", "Enough paired outcomes to estimate intervention advantage"],
-    note: "Branching is a research/evaluation mechanism, not a production requirement and not claimed as novel by itself.",
-  },
-  {
-    version: "v0.4.1",
-    status: "SHADOW PREDICTION",
-    title: "Calibrated intervention value",
-    objective: "Learn whether an intervention is worth taking before permitting the model to influence execution.",
-    change: [
-      "Train an interpretable baseline estimator for action-conditioned downstream utility.",
-      "Compare learned predictions with the current heuristic controller on held-out branch outcomes.",
-      "Add confidence estimates and an explicit abstain region when action value is uncertain.",
-    ],
-    gate: ["Calibration on held-out tasks", "Lower intervention regret than current heuristics", "False-pivot rate reported explicitly"],
-  },
-  {
-    version: "v0.4.2",
-    status: "OPT-IN ADVISORY",
-    title: "Evidence-gated intervention",
-    objective: "Expose learned recommendations gradually while retaining the existing controller as the safety fallback.",
-    change: [
-      "Run the learned value estimator locally at decision points behind a feature flag.",
-      "Intervene only above a calibrated advantage threshold; otherwise abstain or use the existing policy.",
-      "Persist model version, evidence and prediction alongside the decision snapshot for auditability.",
-    ],
-    gate: ["No reduction in verified task success", "Measured cost reduction", "Rollback to v0.3 controller at any time"],
-  },
-  {
-    version: "v0.5",
-    status: "VNEXT TARGET",
-    title: "Project-adaptive execution intelligence",
-    objective: "Test the actual novelty hypothesis rather than merely shipping a learned controller.",
-    change: [
-      "Update intervention priors from longitudinal, verified project experience.",
-      "Evaluate transfer across agent harnesses without introducing an LLM controller in the production path.",
-      "Treat tokens, tool calls, elapsed time and verification quality as joint execution utility rather than isolated counters.",
-    ],
-    gate: [
-      "Held-out repository evaluation",
-      "At least two coding-agent harnesses",
-      "Non-inferior success with lower cost or intervention regret",
-      "Calibrated abstention under distribution shift",
-    ],
+    href: "https://github.com/vishnu-77/openreflex/releases/tag/v0.2.0",
   },
 ];
 
@@ -109,51 +66,41 @@ export function ResearchRoadmap() {
       <div className="mx-auto max-w-[1320px] px-5 py-20 sm:px-10 sm:py-28">
         <SectionHeader
           id="roadmap"
-          title="vNext research roadmap"
-          intro="The transition is deliberately incremental: measure first, learn in shadow mode, validate with matched branches, then expose evidence-gated recommendations. No stage requires replacing the working OpenReflex core before its successor has earned the right to intervene."
+          title="Research notes by release"
+          intro="This section is retrospective by design. It records the research-relevant behaviour that is already public, shipped and inspectable. New entries are added only when a release makes the corresponding evidence available."
         />
 
         <div className="mt-10 border border-line bg-panel">
-          {STAGES.map((stage) => (
-            <details key={stage.version} open={stage.version === "v0.3.1"} className="group border-b border-line last:border-b-0">
-              <summary className="grid cursor-pointer list-none gap-4 p-5 marker:hidden sm:grid-cols-[6rem_minmax(0,1fr)_auto] sm:items-center sm:p-7 [&::-webkit-details-marker]:hidden">
-                <span className="font-mono text-sm font-semibold tabular-nums text-accent">{stage.version}</span>
+          {RELEASES.map((release) => (
+            <article key={release.version} className="border-b border-line p-5 last:border-b-0 sm:p-7">
+              <div className="grid gap-4 sm:grid-cols-[6rem_minmax(0,1fr)_auto] sm:items-start">
+                <span className="font-mono text-sm font-semibold tabular-nums text-accent">{release.version}</span>
                 <div>
-                  <h3 className="font-semibold tracking-tight text-ink">{stage.title}</h3>
-                  <p className="mt-1 font-mono text-[0.68rem] uppercase tracking-[0.12em] text-muted">{stage.status}</p>
+                  <h3 className="font-semibold tracking-tight text-ink">{release.title}</h3>
+                  <p className="mt-3 max-w-[54rem] leading-7 text-text">{release.observation}</p>
+                  <ul className="mt-5 space-y-2">
+                    {release.evidence.map((item) => (
+                      <li key={item} className="text-sm leading-6 text-muted">{item}</li>
+                    ))}
+                  </ul>
                 </div>
-                <span className="font-mono text-lg text-muted transition-transform group-open:rotate-45" aria-hidden="true">+</span>
-              </summary>
-
-              <div className="border-t border-line bg-bg px-5 py-7 sm:px-7 sm:py-8">
-                <p className="max-w-[54rem] font-serif text-[1.28rem] leading-8 text-ink">{stage.objective}</p>
-                {stage.note && <p className="mt-5 max-w-[54rem] border-l-2 border-accent pl-4 text-sm leading-6 text-muted">{stage.note}</p>}
-                <div className="mt-7 grid gap-8 lg:grid-cols-2">
-                  <div>
-                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.13em] text-accent">Increment</p>
-                    <ul className="mt-4 space-y-3">
-                      {stage.change.map((item) => (
-                        <li key={item} className="text-sm leading-6 text-text">{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <p className="font-mono text-[0.68rem] uppercase tracking-[0.13em] text-accent">Promotion gate</p>
-                    <ul className="mt-4 space-y-3">
-                      {stage.gate.map((item) => (
-                        <li key={item} className="border-t border-line pt-3 text-sm leading-6 text-text first:border-t-0 first:pt-0">{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
+                <a
+                  href={release.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-mono text-[0.72rem] uppercase tracking-[0.1em] text-muted underline-offset-4 hover:text-accent hover:underline"
+                >
+                  Release
+                  <ArrowUpRight size={12} aria-hidden="true" />
+                </a>
               </div>
-            </details>
+            </article>
           ))}
         </div>
 
         <p className="mt-8 max-w-[64rem] text-sm leading-7 text-muted">
-          The public roadmap intentionally omits model architecture, branch-selection heuristics, dataset construction details and
-          statistical protocol. Those belong in the experimental report rather than in product documentation.
+          This is not a forward roadmap. Ongoing research, unreleased implementation details and future experiments remain private
+          until they are ready to be introduced with a public release and supporting evidence.
         </p>
       </div>
     </section>
