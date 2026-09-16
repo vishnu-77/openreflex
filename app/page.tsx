@@ -5,6 +5,7 @@ import { Hero } from "@/components/Hero";
 import { JsonLd } from "@/components/JsonLd";
 import { HowItWorks } from "@/components/HowItWorks";
 import { Navbar } from "@/components/Navbar";
+import { NoveltyBoundary } from "@/components/NoveltyBoundary";
 import { Privacy } from "@/components/Privacy";
 import { PriorWork } from "@/components/PriorWork";
 import { Quickstart } from "@/components/Quickstart";
@@ -40,6 +41,7 @@ export default function Home() {
         </div>
         <div className="view-research">
           <ResearchIdea />
+          <NoveltyBoundary />
           <ReflexRecap />
           <ResearchRoadmap />
           <GraphExplorer />
