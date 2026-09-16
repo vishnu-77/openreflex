@@ -169,7 +169,13 @@ def cmd_trace(args) -> int:
 
 
 def cmd_update(args) -> int:
-    from .updater import check_for_update, detect_install_plan, installed_version_after_update, run_update
+    from .updater import (
+        check_for_update,
+        detect_install_plan,
+        installed_version_after_update,
+        run_reinstall,
+        run_update,
+    )
 
     print("OPENREFLEX / UPDATE")
     try:
@@ -185,39 +191,103 @@ def cmd_update(args) -> int:
     print(f"  latest      {status.latest}")
     print(f"  install     {plan.method}")
 
-    if not status.update_available:
-        if status.current == status.latest:
+    if args.check:
+        if status.update_available:
+            print("\n  update      available")
+            print("Run `openreflex update` to install it.")
+        elif status.current == status.latest:
             print("\n  [ok] already up to date")
         else:
             print("\n  [ok] current build is newer than the latest PyPI release")
         return 0
 
-    if args.check:
-        print("\n  update      available")
-        print("Run `openreflex update` to install it.")
-        return 0
+    if args.reinstall:
+        if plan.reinstall_command is None:
+            print(f"\n  [--] automatic reinstall unavailable: {plan.detail}")
+            print("No changes were made.")
+            return 2
+        print(f"  method      {' '.join(plan.reinstall_command)}")
+        print("\nReinstalling OpenReflex...")
+        returncode = run_reinstall(plan)
+    else:
+        if not status.update_available:
+            if status.current == status.latest:
+                print("\n  [ok] already up to date")
+            else:
+                print("\n  [ok] current build is newer than the latest PyPI release")
+            return 0
+        if plan.command is None:
+            print(f"\n  [--] automatic update unavailable: {plan.detail}")
+            print("No changes were made.")
+            return 2
+        print(f"  method      {' '.join(plan.command)}")
+        print("\nUpdating OpenReflex...")
+        returncode = run_update(plan)
 
-    if plan.command is None:
-        print(f"\n  [--] automatic update unavailable: {plan.detail}")
-        print("No changes were made.")
-        return 2
-
-    print(f"  method      {' '.join(plan.command)}")
-    print("\nUpdating OpenReflex...")
-    returncode = run_update(plan)
     if returncode != 0:
-        print(f"\n  [--] update failed with exit code {returncode}")
+        action = "reinstall" if args.reinstall else "update"
+        print(f"\n  [--] {action} failed with exit code {returncode}")
         print("Your project memory and agent configuration were not modified by OpenReflex.")
         return returncode or 1
 
     installed = installed_version_after_update()
-    print(f"\n  [ok] updated to {installed or status.latest}")
-    if installed and installed != status.latest:
+    action = "reinstalled" if args.reinstall else "updated"
+    print(f"\n  [ok] {action} {installed or status.latest}")
+    if not args.reinstall and installed and installed != status.latest:
         print(f"  note        expected {status.latest}; executable reports {installed}")
     print("  memory      preserved")
     print("  config      preserved")
     print("\nRestart active Claude Code, Codex, Cursor, or OpenCode sessions to reload hooks and MCP.")
     return 0
+
+
+def cmd_self(args) -> int:
+    from .updater import detect_install_plan, run_reinstall, run_uninstall
+
+    plan = detect_install_plan()
+    print("OPENREFLEX / SELF")
+    print(f"  action      {args.self_action}")
+    print(f"  install     {plan.method}")
+
+    if args.self_action == "reinstall":
+        if plan.reinstall_command is None:
+            print(f"\n  [--] automatic reinstall unavailable: {plan.detail}")
+            print("No changes were made.")
+            return 2
+        print(f"  method      {' '.join(plan.reinstall_command)}")
+        print("\nReinstalling OpenReflex...")
+        returncode = run_reinstall(plan)
+        if returncode != 0:
+            print(f"\n  [--] reinstall failed with exit code {returncode}")
+            return returncode or 1
+        print("\n  [ok] package reinstalled")
+        print("  memory      preserved")
+        print("  config      preserved")
+        print("\nRestart active agent sessions to reload hooks and MCP.")
+        return 0
+
+    if args.self_action == "uninstall":
+        if not args.yes:
+            print("\nThis removes the OpenReflex executable/package but preserves ~/.openreflex memory and project configuration.")
+            print("Re-run with `openreflex self uninstall --yes` to confirm.")
+            return 1
+        if plan.uninstall_command is None:
+            print(f"\n  [--] automatic uninstall unavailable: {plan.detail}")
+            print("No changes were made.")
+            return 2
+        print(f"  method      {' '.join(plan.uninstall_command)}")
+        print("\nUninstalling OpenReflex package...")
+        returncode = run_uninstall(plan)
+        if returncode != 0:
+            print(f"\n  [--] uninstall failed with exit code {returncode}")
+            return returncode or 1
+        print("\n  [ok] package uninstalled")
+        print("  memory      preserved")
+        print("  config      preserved")
+        print("\nProject hooks/config remain on disk but cannot run until OpenReflex is installed again.")
+        return 0
+
+    return 2
 
 
 def _json(path: Path) -> dict:
@@ -353,8 +423,18 @@ def build_parser() -> argparse.ArgumentParser:
         command.set_defaults(func=func)
 
     update = sub.add_parser("update", help="Check PyPI and safely update the managed OpenReflex installation")
-    update.add_argument("--check", action="store_true", help="Only report whether an update is available")
+    update_group = update.add_mutually_exclusive_group()
+    update_group.add_argument("--check", action="store_true", help="Only report whether an update is available")
+    update_group.add_argument("--reinstall", action="store_true", help="Reinstall the stable package even if already current")
     update.set_defaults(func=cmd_update)
+
+    self_cmd = sub.add_parser("self", help="Manage the installed OpenReflex package without deleting memory")
+    self_sub = self_cmd.add_subparsers(dest="self_action", required=True)
+    self_reinstall = self_sub.add_parser("reinstall", help="Reinstall the managed OpenReflex package")
+    self_reinstall.set_defaults(func=cmd_self)
+    self_uninstall = self_sub.add_parser("uninstall", help="Remove the OpenReflex package but preserve memory/config")
+    self_uninstall.add_argument("--yes", action="store_true", help="Confirm package removal")
+    self_uninstall.set_defaults(func=cmd_self)
 
     status = sub.add_parser("status", help="Show capture, reuse, regret, and routing metrics")
     status.add_argument("--project")
