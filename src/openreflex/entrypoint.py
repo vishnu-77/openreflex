@@ -3,7 +3,8 @@
 The existing CLI remains the source of truth for engine operations. This wrapper
 adds non-blocking project-memory bootstrap, compact structural context on Claude
 prompts, a Claude status line, and an optional TUI without changing normal agent
-workflows.
+workflows. Every hook-side enhancement is fail-open: presentation/memory failures
+must never block the coding agent.
 """
 
 from __future__ import annotations
@@ -12,10 +13,11 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Callable, TypeVar
 
 from . import cli
 from .claude_ui import configure_statusline, remove_statusline
-from .project import approval, project_root
+from .project import approval, log_error, project_root
 from .project_memory import ensure_background_refresh, load_snapshot, read_state, run_worker, update_state
 from .privacy import categorize
 from .reflex_index import account_project_context, context_for_task, reinforce_latest_execution, sync_counts
@@ -25,6 +27,15 @@ PROMPT_EVENTS = {"UserPromptSubmit"}
 TOOL_END_EVENTS = {"PostToolUse", "PostToolUseFailure"}
 STOP_EVENTS = {"Stop", "SessionEnd"}
 SESSION_EVENTS = {"SessionStart"}
+T = TypeVar("T")
+
+
+def _best_effort(label: str, call: Callable[[], T], default: T) -> T:
+    try:
+        return call()
+    except Exception as error:  # noqa: BLE001 - optional vNext layers must not take the agent down
+        log_error(f"vnext {label}: {type(error).__name__}: {error}")
+        return default
 
 
 def _project_arg(argv: list[str]) -> str | None:
@@ -126,10 +137,11 @@ def _hook(argv: list[str]) -> int:
 
     if enabled and event in SESSION_EVENTS:
         if agent == "claude-code":
-            configure_statusline(project)  # no-op when the user already owns a custom status line
-        phase = ensure_background_refresh(project)
-        sync_counts(project)
+            _best_effort("configure statusline", lambda: configure_statusline(project), "unavailable")
+        phase = _best_effort("start primer", lambda: ensure_background_refresh(project), "cold")
+        _best_effort("sync counts", lambda: sync_counts(project), {})
 
+    # The established adapter remains authoritative for the actual agent protocol.
     output = safe_handle(agent, event, raw)
 
     if enabled and event in SESSION_EVENTS and phase in {"reflexing", "refreshing"}:
@@ -137,15 +149,17 @@ def _hook(argv: list[str]) -> int:
         output = _merge_notice(output, f"↺ OpenReflex · {phase.upper()}\n{verb} · work normally")
     elif enabled and agent == "claude-code" and event in PROMPT_EVENTS:
         prompt = payload.get("prompt") if isinstance(payload.get("prompt"), str) else ""
-        project_context = context_for_task(project, prompt) if is_substantial(prompt) else None
+        project_context = (_best_effort("retrieve project memory", lambda: context_for_task(project, prompt), None)
+                           if is_substantial(prompt) else None)
         if project_context:
             output = _merge_project_context(output, project_context, event)
-            account_project_context(project, agent, session, project_context)
-        _prompt_state(project, output, project_context)
+            _best_effort("account project context",
+                         lambda: account_project_context(project, agent, session, project_context), None)
+        _best_effort("update prompt state", lambda: _prompt_state(project, output, project_context), None)
     elif enabled and event in TOOL_END_EVENTS:
-        _tool_state(project, payload)
+        _best_effort("update tool state", lambda: _tool_state(project, payload), None)
     elif enabled and event in STOP_EVENTS:
-        _stop_state(project, agent, session, output)
+        _best_effort("reinforce outcome", lambda: _stop_state(project, agent, session, output), None)
 
     if output:
         sys.stdout.write(output)
@@ -165,8 +179,8 @@ def _statusline() -> int:
 def _tui(argv: list[str]) -> int:
     project = project_root(_project_arg(argv))
     if approval(project):
-        ensure_background_refresh(project)
-        sync_counts(project)
+        _best_effort("TUI primer", lambda: ensure_background_refresh(project), "cold")
+        _best_effort("TUI counts", lambda: sync_counts(project), {})
     print(dashboard(project))
     return 0
 
