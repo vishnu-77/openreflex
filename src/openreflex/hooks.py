@@ -215,7 +215,7 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
     # A tool event that names no tool is malformed; recording it would create a nameless call and a phantom task.
     if event.kind == "ignored" or not event.session or (event.kind in ("tool_start", "tool_end") and not event.tool):
         return render(agent, name, None)
-    project = project_root(event.cwd)
+    project = project_root(event.cwd, hook_session=event.session)
     if not approval(project):
         notice = None
         if event.kind in ("session_start", "prompt") and should_notify_unapproved(project):
