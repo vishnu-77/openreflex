@@ -66,6 +66,7 @@ def test_verified_edit_finishes_without_closure_continuation(tmp_path, project, 
     factory = _factory(tmp_path, clock)
     _call(factory, project, "UserPromptSubmit", {"prompt": "Fix the Helm chart test failure caused by missing defaults"})
     _successful_tool(factory, project, "Edit", {"file_path": "charts/app/values.yaml"}, "e1")
+    clock.advance(1)
     _successful_tool(factory, project, "Bash", {"command": "pytest -q"}, "t1")
 
     output = _call(factory, project, "Stop", {})
