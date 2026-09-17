@@ -20,13 +20,14 @@ from pathlib import Path
 
 from .project_memory import load_snapshot, snapshot_path, update_state
 
-MAP_SCHEMA = "project-map.v1"
+MAP_SCHEMA = "project-map.v2"
 MAX_TRACKED_FILES = 4000
 MAX_INDEXED_FILES = 600
 MAX_SYMBOL_FILES = 350
 MAX_SYMBOLS_PER_FILE = 14
 MAX_DEPENDENCIES = 240
 MAX_RELATIONSHIPS = 180
+MAX_MANIFEST_FILES = 240
 IGNORE_DIRS = {
     ".git", ".hg", ".svn", ".idea", ".vscode", ".next", ".venv", "venv", "node_modules", "vendor",
     "dist", "build", "target", "coverage", ".terraform", ".tox", ".nox", "__pycache__",
@@ -38,9 +39,15 @@ LANGUAGES = {
     ".cs": "C#", ".c": "C", ".h": "C/C++", ".cc": "C++", ".cpp": "C++", ".hpp": "C++",
     ".tf": "Terraform", ".tpl": "Template", ".yaml": "YAML", ".yml": "YAML",
 }
-SOURCE_LANGUAGES = {"Python", "JavaScript", "TypeScript", "Go", "Rust", "Java", "Kotlin", "Ruby", "PHP", "C#", "C", "C/C++", "C++", "Terraform"}
-ROLE_WEIGHT = {"agent-instructions": 9, "manifest": 8, "helm-config": 8, "helm-template": 7, "test": 5,
-               "ci": 4, "source": 3, "documentation": 1}
+SOURCE_LANGUAGES = {
+    "Python", "JavaScript", "TypeScript", "Go", "Rust", "Java", "Kotlin", "Ruby", "PHP", "C#", "C",
+    "C/C++", "C++", "Terraform",
+}
+ROLE_WEIGHT = {
+    "agent-instructions": 9, "manifest": 8, "helm-config": 8, "helm-template": 7, "test": 5,
+    "ci": 4, "source": 3, "documentation": 1,
+}
+MANIFEST_NAMES = {"pyproject.toml", "requirements.txt", "package.json", "Cargo.toml", "go.mod", "Chart.yaml"}
 
 
 def _run_git(project: Path, *args: str, timeout: float = 1.5) -> str:
@@ -120,90 +127,111 @@ def _symbols(path: Path, text: str) -> list[str]:
         except (SyntaxError, ValueError):
             names = []
     elif language in {"JavaScript", "TypeScript"}:
-        names = re.findall(r"(?m)^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|class|interface|type|const)\s+([A-Za-z_$][\w$]*)", text)
+        names = re.findall(
+            r"(?m)^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|class|interface|type|const)\s+([A-Za-z_$][\w$]*)",
+            text,
+        )
     elif language == "Go":
-        names = [a or b for a, b in re.findall(r"(?m)^\s*(?:func(?:\s*\([^)]*\))?\s+([A-Za-z_]\w*)|type\s+([A-Za-z_]\w*))", text)]
+        names = [
+            a or b
+            for a, b in re.findall(
+                r"(?m)^\s*(?:func(?:\s*\([^)]*\))?\s+([A-Za-z_]\w*)|type\s+([A-Za-z_]\w*))", text
+            )
+        ]
     elif language == "Rust":
         names = re.findall(r"(?m)^\s*(?:pub\s+)?(?:async\s+)?(?:fn|struct|enum|trait)\s+([A-Za-z_]\w*)", text)
     elif language in {"Java", "Kotlin", "C#", "C", "C/C++", "C++", "Ruby", "PHP"}:
-        names = re.findall(r"(?m)^\s*(?:public\s+|private\s+|protected\s+|export\s+)?(?:class|interface|struct|enum|def|function)\s+([A-Za-z_]\w*)", text)
+        names = re.findall(
+            r"(?m)^\s*(?:public\s+|private\s+|protected\s+|export\s+)?(?:class|interface|struct|enum|def|function)\s+([A-Za-z_]\w*)",
+            text,
+        )
     elif language == "Terraform":
-        names = [f"{kind}.{name}" for kind, name in re.findall(r'(?m)^\s*(resource|module|variable|output)\s+"([^"]+)"', text)]
+        names = [
+            f"{kind}.{name}"
+            for kind, name in re.findall(r'(?m)^\s*(resource|module|variable|output)\s+"([^"]+)"', text)
+        ]
     elif path.suffix.lower() == ".tpl":
         names = re.findall(r'{{-?\s*define\s+"([^"]+)"', text)
     return list(dict.fromkeys(names))[:MAX_SYMBOLS_PER_FILE]
 
 
-def _dependencies(project: Path) -> list[dict]:
-    result: dict[tuple[str, str], dict] = {}
+def _manifest_paths(paths: list[Path]) -> list[Path]:
+    manifests = [path for path in paths if path.name in MANIFEST_NAMES]
+    return sorted(manifests, key=lambda path: (len(path.parts), path.as_posix()))[:MAX_MANIFEST_FILES]
+
+
+def _dependencies(project: Path, paths: list[Path]) -> list[dict]:
+    """Collect dependency names from root and nested manifests without persisting manifest bodies."""
+    result: dict[tuple[str, str, str], dict] = {}
 
     def add(name: str, ecosystem: str, source: str) -> None:
         clean = name.strip()
         if not clean or clean.startswith(("#", "-e ", ".", "/")):
             return
-        result.setdefault((ecosystem, clean.lower()), {"name": clean[:120], "ecosystem": ecosystem, "source": source})
+        key = (ecosystem, clean.lower(), source)
+        result.setdefault(key, {"name": clean[:120], "ecosystem": ecosystem, "source": source})
 
-    pyproject = project / "pyproject.toml"
-    if pyproject.is_file():
-        try:
-            data = tomllib.loads(_read_text(pyproject))
-            for item in data.get("project", {}).get("dependencies", []) or []:
-                if isinstance(item, str):
-                    add(re.split(r"[<>=!~;\s\[]", item, 1)[0], "python", "pyproject.toml")
-        except (tomllib.TOMLDecodeError, AttributeError):
-            pass
+    for manifest in _manifest_paths(paths):
+        source = manifest.relative_to(project).as_posix()
+        name = manifest.name
+        text = _read_text(manifest)
 
-    requirements = project / "requirements.txt"
-    if requirements.is_file():
-        for line in _read_text(requirements).splitlines():
-            add(re.split(r"[<>=!~;\s\[]", line.strip(), 1)[0], "python", "requirements.txt")
+        if name == "pyproject.toml":
+            try:
+                data = tomllib.loads(text)
+                project_data = data.get("project", {})
+                groups = [project_data.get("dependencies", []) or []]
+                groups.extend((project_data.get("optional-dependencies", {}) or {}).values())
+                for group in groups:
+                    for item in group:
+                        if isinstance(item, str):
+                            add(re.split(r"[<>=!~;\s\[]", item, 1)[0], "python", source)
+            except (tomllib.TOMLDecodeError, AttributeError):
+                pass
+        elif name == "requirements.txt":
+            for line in text.splitlines():
+                add(re.split(r"[<>=!~;\s\[]", line.strip(), 1)[0], "python", source)
+        elif name == "package.json":
+            try:
+                data = json.loads(text)
+                for section in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
+                    for dependency in (data.get(section) or {}):
+                        add(str(dependency), "node", source)
+            except (ValueError, AttributeError):
+                pass
+        elif name == "Cargo.toml":
+            try:
+                data = tomllib.loads(text)
+                for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+                    for dependency in (data.get(section) or {}):
+                        add(str(dependency), "rust", source)
+            except (tomllib.TOMLDecodeError, AttributeError):
+                pass
+        elif name == "go.mod":
+            for dependency in re.findall(r"(?m)^\s*([A-Za-z0-9._~/-]+)\s+v\d", text):
+                add(dependency, "go", source)
+        elif name == "Chart.yaml":
+            in_dependencies = False
+            for line in text.splitlines():
+                if re.match(r"^dependencies\s*:\s*$", line):
+                    in_dependencies = True
+                    continue
+                if in_dependencies and line and not line.startswith((" ", "\t", "-")):
+                    in_dependencies = False
+                if in_dependencies:
+                    match = re.search(r"\bname\s*:\s*['\"]?([^'\"\s]+)", line)
+                    if match:
+                        add(match.group(1), "helm", source)
 
-    package = project / "package.json"
-    if package.is_file():
-        try:
-            data = json.loads(_read_text(package))
-            for section in ("dependencies", "devDependencies", "peerDependencies"):
-                for name in (data.get(section) or {}):
-                    add(str(name), "node", "package.json")
-        except (ValueError, AttributeError):
-            pass
-
-    cargo = project / "Cargo.toml"
-    if cargo.is_file():
-        try:
-            data = tomllib.loads(_read_text(cargo))
-            for section in ("dependencies", "dev-dependencies", "build-dependencies"):
-                for name in (data.get(section) or {}):
-                    add(str(name), "rust", "Cargo.toml")
-        except (tomllib.TOMLDecodeError, AttributeError):
-            pass
-
-    gomod = project / "go.mod"
-    if gomod.is_file():
-        text = _read_text(gomod)
-        for name in re.findall(r"(?m)^\s*([A-Za-z0-9._~/-]+)\s+v\d", text):
-            add(name, "go", "go.mod")
-
-    chart = project / "Chart.yaml"
-    if chart.is_file():
-        text = _read_text(chart)
-        in_dependencies = False
-        for line in text.splitlines():
-            if re.match(r"^dependencies\s*:\s*$", line):
-                in_dependencies = True
-                continue
-            if in_dependencies and line and not line.startswith((" ", "\t", "-")):
-                in_dependencies = False
-            if in_dependencies:
-                match = re.search(r"\bname\s*:\s*['\"]?([^'\"\s]+)", line)
-                if match:
-                    add(match.group(1), "helm", "Chart.yaml")
-
-    return sorted(result.values(), key=lambda item: (item["ecosystem"], item["name"].lower()))[:MAX_DEPENDENCIES]
+    return sorted(
+        result.values(), key=lambda item: (item["ecosystem"], item["name"].lower(), item["source"])
+    )[:MAX_DEPENDENCIES]
 
 
 def _history(project: Path) -> tuple[Counter, list[dict]]:
-    raw = _run_git(project, "log", "-n", "120", "--name-only", "--format=format:__OPENREFLEX_COMMIT__", timeout=2.0)
+    raw = _run_git(
+        project, "log", "-n", "120", "--name-only", "--format=format:__OPENREFLEX_COMMIT__", timeout=2.0
+    )
     if not raw:
         return Counter(), []
     commits: list[list[str]] = []
@@ -254,14 +282,16 @@ def build_map(project: Path) -> dict:
             size, mtime_ns = stat.st_size, stat.st_mtime_ns
         except OSError:
             size, mtime_ns = 0, 0
-        records.append({
-            "path": rel,
-            "role": role,
-            "language": language,
-            "symbols": symbols,
-            "hotspot": int(hotspots.get(rel, 0)),
-            "fingerprint": f"{size}:{mtime_ns}",
-        })
+        records.append(
+            {
+                "path": rel,
+                "role": role,
+                "language": language,
+                "symbols": symbols,
+                "hotspot": int(hotspots.get(rel, 0)),
+                "fingerprint": f"{size}:{mtime_ns}",
+            }
+        )
 
     def rank(item: dict) -> tuple:
         return (
@@ -277,7 +307,7 @@ def build_map(project: Path) -> dict:
         "built_at": round(time.time(), 3),
         "tracked_files": len(paths),
         "indexed_files": indexed,
-        "dependencies": _dependencies(project),
+        "dependencies": _dependencies(project, paths),
         "relationships": relationships,
         "hotspots": [{"path": path, "changes": count} for path, count in hotspots.most_common(40)],
     }
@@ -290,7 +320,9 @@ def enrich_snapshot(project: Path) -> dict:
     if not latest:
         return {}
 
-    existing = {str(item.get("path")): dict(item) for item in latest.get("indexed_files", []) if item.get("path")}
+    existing = {
+        str(item.get("path")): dict(item) for item in latest.get("indexed_files", []) if item.get("path")
+    }
     for item in project_map["indexed_files"]:
         path = item["path"]
         merged = existing.get(path, {})
@@ -301,7 +333,12 @@ def enrich_snapshot(project: Path) -> dict:
 
     def rank(item: dict) -> tuple:
         empirical = 6 * int(item.get("verified_successes", 0)) + 2 * int(item.get("successful_outcomes", 0))
-        return (-empirical, -ROLE_WEIGHT.get(str(item.get("role")), 0), -int(item.get("hotspot", 0)), str(item.get("path", "")))
+        return (
+            -empirical,
+            -ROLE_WEIGHT.get(str(item.get("role")), 0),
+            -int(item.get("hotspot", 0)),
+            str(item.get("path", "")),
+        )
 
     latest["indexed_files"] = sorted(existing.values(), key=rank)[:MAX_INDEXED_FILES]
     latest["project_map"] = {
@@ -316,6 +353,10 @@ def enrich_snapshot(project: Path) -> dict:
     temp = path.with_suffix(path.suffix + f".{os.getpid()}.map.tmp")
     temp.write_text(json.dumps(latest, indent=2, sort_keys=True), encoding="utf-8")
     os.replace(temp, path)
-    update_state(project, map_files=len(latest["indexed_files"]),
-                 dependencies=len(project_map["dependencies"]), relationships=len(project_map["relationships"]))
+    update_state(
+        project,
+        map_files=len(latest["indexed_files"]),
+        dependencies=len(project_map["dependencies"]),
+        relationships=len(project_map["relationships"]),
+    )
     return latest
