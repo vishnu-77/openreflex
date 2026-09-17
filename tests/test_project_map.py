@@ -2,7 +2,7 @@ import json
 import subprocess
 
 from openreflex.project_map import enrich_snapshot
-from openreflex.project_memory import build_snapshot, load_snapshot
+from openreflex.project_memory import build_snapshot
 from openreflex.reflex_index import context_for_task
 
 
