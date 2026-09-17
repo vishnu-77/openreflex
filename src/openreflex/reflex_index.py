@@ -208,6 +208,12 @@ def _relationship_expansion(project_map: dict, selected: list[dict], by_path: di
     evidence: list[dict] = []
     for relation in sorted(project_map.get("relationships", []), key=lambda item: -int(item.get("count", 0))):
         left, right = str(relation.get("source", "")), str(relation.get("target", ""))
+        if left in chosen and right in chosen:
+            # The relation is still useful explanatory evidence even when lexical/symbol
+            # retrieval already selected both endpoints independently.
+            if not evidence:
+                evidence.append(relation)
+            continue
         candidate = right if left in chosen else left if right in chosen else None
         if not candidate or candidate in chosen or candidate not in by_path:
             continue
