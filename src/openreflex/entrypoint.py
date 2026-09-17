@@ -12,10 +12,11 @@ from __future__ import annotations
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Callable, TypeVar
 
-from . import cli
+from . import __version__, cli
 from .claude_ui import configure_statusline, remove_statusline
 from .project import approval, log_error, project_root
 from .project_map import enrich_snapshot
@@ -63,6 +64,54 @@ def _project_arg(argv: list[str]) -> str | None:
         if item.startswith("--project="):
             return item.partition("=")[2]
     return None
+
+
+def _plugin_root_arg(argv: list[str]) -> str | None:
+    for index, item in enumerate(argv):
+        if item == "--plugin-root" and index + 1 < len(argv):
+            value = argv[index + 1]
+            return None if "${" in value else value
+        if item.startswith("--plugin-root="):
+            value = item.partition("=")[2]
+            return None if "${" in value else value
+    return None
+
+
+def _plugin_manifest_version(root: str | None) -> str | None:
+    if not root:
+        return None
+    try:
+        data = json.loads((Path(root) / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        version = data.get("version") if isinstance(data, dict) else None
+        return str(version).strip() if version else None
+    except (OSError, ValueError):
+        return None
+
+
+def _record_hook_runtime(project: Path, argv: list[str]) -> None:
+    """Record the versions Claude actually invoked, without persisting plugin cache paths."""
+    state = read_state(project)
+    plugin_version = _plugin_manifest_version(_plugin_root_arg(argv))
+    fields: dict[str, object] = {}
+    if state.get("hook_runtime_version") != __version__:
+        fields["hook_runtime_version"] = __version__
+        fields["hook_loaded_at"] = round(time.time(), 3)
+    if plugin_version and state.get("plugin_version") != plugin_version:
+        fields["plugin_version"] = plugin_version
+        fields["plugin_loaded_at"] = round(time.time(), 3)
+    if fields:
+        update_state(project, **fields)
+
+
+def _record_mcp_runtime(project: Path) -> None:
+    """MCP startup is observable on session/plugin reload; record the executable version Claude started."""
+    state = read_state(project)
+    update_state(
+        project,
+        mcp_runtime_version=__version__,
+        mcp_loaded_at=round(time.time(), 3),
+        mcp_loads=int(state.get("mcp_loads", 0)) + 1,
+    )
 
 
 def _payload(raw: str) -> dict:
@@ -197,6 +246,9 @@ def _hook(argv: list[str]) -> int:
     enabled = approval(project) is not None
     phase = None
 
+    if enabled:
+        _best_effort("record hook runtime", lambda: _record_hook_runtime(project, argv), None)
+
     if enabled and event in SESSION_EVENTS:
         if agent == "claude-code":
             _best_effort("configure statusline", lambda: configure_statusline(project), "unavailable")
@@ -211,7 +263,7 @@ def _hook(argv: list[str]) -> int:
 
     if enabled and event in SESSION_EVENTS and phase in {"reflexing", "refreshing"}:
         verb = "understanding this project" if phase == "reflexing" else "refreshing project memory"
-        output = _merge_notice(output, f"↺ OpenReflex · {phase.upper()}\n{verb} · work normally")
+        output = _merge_notice(output, f"↺ OpenReflex v{__version__} · {phase.upper()}\n{verb} · work normally")
     elif enabled and agent == "claude-code" and event in PROMPT_EVENTS:
         prompt = payload.get("prompt") if isinstance(payload.get("prompt"), str) else ""
         project_context = (_best_effort("retrieve project memory", lambda: context_for_task(project, prompt), None)
@@ -293,7 +345,7 @@ def _augment_install(argv: list[str], result: int) -> None:
     project = project_root(_project_arg(argv))
     status = configure_statusline(project)
     if status == "configured":
-        print("  statusline  OpenReflex enabled")
+        print(f"  statusline  OpenReflex v{__version__} enabled")
     elif status == "preserved-existing":
         print("  statusline  existing user status line preserved")
 
@@ -323,6 +375,11 @@ def main(argv: list[str] | None = None) -> int:
         return _tui(argv[1:])
     if argv[0] == "memory":
         return _memory(argv[1:])
+    if argv[0] == "mcp":
+        project = project_root(_project_arg(argv))
+        if approval(project):
+            _best_effort("record MCP runtime", lambda: _record_mcp_runtime(project), None)
+        return cli.main(argv)
 
     result = cli.main(argv)
     if argv[0] == "install":
