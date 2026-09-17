@@ -12,6 +12,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import __version__
 from .project_memory import load_snapshot, read_state
 
 TEAL = "\x1b[38;2;40;106;112m"
@@ -66,12 +67,22 @@ def _activity_text(state: dict, *, include_last: bool = True) -> str | None:
     return text
 
 
+def _version_state(state: dict) -> tuple[str, str | None, str | None, bool]:
+    runtime = str(state.get("hook_runtime_version") or __version__)
+    plugin = str(state.get("plugin_version") or "").strip() or None
+    mcp = str(state.get("mcp_runtime_version") or "").strip() or None
+    compared = [value for value in (plugin, mcp) if value]
+    aligned = all(value == runtime for value in compared)
+    return runtime, plugin, mcp, aligned
+
+
 def statusline(project: Path, *, force_colour: bool = True) -> str:
     state, snapshot = read_state(project), load_snapshot(project)
     enabled = _colour_enabled(force_colour)
     phase = _display_phase(state)
+    runtime, plugin, mcp, aligned = _version_state(state)
     phase_colour = AMBER if phase in AMBER_PHASES else TEAL
-    brand = _paint("↺ OpenReflex", TEAL, enabled, bold=True)
+    brand = _paint(f"↺ OpenReflex v{runtime}", TEAL, enabled, bold=True)
     status = _paint(phase.upper(), phase_colour, enabled, bold=True)
     details: list[str] = []
     execution = state.get("execution") or {}
@@ -121,15 +132,27 @@ def statusline(project: Path, *, force_colour: bool = True) -> str:
             details.append(f"{verified} verified")
         if not details:
             details.append("memory active" if snapshot else "memory warming")
+
+    loaded_at = float(state.get("mcp_loaded_at") or 0)
+    if mcp and loaded_at and time.time() - loaded_at < 8:
+        details.insert(0, f"MCP loaded v{mcp}")
+
     muted = _paint(" · ".join(details), MUTED, enabled)
-    return f"{brand}  {status}  {project.name}" + (f" · {muted}" if muted else "")
+    line = f"{brand}  {status}  {project.name}" + (f" · {muted}" if muted else "")
+    if not aligned:
+        versions = [f"plugin v{plugin}" if plugin else None, f"MCP v{mcp}" if mcp else None,
+                    f"runtime v{runtime}"]
+        warning = "VERSION MISMATCH · " + " · ".join(item for item in versions if item)
+        line += " · " + _paint(warning, AMBER, enabled, bold=True)
+    return line
 
 
 def dashboard(project: Path, *, colour: bool | None = None) -> str:
     state, snapshot = read_state(project), load_snapshot(project)
     enabled = _colour_enabled() if colour is None else colour
     phase = _display_phase(state)
-    header = f"{_paint('OPENREFLEX', TEAL, enabled, bold=True)}{' ' * 8}{_paint('↺ ' + phase.upper(), AMBER if phase in AMBER_PHASES else TEAL, enabled, bold=True)}"
+    runtime, plugin, mcp, aligned = _version_state(state)
+    header = f"{_paint('OPENREFLEX v' + runtime, TEAL, enabled, bold=True)}{' ' * 8}{_paint('↺ ' + phase.upper(), AMBER if phase in AMBER_PHASES else TEAL, enabled, bold=True)}"
     facts = snapshot.get("facts", [])
     active = sum(f.get("state") == "active" for f in facts)
     stale = sum(f.get("state") == "stale" for f in facts)
@@ -144,7 +167,13 @@ def dashboard(project: Path, *, colour: bool | None = None) -> str:
     hotspots = project_map.get("hotspots", [])[:3]
     activity = _activity_text(state)
 
-    lines = [header, "", project.name, "─" * 58, "", "PROJECT MEMORY",
+    version_status = "ALIGNED" if aligned else "MISMATCH"
+    lines = [header, "", project.name, "─" * 58, "", "RUNTIME",
+             f"  package          v{runtime}",
+             f"  Claude plugin    {'v' + plugin if plugin else '-'}",
+             f"  MCP runtime      {'v' + mcp if mcp else '-'}",
+             f"  version state    {version_status}",
+             "", "PROJECT MEMORY",
              f"  type             {snapshot.get('project_kind', 'warming')}",
              f"  indexed files    {len(indexed)}",
              f"  facts            {active} active / {stale} stale",
