@@ -10,7 +10,6 @@ from __future__ import annotations
 import ast
 import itertools
 import json
-import math
 import os
 import re
 import subprocess
@@ -295,7 +294,6 @@ def enrich_snapshot(project: Path) -> dict:
     for item in project_map["indexed_files"]:
         path = item["path"]
         merged = existing.get(path, {})
-        # Preserve execution-derived counters and stronger structural provenance already present.
         role = merged.get("role") if merged.get("role") not in (None, "source", "execution-observed") else item["role"]
         merged.update({key: value for key, value in item.items() if key not in {"role"}})
         merged["role"] = role
