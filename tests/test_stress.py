@@ -46,7 +46,8 @@ def test_parallel_hook_processes_lose_no_writes(isolated_home, project):
     calls = store.list("ToolCall")
     assert len(calls) == 24 and all(call.status == "success" for call in calls)
     store.close()
-    assert not (isolated_home / "logs" / "errors.log").exists()
+    log = isolated_home / "logs" / "errors.log"
+    assert not log.exists(), log.read_text(encoding="utf-8") if log.exists() else ""
 
 
 def test_prompt_latency_with_thousands_of_experiences(tmp_path, project, clock):
