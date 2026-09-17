@@ -155,12 +155,19 @@ def render_recap(snapshot: DecisionSnapshot, previous: DecisionSnapshot | None =
             cost.append(f"{snapshot.elapsed_seconds / 60:.1f}m")
 
         comparison = None
-        if snapshot.expected_regret is not None:
+        # Unknown outcomes do not support counterfactual regret. Guard at render time as well as
+        # calculation time so old snapshots with legacy 0.00 values cannot imply false precision.
+        if snapshot.outcome != "unknown" and snapshot.expected_regret is not None:
             comparison = f"regret {snapshot.expected_regret:.2f}"
             if snapshot.next_best_strategy:
                 comparison += f" vs {snapshot.next_best_strategy}"
 
-        lines = ["↺ OpenReflex · COMPLETE"]
+        state = {
+            "success": "COMPLETE",
+            "failure": "FAILED",
+            "unknown": "UNVERIFIED",
+        }.get(snapshot.outcome, "FINISHED")
+        lines = [f"↺ OpenReflex · {state}"]
         if summary:
             lines.append(" · ".join(summary))
         if cost:

@@ -574,7 +574,11 @@ class Engine:
         if chosen is not None:
             self.store.link(execution.id, "used", chosen.id)
 
-        if not any(item.get("phase") == "complete" for item in execution.decision_history):
+        completions = [item for item in execution.decision_history if item.get("phase") == "complete"]
+        last_completion = completions[-1] if completions else None
+        # An unverified Stop can legitimately reopen for verification. Emit a new completion snapshot when the
+        # outcome later changes so the final recap reflects the closed evidence instead of the earlier unknown state.
+        if last_completion is None or last_completion.get("outcome") != outcome.status:
             budget = self._budget(execution)
             used = budget.usage(outcome.elapsed_seconds, outcome.tool_calls, outcome.output_tokens_estimate)
             self._record_decision(execution, "complete", "complete", chosen or (paths[0] if paths else None), paths,
