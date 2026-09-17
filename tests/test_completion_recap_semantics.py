@@ -51,3 +51,34 @@ def test_failure_completion_is_labelled_failed():
     assert recap.startswith("↺ OpenReflex · FAILED")
     assert "failure · incremental" in recap
     assert "regret 0.40 vs test-first" in recap
+
+
+def test_unverified_stop_can_upgrade_to_verified_completion(engine, clock):
+    engine.prompt("claude-code", "s", "Fix the Helm deployment values validation failure please")
+    engine.take_notice("claude-code", "s")  # consume the start recap
+
+    edit = ("Edit", {"file_path": "charts/app/values.yaml"})
+    engine.tool_start("claude-code", "s", "e1", *edit)
+    clock.advance(1)
+    engine.tool_end("claude-code", "s", "e1", *edit, True)
+
+    first = engine.stop("claude-code", "s")
+    assert first.status == "unknown"
+    first_recap = engine.take_notice("claude-code", "s")
+    assert first_recap.startswith("↺ OpenReflex · UNVERIFIED")
+
+    clock.advance(1)
+    verification = ("Bash", {"command": "helm lint charts/app"})
+    engine.tool_start("claude-code", "s", "v1", *verification)
+    clock.advance(1)
+    engine.tool_end("claude-code", "s", "v1", *verification, True)
+
+    second = engine.stop("claude-code", "s")
+    assert second.status == "success"
+    second_recap = engine.take_notice("claude-code", "s")
+    assert second_recap.startswith("↺ OpenReflex · COMPLETE")
+    assert "success" in second_recap
+
+    completions = [item for item in engine.store.latest("claude-code", "s").decision_history
+                   if item.get("phase") == "complete"]
+    assert [item.get("outcome") for item in completions] == ["unknown", "success"]
