@@ -96,8 +96,9 @@ class EngagementMetrics(BaseModel):
 
 
 class ExperienceReuseMetrics(BaseModel):
-    benefit_rate: float | None = Field(description="Share of substantial tasks that received relevant prior experience.")
-    tasks_with_prior_experience: int = Field(ge=0, description="Number of tasks that received prior experience.")
+    reuse_rate: float | None = Field(description="Share of substantial tasks that received relevant prior experience; this measures coverage, not benefit.")
+    benefit_rate: float | None = Field(description="Deprecated compatibility alias of reuse_rate; it does not measure causal benefit.")
+    tasks_with_prior_experience: int = Field(ge=0, description="Number of substantial tasks that received prior experience.")
 
 
 class OutcomeMetrics(BaseModel):

@@ -192,7 +192,7 @@ def normalize(agent: str, name: str, payload: dict) -> Event:
 def render(agent: str, name: str, context: str | None, notice: str | None = None) -> str:
     if agent in ("claude-code", "codex"):
         output: dict = {}
-        if context and name in {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure"}:
+        if context and name in {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop"}:
             output["hookSpecificOutput"] = {"hookEventName": name, "additionalContext": context}
         if notice:
             output["systemMessage"] = notice
@@ -206,6 +206,19 @@ def render(agent: str, name: str, context: str | None, notice: str | None = None
     if agent == "opencode":
         return json.dumps({"context": context, "notice": notice})
     return ""
+
+
+def _closure_context(agent: str, name: str, payload: dict, outcome) -> str | None:
+    """Ask Claude Code for one verification pass after edits, never loop or block read-only work."""
+    if agent != "claude-code" or name != "Stop" or outcome is None or payload.get("stop_hook_active") is True:
+        return None
+    if outcome.status != "unknown" or outcome.evidence != "no verification observed after the last edit":
+        return None
+    return (
+        "OpenReflex cannot verify this changed task yet. Before finishing, run the most relevant test, lint, or "
+        "build check. If the result is already verified another way, call the OpenReflex `record_outcome` tool with "
+        "a short evidence note. If verification is not possible, explain that limitation and finish."
+    )
 
 
 def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
@@ -243,7 +256,8 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
         elif event.kind == "compaction":
             engine.compaction(agent, event.session)
         elif event.kind == "stop":
-            engine.stop(agent, event.session)
+            outcome = engine.stop(agent, event.session)
+            context = _closure_context(agent, name, payload, outcome)
             if agent == "claude-code":
                 notice = engine.take_notice(agent, event.session)
         return render(agent, name, context, notice)
