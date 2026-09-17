@@ -22,6 +22,8 @@ SNAPSHOT_SCHEMA = "project-memory.v1"
 STATE_SCHEMA = "openreflex-ui.v1"
 FRESHNESS_CHECK_SECONDS = 15
 STALE_LOCK_SECONDS = 180
+STATE_LOCK_TIMEOUT_SECONDS = 2.0
+STATE_LOCK_STALE_SECONDS = 10.0
 IGNORE_DIRS = {
     ".git", ".hg", ".svn", ".idea", ".vscode", ".next", ".venv", "venv", "node_modules", "vendor",
     "dist", "build", "target", "coverage", ".terraform", ".tox", ".nox", "__pycache__",
@@ -64,6 +66,10 @@ def state_path(project: Path) -> Path:
     return memory_dir(project) / "state.json"
 
 
+def state_lock_path(project: Path) -> Path:
+    return memory_dir(project) / "state.lock"
+
+
 def lock_path(project: Path) -> Path:
     return memory_dir(project) / "primer.lock"
 
@@ -72,7 +78,21 @@ def _atomic_json(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
     temp.write_text(json.dumps(value, indent=2, sort_keys=True), encoding="utf-8")
-    os.replace(temp, path)
+    try:
+        for attempt in range(8):
+            try:
+                os.replace(temp, path)
+                return
+            except PermissionError:
+                if attempt == 7:
+                    raise
+                # Windows can briefly hold the destination open in another process.
+                time.sleep(0.005 * (attempt + 1))
+    finally:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def read_json(path: Path) -> dict:
@@ -88,17 +108,53 @@ def read_state(project: Path) -> dict:
     return state if state.get("schema_version") == STATE_SCHEMA else {}
 
 
+def _acquire_state_lock(project: Path, timeout: float = STATE_LOCK_TIMEOUT_SECONDS) -> Path:
+    """Serialize the tiny UI-cache read/modify/write across parallel hook processes."""
+    path = state_lock_path(project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(f"{os.getpid()} {time.time()}\n")
+            return path
+        except FileExistsError:
+            try:
+                if time.time() - path.stat().st_mtime >= STATE_LOCK_STALE_SECONDS:
+                    path.unlink(missing_ok=True)
+                    continue
+            except FileNotFoundError:
+                continue
+            except OSError:
+                pass
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"timed out waiting for OpenReflex state lock: {path}")
+            time.sleep(0.005)
+
+
+def _release_state_lock(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def update_state(project: Path, phase: str | None = None, **fields) -> dict:
-    state = read_state(project)
-    state.setdefault("schema_version", STATE_SCHEMA)
-    state.setdefault("project", project.name)
-    if phase and phase != state.get("phase"):
-        state["phase"] = phase
-        state["phase_changed_at"] = round(time.time(), 3)
-    state.update({key: value for key, value in fields.items() if value is not None})
-    state["updated_at"] = round(time.time(), 3)
-    _atomic_json(state_path(project), state)
-    return state
+    lock = _acquire_state_lock(project)
+    try:
+        state = read_state(project)
+        state.setdefault("schema_version", STATE_SCHEMA)
+        state.setdefault("project", project.name)
+        if phase and phase != state.get("phase"):
+            state["phase"] = phase
+            state["phase_changed_at"] = round(time.time(), 3)
+        state.update({key: value for key, value in fields.items() if value is not None})
+        state["updated_at"] = round(time.time(), 3)
+        _atomic_json(state_path(project), state)
+        return state
+    finally:
+        _release_state_lock(lock)
 
 
 def load_snapshot(project: Path) -> dict:
