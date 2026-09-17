@@ -37,9 +37,33 @@ def _paint(text: str, colour: str, enabled: bool, bold: bool = False) -> str:
 def _display_phase(state: dict) -> str:
     phase = str(state.get("phase") or "cold").lower()
     changed = float(state.get("phase_changed_at") or 0)
-    if phase in {"remember", "recall"} and changed and time.time() - changed > 6:
+    age = time.time() - changed if changed else 0
+    task = state.get("task") or {}
+    # RECALL is a brief retrieval moment, not a long-running state. Once the recap window passes,
+    # an active task is being watched; only a closed task should look READY.
+    if phase == "recall" and changed and age > 4:
+        return "watch" if task.get("active") else "ready"
+    if phase == "remember" and changed and age > 6:
         return "ready"
     return phase
+
+
+def _activity_text(state: dict, *, include_last: bool = True) -> str | None:
+    activity = state.get("activity") or {}
+    label = str(activity.get("label") or "").strip()
+    if not label:
+        return None
+    target = str(activity.get("target") or "").strip()
+    status = str(activity.get("status") or "").lower()
+    prefix = ""
+    if include_last and status in {"complete", "failed"}:
+        prefix = "last "
+    text = f"{prefix}{label}"
+    if target:
+        text += f" {target}"
+    if status == "failed":
+        text += " failed"
+    return text
 
 
 def statusline(project: Path, *, force_colour: bool = True) -> str:
@@ -50,6 +74,9 @@ def statusline(project: Path, *, force_colour: bool = True) -> str:
     brand = _paint("↺ OpenReflex", TEAL, enabled, bold=True)
     status = _paint(phase.upper(), phase_colour, enabled, bold=True)
     details: list[str] = []
+    execution = state.get("execution") or {}
+    activity = _activity_text(state)
+
     if phase == "reflexing":
         details.append("understanding project · work normally")
     elif phase == "refreshing":
@@ -62,15 +89,23 @@ def statusline(project: Path, *, force_colour: bool = True) -> str:
         if route:
             details.append(str(route))
     elif phase == "watch":
-        execution = state.get("execution") or {}
+        if activity:
+            details.append(activity)
         if execution.get("calls") is not None:
             details.append(f"{execution.get('calls', 0)} calls")
         if execution.get("budget_used") is not None:
             details.append(f"budget {float(execution['budget_used']):.0%}")
     elif phase == "verify":
-        details.append(str(state.get("verification") or "closing outcome"))
+        if activity:
+            details.append(activity)
+        else:
+            details.append(str(state.get("verification") or "closing outcome"))
+        if execution.get("calls") is not None:
+            details.append(f"{execution.get('calls', 0)} calls")
     elif phase == "remember":
         details.append(str(state.get("outcome") or "experience retained"))
+        if execution.get("calls") is not None:
+            details.append(f"{execution.get('calls', 0)} calls")
     else:
         facts = state.get("facts", sum(f.get("state") == "active" for f in snapshot.get("facts", [])))
         experiences = state.get("experiences")
@@ -107,6 +142,7 @@ def dashboard(project: Path, *, colour: bool | None = None) -> str:
     dependencies = project_map.get("dependencies", [])
     relationships = project_map.get("relationships", [])
     hotspots = project_map.get("hotspots", [])[:3]
+    activity = _activity_text(state)
 
     lines = [header, "", project.name, "─" * 58, "", "PROJECT MEMORY",
              f"  type             {snapshot.get('project_kind', 'warming')}",
@@ -134,6 +170,7 @@ def dashboard(project: Path, *, colour: bool | None = None) -> str:
               f"  phase            {phase.upper()}",
               f"  route            {task.get('route') or '-'}",
               f"  recall           {recall.get('experiences', 0)} related",
+              f"  activity         {activity or '-'}",
               f"  calls            {execution.get('calls', 0)}",
               f"  budget           {float(execution.get('budget_used', 0)):.0%}"]
     commands = [item.get("command") for item in snapshot.get("commands", []) if item.get("state") == "active"][:5]
