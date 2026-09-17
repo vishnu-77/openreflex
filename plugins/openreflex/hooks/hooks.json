@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook claude-code SessionStart",
+            "command": "openreflex hook claude-code SessionStart --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 10
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook claude-code UserPromptSubmit",
+            "command": "openreflex hook claude-code UserPromptSubmit --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 10
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook claude-code PreToolUse",
+            "command": "openreflex hook claude-code PreToolUse --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 10
           }
         ]
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook claude-code PostToolUse",
+            "command": "openreflex hook claude-code PostToolUse --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 10
           }
         ]
@@ -50,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook claude-code PostToolUseFailure",
+            "command": "openreflex hook claude-code PostToolUseFailure --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 10
           }
         ]
@@ -61,7 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook claude-code PreCompact",
+            "command": "openreflex hook claude-code PreCompact --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 10
           }
         ]
@@ -72,7 +72,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook claude-code Stop",
+            "command": "openreflex hook claude-code Stop --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 15
           }
         ]
@@ -83,7 +83,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook claude-code SessionEnd",
+            "command": "openreflex hook claude-code SessionEnd --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 5
           }
         ]
