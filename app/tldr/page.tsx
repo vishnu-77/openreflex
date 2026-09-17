@@ -6,7 +6,7 @@ import { LINKS } from "@/lib/site";
 export const metadata: Metadata = {
   title: "TLDR | OpenReflex",
   description:
-    "OpenReflex in one page: managed project memory, ReflexIndex, Project Map, verification lifecycle, privacy and the 0.4.0 cold-start memory release.",
+    "OpenReflex in one page: managed project memory, ReflexIndex, Project Map, verification lifecycle, privacy and the 0.4.1 live runtime UI.",
   alternates: { canonical: "/tldr" },
 };
 
@@ -110,10 +110,52 @@ export default function TldrPage() {
                 Combines structural project memory with execution evidence. Unknown outcomes do not train it. Repeated Stop/SessionEnd events cannot double-count an execution, and later explicit verification upgrades confidence rather than inventing a second run.
               </FactCard>
               <FactCard title="Outcome closure">
-                If edited work has not been verified, OpenReflex can request one verification continuation. Helm and Kubernetes verification commands are recognised, and loop protection prevents repeated verification prompts.
+                If edited work has not been verified, OpenReflex can request one verification continuation. Unknown outcomes are shown as UNVERIFIED, failures as FAILED, and only known successful outcomes as COMPLETE. Regret is never shown for an unknown outcome.
               </FactCard>
               <FactCard title="Statusline + TUI">
-                The Claude statusline reads cached state only. The optional TUI exposes lifecycle, project-memory health, known outcomes, verified outcomes and the evidence OpenReflex has accumulated.
+                The Claude statusline reads cached state only and follows live PreToolUse activity. The optional TUI exposes lifecycle, project-memory health, versions, known outcomes, verified outcomes and the evidence OpenReflex has accumulated.
+              </FactCard>
+            </div>
+          </div>
+        </section>
+
+        <section className="border-b border-line">
+          <div className="mx-auto max-w-[1120px] px-5 py-14 sm:px-10 sm:py-20">
+            <SectionLabel>Runtime / 0.4.1</SectionLabel>
+            <div className="mt-5 grid gap-8 lg:grid-cols-[1fr_1fr]">
+              <div>
+                <h2 className="font-serif text-[2.2rem] leading-tight text-ink sm:text-[3rem]">
+                  The line in Claude should say what OpenReflex is doing now.
+                </h2>
+                <p className="mt-5 text-[1rem] leading-8 text-muted">
+                  OpenReflex tracks tool start and completion separately. The statusline can therefore show safe coarse activity such as READ, SEARCH, EDIT, TEST, LINT, BUILD, GIT, WEB, MCP or RUN while a task is active, instead of only showing a generic completed-call count.
+                </p>
+                <p className="mt-4 text-[1rem] leading-8 text-muted">
+                  Project-relative file targets may be shown, but raw shell commands are never echoed into the statusline. A new task resets previous call/activity state, and an active task moves from RECALL to WATCH rather than looking READY while Claude is still working.
+                </p>
+              </div>
+
+              <div className="border border-line bg-term p-5 font-mono text-[0.78rem] leading-7 text-term-text sm:p-6">
+                <div className="text-term-dim">Claude statusline</div>
+                <div className="mt-2 text-accent">↺ OpenReflex v0.4.1  RECALL</div>
+                <div>3 related · inspect-first</div>
+                <div className="mt-3 text-accent">↺ OpenReflex v0.4.1  WATCH</div>
+                <div>READ charts/app/values.yaml · 4 calls</div>
+                <div className="mt-3 text-accent">↺ OpenReflex v0.4.1  VERIFY</div>
+                <div>LINT · 5 calls</div>
+                <div className="mt-3 text-term-dim">completion</div>
+                <div>success → COMPLETE</div>
+                <div>failure → FAILED</div>
+                <div>unknown → UNVERIFIED</div>
+              </div>
+            </div>
+
+            <div className="mt-8 grid gap-4 md:grid-cols-2">
+              <FactCard title="Reload-aware versions">
+                Claude plugin, OpenReflex package and MCP runtime versions are tracked separately. Reloading plugins can therefore prove which plugin/MCP version became active instead of assuming the whole stack updated together.
+              </FactCard>
+              <FactCard title="Mismatch is visible">
+                If Claude loads a newer plugin but the executable or MCP runtime is stale, the TUI reports VERSION MISMATCH. Matching package, plugin and MCP versions report ALIGNED.
               </FactCard>
             </div>
           </div>
@@ -181,7 +223,7 @@ export default function TldrPage() {
                 Project memory lives in the existing per-project OpenReflex store on the developer machine. The workflow remains: install OpenReflex, start the coding agent, work normally.
               </FactCard>
               <FactCard title="Derived metadata, not a transcript archive">
-                Project Map persists project-relative paths, roles, symbol names, dependency names, fingerprints and aggregate Git signals. It does not persist raw source bodies, diffs, command output or agent transcripts in the structural map.
+                Project Map persists project-relative paths, roles, symbol names, dependency names, fingerprints and aggregate Git signals. It does not persist raw source bodies, diffs, command output or agent transcripts in the structural map. Plugin cache paths are not persisted by version diagnostics.
               </FactCard>
             </div>
           </div>
@@ -189,8 +231,8 @@ export default function TldrPage() {
 
         <section className="border-b border-line">
           <div className="mx-auto max-w-[1120px] px-5 py-14 sm:px-10 sm:py-20">
-            <SectionLabel>What exists in 0.4.0</SectionLabel>
-            <div className="mt-5 grid gap-4 lg:grid-cols-3">
+            <SectionLabel>What exists in 0.4.1</SectionLabel>
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
               <FactCard title="Managed project memory">
                 Non-blocking Project Primer, provenance-aware project facts, staleness handling, bounded retrieval and explicit separation between structural priors and execution evidence.
               </FactCard>
@@ -198,7 +240,10 @@ export default function TldrPage() {
                 Outcome closure, verification-aware reinforcement, unknown-outcome non-training, idempotent evidence updates, Helm/Kubernetes verification and corrected reuse-rate semantics.
               </FactCard>
               <FactCard title="Indexed Project Map">
-                Paths, symbols, nested manifests, dependencies, hotspots and co-change relationships feed compact cold-start context while the Claude statusline and TUI stay cache-only on their render path.
+                Paths, symbols, nested manifests, dependencies, hotspots and co-change relationships feed compact cold-start context while the statusline and TUI stay cache-only on their render path.
+              </FactCard>
+              <FactCard title="Truthful runtime UI">
+                Live operation state, accurate COMPLETE / FAILED / UNVERIFIED semantics, reload-aware package/plugin/MCP versions, ALIGNED or VERSION MISMATCH diagnostics, and per-task call/activity reset.
               </FactCard>
             </div>
 
@@ -209,7 +254,7 @@ export default function TldrPage() {
                 rel="noopener noreferrer"
                 className="border border-line px-4 py-2 text-ink transition-colors hover:bg-panel"
               >
-                Core implementation PR #16
+                Core memory PR #16
               </a>
               <a
                 href={`${LINKS.github}/pull/17`}
@@ -217,7 +262,23 @@ export default function TldrPage() {
                 rel="noopener noreferrer"
                 className="border border-line px-4 py-2 text-ink transition-colors hover:bg-panel"
               >
-                Project Map implementation PR #17
+                Project Map PR #17
+              </a>
+              <a
+                href={`${LINKS.github}/pull/20`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="border border-line px-4 py-2 text-ink transition-colors hover:bg-panel"
+              >
+                Completion semantics PR #20
+              </a>
+              <a
+                href={`${LINKS.github}/pull/21`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="border border-line px-4 py-2 text-ink transition-colors hover:bg-panel"
+              >
+                Live TUI PR #21
               </a>
             </div>
           </div>
@@ -230,7 +291,7 @@ export default function TldrPage() {
               Past work should measurably improve future work.
             </h2>
             <p className="mt-5 max-w-[800px] text-[1rem] leading-8 text-muted">
-              OpenReflex now carries a deterministic cold-start CI benchmark for target-file localisation, target rank, nested-manifest evidence, structural-evidence labelling and injected-context size. It is intentionally model-free: passing it proves the Project Map retrieval contract, not causal token or time savings.
+              OpenReflex carries a deterministic cold-start CI benchmark for target-file localisation, target rank, nested-manifest evidence, structural-evidence labelling and injected-context size. It is intentionally model-free: passing it proves the Project Map retrieval contract, not causal token or time savings.
             </p>
             <p className="mt-4 max-w-[800px] text-[1rem] leading-8 text-muted">
               The next evidence layer is live-agent evaluation: compare exploration and search calls, tool calls, context tokens, elapsed time and verified completion on matched tasks. That is the standard required before claiming real efficiency gains.
