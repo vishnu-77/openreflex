@@ -116,6 +116,15 @@ class Store:
         args.append(limit)
         return [NODE_MODELS[kind].model_validate_json(r[0]) for r in self.db.execute(sql, args)]
 
+    def count(self, kind: str, field: str | None = None, value: object | None = None) -> int:
+        """Count nodes in SQLite without deserialising historical graph objects."""
+        sql = "SELECT COUNT(*) FROM nodes WHERE kind=?"
+        args: list = [kind]
+        if field:
+            sql += f" AND json_extract(data,'$.{_field(field)}')=?"
+            args.append(value)
+        return int(self.db.execute(sql, args).fetchone()[0])
+
     def find(self, kind: str, limit: int = 1000, **fields):
         """Nodes of a kind whose top-level JSON fields equal the given values; filtering happens in SQLite."""
         sql = "SELECT data FROM nodes WHERE kind=?"

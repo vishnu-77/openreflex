@@ -26,11 +26,13 @@ SHELL_TOOLS = {"bash", "shell", "local_shell", "exec_command", "run_terminal_cmd
 COMMAND_CATEGORIES = [
     ("test", re.compile(r"\b(pytest|jest|vitest|mocha|rspec|phpunit|unittest|nox|tox|go test|cargo test|"
                         r"dotnet test|mvn (?:-\S+ )*test|gradlew? test|(?:npm|pnpm|yarn|bun) (?:run )?test|"
-                        r"make test|ctest)\b")),
+                        r"make test|ctest|helm (?:test|unittest)|ct install)\b")),
     ("lint", re.compile(r"\b(ruff|eslint|flake8|pylint|mypy|pyright|clippy|golangci-lint|prettier|biome|"
-                        r"stylelint|tsc --noEmit|(?:npm|pnpm|yarn|bun) (?:run )?(?:lint|typecheck))\b")),
+                        r"stylelint|tsc --noEmit|(?:npm|pnpm|yarn|bun) (?:run )?(?:lint|typecheck)|"
+                        r"helm lint|ct lint|kubeconform|kubeval|yamllint)\b")),
     ("build", re.compile(r"\b(tsc|cargo build|go build|mvn|gradlew?|make|cmake|webpack|vite build|"
-                         r"(?:npm|pnpm|yarn|bun) (?:run )?build|dotnet build)\b")),
+                         r"(?:npm|pnpm|yarn|bun) (?:run )?build|dotnet build|helm template|helmfile template)\b|"
+                         r"\bhelm (?:install|upgrade)\b[^;&|\n]*--dry-run\b")),
     ("vcs", re.compile(r"^\s*(git|gh)\b")),
     ("search", re.compile(r"^\s*(grep|rg|ag|find|fd|ls|tree|dir|Get-ChildItem|Select-String)\b")),
     ("read", re.compile(r"^\s*(cat|head|tail|less|more|sed -n|type|Get-Content)\b")),
