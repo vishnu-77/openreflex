@@ -203,7 +203,7 @@ def _dependencies(project: Path) -> list[dict]:
 
 
 def _history(project: Path) -> tuple[Counter, list[dict]]:
-    raw = _run_git(project, "log", "-n", "120", "--name-only", "--format=__OPENREFLEX_COMMIT__", timeout=2.0)
+    raw = _run_git(project, "log", "-n", "120", "--name-only", "--format=format:__OPENREFLEX_COMMIT__", timeout=2.0)
     if not raw:
         return Counter(), []
     commits: list[list[str]] = []
