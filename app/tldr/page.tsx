@@ -6,7 +6,7 @@ import { LINKS } from "@/lib/site";
 export const metadata: Metadata = {
   title: "TLDR | OpenReflex",
   description:
-    "OpenReflex in one page: the problem, memory loop, Project Primer, ReflexIndex, Project Map, verification lifecycle, privacy and vNext direction.",
+    "OpenReflex in one page: managed project memory, ReflexIndex, Project Map, verification lifecycle, privacy and the 0.4.0 cold-start memory release.",
   alternates: { canonical: "/tldr" },
 };
 
@@ -45,7 +45,7 @@ export default function TldrPage() {
               A coding agent should not pay the full exploration cost twice.
             </h1>
             <p className="mt-7 max-w-[760px] text-[1.08rem] leading-8 text-muted">
-              OpenReflex is local muscle memory for AI coding agents. It watches how work is actually completed, remembers the useful project and execution evidence, and gives the next task a smaller, better starting context. The goal is not to make the agent imitate an old trajectory. The goal is to reduce unnecessary rereading, retries, tool calls and context while preserving verified task completion.
+              OpenReflex is local muscle memory for AI coding agents. It learns the structure of a project without blocking the developer, observes how work is actually completed, closes tasks against verification evidence, and gives later tasks a smaller, better starting context. The aim is not to replay an old trajectory. It is to reduce unnecessary rereading, retries, tool calls and context while preserving verified task completion.
             </p>
 
             <div className="mt-9 flex flex-wrap gap-3">
@@ -88,7 +88,7 @@ export default function TldrPage() {
           <div className="mx-auto max-w-[1120px] px-5 py-14 sm:px-10 sm:py-20">
             <SectionLabel>The loop</SectionLabel>
             <h2 className="mt-4 max-w-[760px] font-serif text-[2.2rem] leading-tight text-ink sm:text-[3rem]">
-              Understand the project, retrieve only what matters, verify the outcome, then reinforce the useful evidence.
+              Understand the project, retrieve only what matters, verify the outcome, then reinforce useful evidence.
             </h2>
 
             <div className="mt-9 overflow-x-auto border-y border-line py-5">
@@ -121,24 +121,24 @@ export default function TldrPage() {
 
         <section className="border-b border-line">
           <div className="mx-auto max-w-[1120px] px-5 py-14 sm:px-10 sm:py-20">
-            <SectionLabel>Project Map / vNext</SectionLabel>
+            <SectionLabel>Project Map / 0.4.0</SectionLabel>
             <div className="mt-5 grid gap-8 lg:grid-cols-[1.05fr_0.95fr]">
               <div>
                 <h2 className="font-serif text-[2.2rem] leading-tight text-ink sm:text-[3rem]">
                   Cold-start memory without turning the repository into a giant vector dump.
                 </h2>
                 <p className="mt-5 text-[1rem] leading-8 text-muted">
-                  The deeper Project Map indexes tracked paths, file roles, languages, lightweight top-level symbol names, declared dependencies, Git hotspots and bounded co-change relationships. Source bodies are read transiently where needed for extraction but are not persisted in the map.
+                  Project Map indexes tracked paths, file roles, languages, lightweight top-level symbol names, declared dependencies, Git hotspots and bounded co-change relationships. Nested Helm, Node, Python, Go and Rust manifests are indexed with project-relative provenance, which matters for monorepos and multi-chart repositories.
                 </p>
                 <p className="mt-4 text-[1rem] leading-8 text-muted">
-                  Retrieval then mixes task/path and symbol overlap with small structural signals and stronger observed execution support. Verified execution remains more authoritative than repository history.
+                  Source bodies are read transiently where needed for extraction but are not persisted in the structural map. Retrieval mixes path and symbol overlap with small structural signals and stronger observed execution support. Verified execution remains more authoritative than repository history.
                 </p>
               </div>
 
               <div className="border border-line bg-term p-5 font-mono text-[0.78rem] leading-7 text-term-text sm:p-6">
                 <div className="text-term-dim">task</div>
                 <div>↓</div>
-                <div>path + symbol match</div>
+                <div>path + identifier match</div>
                 <div>↓</div>
                 <div>dependency + role signal</div>
                 <div>↓</div>
@@ -189,16 +189,16 @@ export default function TldrPage() {
 
         <section className="border-b border-line">
           <div className="mx-auto max-w-[1120px] px-5 py-14 sm:px-10 sm:py-20">
-            <SectionLabel>What exists today</SectionLabel>
+            <SectionLabel>What exists in 0.4.0</SectionLabel>
             <div className="mt-5 grid gap-4 lg:grid-cols-3">
-              <FactCard title="Released baseline">
-                The public baseline remains deliberately stable while the next memory/indexing work is developed and reviewed separately.
+              <FactCard title="Managed project memory">
+                Non-blocking Project Primer, provenance-aware project facts, staleness handling, bounded retrieval and explicit separation between structural priors and execution evidence.
               </FactCard>
-              <FactCard title="Core vNext">
-                Project Primer, managed ReflexIndex, outcome closure, verification-aware lifecycle, cached Claude statusline and TUI are being developed as one reviewable layer.
+              <FactCard title="Verified execution memory">
+                Outcome closure, verification-aware reinforcement, unknown-outcome non-training, idempotent evidence updates, Helm/Kubernetes verification and corrected reuse-rate semantics.
               </FactCard>
-              <FactCard title="Project Map vNext">
-                Source/symbol/dependency/Git indexing is isolated as a second layer so deeper cold-start intelligence can be tested independently of lifecycle correctness.
+              <FactCard title="Indexed Project Map">
+                Paths, symbols, nested manifests, dependencies, hotspots and co-change relationships feed compact cold-start context while the Claude statusline and TUI stay cache-only on their render path.
               </FactCard>
             </div>
 
@@ -209,7 +209,7 @@ export default function TldrPage() {
                 rel="noopener noreferrer"
                 className="border border-line px-4 py-2 text-ink transition-colors hover:bg-panel"
               >
-                Core vNext PR #16
+                Core implementation PR #16
               </a>
               <a
                 href={`${LINKS.github}/pull/17`}
@@ -217,7 +217,7 @@ export default function TldrPage() {
                 rel="noopener noreferrer"
                 className="border border-line px-4 py-2 text-ink transition-colors hover:bg-panel"
               >
-                Project Map PR #17
+                Project Map implementation PR #17
               </a>
             </div>
           </div>
@@ -230,7 +230,10 @@ export default function TldrPage() {
               Past work should measurably improve future work.
             </h2>
             <p className="mt-5 max-w-[800px] text-[1rem] leading-8 text-muted">
-              The next benchmark is not “did OpenReflex retrieve something?” It is whether project memory improves first-task localisation: target-file top-k recall, irrelevant files surfaced, injected context size, exploration/tool calls, tokens and elapsed time—while preserving verified task completion. That is the standard the project is moving toward.
+              OpenReflex now carries a deterministic cold-start CI benchmark for target-file localisation, target rank, nested-manifest evidence, structural-evidence labelling and injected-context size. It is intentionally model-free: passing it proves the Project Map retrieval contract, not causal token or time savings.
+            </p>
+            <p className="mt-4 max-w-[800px] text-[1rem] leading-8 text-muted">
+              The next evidence layer is live-agent evaluation: compare exploration and search calls, tool calls, context tokens, elapsed time and verified completion on matched tasks. That is the standard required before claiming real efficiency gains.
             </p>
 
             <div className="mt-9 border-l-2 border-accent pl-5 sm:pl-7">
