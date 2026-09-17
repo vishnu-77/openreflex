@@ -12,23 +12,41 @@ from __future__ import annotations
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Callable, TypeVar
 
-from . import cli
+from . import __version__, cli
 from .claude_ui import configure_statusline, remove_statusline
 from .project import approval, log_error, project_root
 from .project_map import enrich_snapshot
 from .project_memory import ensure_background_refresh, load_snapshot, read_state, run_worker, update_state
-from .privacy import categorize
+from .privacy import categorize, file_paths
 from .reflex_index import account_project_context, context_for_task, reinforce_latest_execution, sync_counts
 from .tui import claude_project_from_stdin, dashboard, statusline
 
 PROMPT_EVENTS = {"UserPromptSubmit"}
+TOOL_START_EVENTS = {"PreToolUse"}
 TOOL_END_EVENTS = {"PostToolUse", "PostToolUseFailure"}
 STOP_EVENTS = {"Stop", "SessionEnd"}
 SESSION_EVENTS = {"SessionStart"}
 T = TypeVar("T")
+
+ACTIVITY_LABELS = {
+    "read": "READ",
+    "search": "SEARCH",
+    "edit": "EDIT",
+    "test": "TEST",
+    "lint": "LINT",
+    "build": "BUILD",
+    "vcs": "GIT",
+    "web": "WEB",
+    "delegate": "DELEGATE",
+    "plan": "PLAN",
+    "mcp": "MCP",
+    "shell": "RUN",
+    "other": "TOOL",
+}
 
 
 def _best_effort(label: str, call: Callable[[], T], default: T) -> T:
@@ -46,6 +64,54 @@ def _project_arg(argv: list[str]) -> str | None:
         if item.startswith("--project="):
             return item.partition("=")[2]
     return None
+
+
+def _plugin_root_arg(argv: list[str]) -> str | None:
+    for index, item in enumerate(argv):
+        if item == "--plugin-root" and index + 1 < len(argv):
+            value = argv[index + 1]
+            return None if "${" in value else value
+        if item.startswith("--plugin-root="):
+            value = item.partition("=")[2]
+            return None if "${" in value else value
+    return None
+
+
+def _plugin_manifest_version(root: str | None) -> str | None:
+    if not root:
+        return None
+    try:
+        data = json.loads((Path(root) / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
+        version = data.get("version") if isinstance(data, dict) else None
+        return str(version).strip() if version else None
+    except (OSError, ValueError):
+        return None
+
+
+def _record_hook_runtime(project: Path, argv: list[str]) -> None:
+    """Record the versions Claude actually invoked, without persisting plugin cache paths."""
+    state = read_state(project)
+    plugin_version = _plugin_manifest_version(_plugin_root_arg(argv))
+    fields: dict[str, object] = {}
+    if state.get("hook_runtime_version") != __version__:
+        fields["hook_runtime_version"] = __version__
+        fields["hook_loaded_at"] = round(time.time(), 3)
+    if plugin_version and state.get("plugin_version") != plugin_version:
+        fields["plugin_version"] = plugin_version
+        fields["plugin_loaded_at"] = round(time.time(), 3)
+    if fields:
+        update_state(project, **fields)
+
+
+def _record_mcp_runtime(project: Path) -> None:
+    """MCP startup is observable on session/plugin reload; record the executable version Claude started."""
+    state = read_state(project)
+    update_state(
+        project,
+        mcp_runtime_version=__version__,
+        mcp_loaded_at=round(time.time(), 3),
+        mcp_loads=int(state.get("mcp_loads", 0)) + 1,
+    )
 
 
 def _payload(raw: str) -> dict:
@@ -96,19 +162,47 @@ def _prompt_state(project: Path, output: str, project_context: str | None) -> No
     match = re.search(r"Suggested path:\s*([a-z0-9_-]+)", text, re.I)
     if match:
         route = match.group(1)
+    task = {"active": True}
+    if route:
+        task["route"] = route
+    # A new prompt is a new task surface. Do not carry the previous task's call count/activity into it.
     update_state(project, "recall" if experiences or project_context else "watch",
-                 recall={"experiences": experiences}, task={"route": route} if route else {})
+                 recall={"experiences": experiences}, task=task, execution={"calls": 0}, activity={})
 
 
-def _tool_state(project: Path, payload: dict) -> None:
+def _activity(project: Path, payload: dict, *, status: str) -> dict:
+    tool = str(payload.get("tool_name") or "")
+    arguments = payload.get("tool_input") or {}
+    category = categorize(tool, arguments)
+    paths = file_paths(arguments, project)
+    activity = {
+        "category": category,
+        "label": ACTIVITY_LABELS.get(category, "TOOL"),
+        "status": status,
+    }
+    if paths:
+        activity["target"] = paths[0]
+    return activity
+
+
+def _tool_start_state(project: Path, payload: dict) -> None:
+    activity = _activity(project, payload, status="running")
+    state = read_state(project)
+    execution = dict(state.get("execution") or {})
+    execution.setdefault("calls", 0)
+    phase = "verify" if activity["category"] in {"test", "lint", "build"} else "watch"
+    update_state(project, phase, execution=execution, activity=activity,
+                 verification=activity["label"].lower() if phase == "verify" else None)
+
+
+def _tool_end_state(project: Path, payload: dict, *, failed: bool = False) -> None:
     state = read_state(project)
     execution = dict(state.get("execution") or {})
     execution["calls"] = int(execution.get("calls", 0)) + 1
-    category = categorize(str(payload.get("tool_name") or ""), payload.get("tool_input") or {})
-    if category in {"test", "lint", "build"}:
-        update_state(project, "verify", execution=execution, verification=category)
-    else:
-        update_state(project, "watch", execution=execution)
+    activity = _activity(project, payload, status="failed" if failed else "complete")
+    phase = "verify" if activity["category"] in {"test", "lint", "build"} else "watch"
+    update_state(project, phase, execution=execution, activity=activity,
+                 verification=activity["label"].lower() if phase == "verify" else None)
 
 
 def _needs_verification(output: str) -> bool:
@@ -119,18 +213,23 @@ def _needs_verification(output: str) -> bool:
 
 
 def _stop_state(project: Path, agent: str, session: str, output: str) -> None:
+    state = read_state(project)
+    task = dict(state.get("task") or {})
     if _needs_verification(output):
-        update_state(project, "verify", outcome="verification required", verification="pending")
+        task["active"] = True
+        update_state(project, "verify", outcome="verification required", verification="pending",
+                     task=task, activity={})
         return
 
     outcome = "execution captured"
     data = _output_dict(output)
     notice = str(data.get("systemMessage") or "") if isinstance(data, dict) else ""
-    match = re.search(r"COMPLETE\s*\n\s*([^\s·]+)", notice)
+    match = re.search(r"(?:COMPLETE|FAILED|UNVERIFIED|FINISHED)\s*\n\s*([^\s·]+)", notice)
     if match:
         outcome = match.group(1)
     reinforce_latest_execution(project, agent, session)
-    update_state(project, "remember", outcome=outcome, execution={})
+    task["active"] = False
+    update_state(project, "remember", outcome=outcome, execution={}, task=task, activity={})
 
 
 def _hook(argv: list[str]) -> int:
@@ -147,17 +246,24 @@ def _hook(argv: list[str]) -> int:
     enabled = approval(project) is not None
     phase = None
 
+    if enabled:
+        _best_effort("record hook runtime", lambda: _record_hook_runtime(project, argv), None)
+
     if enabled and event in SESSION_EVENTS:
         if agent == "claude-code":
             _best_effort("configure statusline", lambda: configure_statusline(project), "unavailable")
         phase = _best_effort("start primer", lambda: ensure_background_refresh(project), "cold")
         _best_effort("sync counts", lambda: sync_counts(project), {})
 
+    # PreToolUse is the only moment the statusline can truthfully show what is running right now.
+    if enabled and event in TOOL_START_EVENTS:
+        _best_effort("update live tool state", lambda: _tool_start_state(project, payload), None)
+
     output = safe_handle(agent, event, raw)
 
     if enabled and event in SESSION_EVENTS and phase in {"reflexing", "refreshing"}:
         verb = "understanding this project" if phase == "reflexing" else "refreshing project memory"
-        output = _merge_notice(output, f"↺ OpenReflex · {phase.upper()}\n{verb} · work normally")
+        output = _merge_notice(output, f"↺ OpenReflex v{__version__} · {phase.upper()}\n{verb} · work normally")
     elif enabled and agent == "claude-code" and event in PROMPT_EVENTS:
         prompt = payload.get("prompt") if isinstance(payload.get("prompt"), str) else ""
         project_context = (_best_effort("retrieve project memory", lambda: context_for_task(project, prompt), None)
@@ -168,7 +274,8 @@ def _hook(argv: list[str]) -> int:
                          lambda: account_project_context(project, agent, session, project_context), None)
         _best_effort("update prompt state", lambda: _prompt_state(project, output, project_context), None)
     elif enabled and event in TOOL_END_EVENTS:
-        _best_effort("update tool state", lambda: _tool_state(project, payload), None)
+        _best_effort("update tool state",
+                     lambda: _tool_end_state(project, payload, failed=event == "PostToolUseFailure"), None)
     elif enabled and event in STOP_EVENTS:
         _best_effort("reinforce outcome", lambda: _stop_state(project, agent, session, output), None)
 
@@ -238,7 +345,7 @@ def _augment_install(argv: list[str], result: int) -> None:
     project = project_root(_project_arg(argv))
     status = configure_statusline(project)
     if status == "configured":
-        print("  statusline  OpenReflex enabled")
+        print(f"  statusline  OpenReflex v{__version__} enabled")
     elif status == "preserved-existing":
         print("  statusline  existing user status line preserved")
 
@@ -268,6 +375,11 @@ def main(argv: list[str] | None = None) -> int:
         return _tui(argv[1:])
     if argv[0] == "memory":
         return _memory(argv[1:])
+    if argv[0] == "mcp":
+        project = project_root(_project_arg(argv))
+        if approval(project):
+            _best_effort("record MCP runtime", lambda: _record_mcp_runtime(project), None)
+        return cli.main(argv)
 
     result = cli.main(argv)
     if argv[0] == "install":

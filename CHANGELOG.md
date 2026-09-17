@@ -4,10 +4,42 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
-- Add `openreflex update` and `openreflex update --check` for managed `pipx` / `uv tool` installs.
-- Add `openreflex update --reinstall` and `openreflex self reinstall` to repair/reinstall the managed package without touching local memory or project configuration.
-- Add `openreflex self uninstall --yes` to remove the managed package while preserving `~/.openreflex` data and project integration files.
-- Self-management fails closed for editable, VCS/source, local-path, ephemeral `uvx`, and unidentified Python environments.
+## 0.4.1 (2026-09-17)
+
+Truthful Claude Code runtime presentation and completion semantics.
+
+- Unknown outcomes now render as `UNVERIFIED`, failures as `FAILED`, and only known successful outcomes render as
+  `COMPLETE`. Unknown outcomes never display Execution Regret, including legacy snapshots that stored `0.00`.
+- A task that stops unverified and then continues to verification now receives a fresh final completion snapshot;
+  the first unknown Stop can no longer mask the later verified result.
+- The Claude status line tracks `PreToolUse` and shows the current safe operation (`READ`, `SEARCH`, `EDIT`, `TEST`,
+  `LINT`, `BUILD`, `GIT`, `WEB`, `MCP`, `RUN`, etc.) plus completed-call count. Raw shell commands are never echoed.
+- A new task resets stale activity/call state, and a live task transitions from `RECALL` to `WATCH` rather than
+  incorrectly appearing `READY` while work is still in progress.
+- Runtime/version diagnostics distinguish the installed OpenReflex package, Claude plugin manifest and MCP runtime.
+  Matching versions show `ALIGNED`; mixed plugin/runtime versions show `VERSION MISMATCH`.
+- Claude plugin hooks carry `${CLAUDE_PLUGIN_ROOT}` so reloads can report the plugin version actually loaded by
+  Claude without persisting the plugin cache path.
+
+## 0.4.0 (2026-09-17)
+
+Managed project memory and cold-start intelligence, while keeping normal agent startup non-blocking.
+
+- Add a non-blocking Project Primer and managed project-memory snapshot with provenance, freshness and stale-fact
+  handling. Claude can start working immediately while project understanding is built/refreshed locally.
+- Add ReflexIndex reinforcement so structural project priors can be strengthened by observed and verified execution
+  evidence without treating repository inference as proof that a route worked.
+- Add Project Map indexing for tracked files, lightweight symbols, dependency names, Git hotspots, co-change
+  relationships and nested Helm/Node/Python manifests. Source bodies are not persisted.
+- Add compact hybrid retrieval that combines project structure with execution/lesson evidence and keeps verified
+  outcomes stronger than structural/Git priors.
+- Add the OpenReflex Claude status line and standalone TUI with the lifecycle
+  `REFLEXING -> READY -> RECALL -> WATCH -> VERIFY -> REMEMBER`.
+- Add one-shot outcome closure plus Helm/Kubernetes verification recognition so changed tasks can be closed against
+  test/lint/build evidence instead of silently remaining unknown.
+- Add a model-free cold-start localisation benchmark covering nested manifests and target-file retrieval.
+- Add `openreflex update` / `openreflex update --check`, managed reinstall/self-uninstall commands, and fail-closed
+  handling for editable, VCS/source, local-path, ephemeral `uvx`, and unidentified Python environments.
 
 ## 0.3.2 (2026-09-15)
 
