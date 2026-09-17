@@ -77,8 +77,14 @@ def sync_counts(project: Path) -> dict[str, int]:
         engine.close()
 
 
-def reinforce_files(project: Path, files: list[str], *, status: str, verified: bool, now: float | None = None) -> dict:
-    """Attach outcome support to indexed project files without changing structural fact provenance."""
+def reinforce_files(project: Path, files: list[str], *, status: str, verified: bool,
+                    now: float | None = None, verification_upgrade: bool = False) -> dict:
+    """Attach outcome support to indexed files without rewriting structural provenance.
+
+    A later explicit verification of an already-observed successful execution is an
+    evidence upgrade, not another execution. In that case only verified support is
+    incremented; observations and successful outcomes remain unchanged.
+    """
     snapshot = load_snapshot(project)
     if not snapshot or not files:
         return snapshot
@@ -89,21 +95,23 @@ def reinforce_files(project: Path, files: list[str], *, status: str, verified: b
     for path in sorted(touched):
         item = by_path.get(path)
         if item is None:
-            # Execution-observed files are useful memory even when the Primer did not rank them structurally.
             item = {"path": path, "role": "execution-observed", "source_hash": ""}
             snapshot.setdefault("indexed_files", []).append(item)
             by_path[path] = item
-        item["observations"] = int(item.get("observations", 0)) + 1
-        if status == "success":
-            item["successful_outcomes"] = int(item.get("successful_outcomes", 0)) + 1
-            if verified:
+        if verification_upgrade:
+            if status == "success" and verified:
                 item["verified_successes"] = int(item.get("verified_successes", 0)) + 1
-        elif status == "failure":
-            item["failed_outcomes"] = int(item.get("failed_outcomes", 0)) + 1
+        else:
+            item["observations"] = int(item.get("observations", 0)) + 1
+            if status == "success":
+                item["successful_outcomes"] = int(item.get("successful_outcomes", 0)) + 1
+                if verified:
+                    item["verified_successes"] = int(item.get("verified_successes", 0)) + 1
+            elif status == "failure":
+                item["failed_outcomes"] = int(item.get("failed_outcomes", 0)) + 1
         item["last_observed_at"] = round(at, 3)
         item["evidence_state"] = _evidence_state(item)
 
-    # Bound empirical additions too; structural high-signal files remain first, then execution-supported files.
     snapshot["indexed_files"] = sorted(
         snapshot.get("indexed_files", []),
         key=lambda item: (
@@ -120,7 +128,12 @@ def reinforce_files(project: Path, files: list[str], *, status: str, verified: b
 
 
 def reinforce_latest_execution(project: Path, agent: str, session: str) -> dict:
-    """Read the just-finished local graph and reinforce the index + presentation counts."""
+    """Reinforce one completed execution once, while allowing an explicit verification upgrade.
+
+    Stop and SessionEnd may both report the same execution. The SQLite meta marker
+    makes that repetition idempotent. Unknown outcomes do not train the project
+    index; if the execution is reopened and later becomes known, it can then train.
+    """
     engine = Engine(project)
     try:
         execution = engine.current_execution(agent, session)
@@ -130,9 +143,21 @@ def reinforce_latest_execution(project: Path, agent: str, session: str) -> dict:
         experiences = engine.store.find("Experience", execution_id=execution.id)
         outcome = outcomes[0] if outcomes else None
         experience = experiences[0] if experiences else None
-        if outcome is not None and experience is not None:
-            reinforce_files(project, experience.files, status=outcome.status, verified=outcome.verified,
-                            now=outcome.elapsed_seconds + execution.started_at)
+        if outcome is not None and experience is not None and outcome.status != "unknown":
+            marker = f"reflex-index-evidence:{execution.id}"
+            current = f"{outcome.status}:{int(outcome.verified)}"
+            previous = engine.store.get_meta(marker)
+            if previous != current:
+                verification_upgrade = previous == f"{outcome.status}:0" and outcome.verified
+                reinforce_files(
+                    project,
+                    experience.files,
+                    status=outcome.status,
+                    verified=outcome.verified,
+                    now=outcome.elapsed_seconds + execution.started_at,
+                    verification_upgrade=verification_upgrade,
+                )
+                engine.store.set_meta(marker, current)
         counts = _counts(engine)
         update_state(project, **counts)
         return counts
