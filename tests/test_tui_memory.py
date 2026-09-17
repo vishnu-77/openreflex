@@ -1,7 +1,15 @@
 import json
 
+from openreflex import __version__
 from openreflex.claude_ui import configure_statusline, remove_statusline
-from openreflex.entrypoint import _prompt_state, _stop_state, _tool_end_state, _tool_start_state
+from openreflex.entrypoint import (
+    _prompt_state,
+    _record_hook_runtime,
+    _record_mcp_runtime,
+    _stop_state,
+    _tool_end_state,
+    _tool_start_state,
+)
 from openreflex.project_memory import build_snapshot, read_state, update_state
 from openreflex.tui import dashboard, statusline
 
@@ -13,7 +21,7 @@ def test_statusline_uses_openreflex_brand_states_and_colours(project):
 
     line = statusline(project, force_colour=True)
 
-    assert "OpenReflex" in line and "REFLEXING" in line
+    assert "OpenReflex" in line and f"v{__version__}" in line and "REFLEXING" in line
     assert "\x1b[38;2;40;106;112m" in line
     assert "\x1b[38;2;192;122;44m" in line
     assert "work normally" in line
@@ -98,6 +106,55 @@ def test_final_stop_marks_task_inactive(project):
     assert state["outcome"] == "success"
 
 
+def test_hook_runtime_records_plugin_manifest_version_without_cache_path(project, tmp_path):
+    plugin = tmp_path / "plugin-cache" / "openreflex"
+    manifest = plugin / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"name": "openreflex", "version": __version__}), encoding="utf-8")
+
+    _record_hook_runtime(project, ["hook", "claude-code", "SessionStart", "--plugin-root", str(plugin)])
+    state = read_state(project)
+
+    assert state["hook_runtime_version"] == __version__
+    assert state["plugin_version"] == __version__
+    assert str(plugin) not in json.dumps(state)
+    line = statusline(project, force_colour=False)
+    assert f"OpenReflex v{__version__}" in line
+    assert "VERSION MISMATCH" not in line
+
+
+def test_mcp_runtime_is_visible_and_version_alignment_is_reported(project, tmp_path):
+    plugin = tmp_path / "plugin" / "openreflex"
+    manifest = plugin / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"name": "openreflex", "version": __version__}), encoding="utf-8")
+
+    _record_hook_runtime(project, ["hook", "claude-code", "SessionStart", "--plugin-root", str(plugin)])
+    _record_mcp_runtime(project)
+
+    text = dashboard(project, colour=False)
+    assert "RUNTIME" in text
+    assert f"package          v{__version__}" in text
+    assert f"Claude plugin    v{__version__}" in text
+    assert f"MCP runtime      v{__version__}" in text
+    assert "version state    ALIGNED" in text
+
+
+def test_version_mismatch_is_visible_in_statusline(project, tmp_path):
+    plugin = tmp_path / "plugin" / "openreflex"
+    manifest = plugin / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"name": "openreflex", "version": "9.9.9"}), encoding="utf-8")
+
+    _record_hook_runtime(project, ["hook", "claude-code", "SessionStart", "--plugin-root", str(plugin)])
+    _record_mcp_runtime(project)
+
+    line = statusline(project, force_colour=False)
+    assert "VERSION MISMATCH" in line
+    assert "plugin v9.9.9" in line
+    assert f"runtime v{__version__}" in line
+
+
 def test_dashboard_is_readable_without_colour(project):
     (project / "Chart.yaml").write_text("apiVersion: v2\nname: demo\n", encoding="utf-8")
     build_snapshot(project)
@@ -107,6 +164,8 @@ def test_dashboard_is_readable_without_colour(project):
     text = dashboard(project, colour=False)
 
     assert "OPENREFLEX" in text
+    assert f"v{__version__}" in text
+    assert "RUNTIME" in text
     assert "PROJECT MEMORY" in text
     assert "EXECUTION MEMORY" in text
     assert "inspect-first" in text
