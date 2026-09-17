@@ -39,11 +39,25 @@ def _atomic_snapshot(project: Path, snapshot: dict) -> None:
 
 
 def _terms(text: str) -> set[str]:
+    """Tokenise human prompts, paths and code identifiers into comparable terms."""
     stop = {
         "this", "that", "with", "from", "into", "when", "where", "what", "fix", "add", "make", "please",
         "project", "issue", "bug", "code", "change", "update", "implement", "create",
     }
-    return {word for word in re.findall(r"[a-z0-9_./-]{3,}", text.lower()) if word not in stop}
+    # Split camelCase before lowercasing, then split path/identifier punctuation. This
+    # makes `charts/payments/values.yaml`, `validate_expired_token` and
+    # `imagePullSecrets` comparable with natural-language task descriptions.
+    expanded = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+    words = re.findall(r"[A-Za-z0-9]+", expanded)
+    terms: set[str] = set()
+    for word in words:
+        token = word.lower()
+        if len(token) < 3 or token in stop:
+            continue
+        terms.add(token)
+        if len(token) > 4 and token.endswith("s"):
+            terms.add(token[:-1])
+    return terms
 
 
 def _evidence_state(item: dict) -> str:
@@ -198,8 +212,13 @@ def _file_score(item: dict, query: set[str]) -> float:
         - 1.5 * int(item.get("failed_outcomes", 0))
     )
     hotspot = min(3.0, math.log1p(max(0, int(item.get("hotspot", 0)))) * 0.9)
-    return (path_overlap * 10.0 + symbol_overlap * 7.0 + ROLE_BONUS.get(str(item.get("role")), 0.0)
-            + hotspot + min(empirical, 12.0))
+    return (
+        path_overlap * 10.0
+        + symbol_overlap * 7.0
+        + ROLE_BONUS.get(str(item.get("role")), 0.0)
+        + hotspot
+        + min(empirical, 12.0)
+    )
 
 
 def _relationship_expansion(project_map: dict, selected: list[dict], by_path: dict[str, dict], limit: int) -> tuple[list[dict], list[dict]]:
@@ -209,8 +228,6 @@ def _relationship_expansion(project_map: dict, selected: list[dict], by_path: di
     for relation in sorted(project_map.get("relationships", []), key=lambda item: -int(item.get("count", 0))):
         left, right = str(relation.get("source", "")), str(relation.get("target", ""))
         if left in chosen and right in chosen:
-            # The relation is still useful explanatory evidence even when lexical/symbol
-            # retrieval already selected both endpoints independently.
             if not evidence:
                 evidence.append(relation)
             continue
@@ -237,9 +254,14 @@ def context_for_task(project: Path, description: str, *, max_files: int = 6, max
     scored = [(score, item) for score, item in scored if score > 0]
 
     base_limit = max(1, max_files - 1)
-    selected = [item for _, item in sorted(scored, key=lambda pair: (-pair[0], str(pair[1].get("path", ""))))[:base_limit]]
+    selected = [
+        item
+        for _, item in sorted(scored, key=lambda pair: (-pair[0], str(pair[1].get("path", ""))))[:base_limit]
+    ]
     project_map = snapshot.get("project_map") or {}
-    additions, relation_evidence = _relationship_expansion(project_map, selected, by_path, max_files - len(selected))
+    additions, relation_evidence = _relationship_expansion(
+        project_map, selected, by_path, max_files - len(selected)
+    )
     selected += additions
 
     dependencies = []
@@ -249,7 +271,9 @@ def context_for_task(project: Path, description: str, *, max_files: int = 6, max
         if len(dependencies) >= 4:
             break
 
-    commands = [item["command"] for item in snapshot.get("commands", []) if item.get("state") == "active"][:max_commands]
+    commands = [
+        item["command"] for item in snapshot.get("commands", []) if item.get("state") == "active"
+    ][:max_commands]
     supported = sum(int(item.get("verified_successes", 0)) for item in selected)
 
     lines = [f"Project memory: {snapshot.get('project_kind', 'software repository')}."]
@@ -266,11 +290,15 @@ def context_for_task(project: Path, description: str, *, max_files: int = 6, max
         lines.append("Relevant declared dependencies: " + ", ".join(str(item["name"]) for item in dependencies) + ".")
     if relation_evidence:
         rel = relation_evidence[0]
-        lines.append(f"Git co-change signal: {rel['source']} and {rel['target']} changed together {rel['count']} time(s).")
+        lines.append(
+            f"Git co-change signal: {rel['source']} and {rel['target']} changed together {rel['count']} time(s)."
+        )
     if commands:
         lines.append("Observed project verification: " + ", ".join(commands) + ".")
     if supported:
-        lines.append(f"Execution support: selected locations include {supported} explicit verified-success observation(s).")
+        lines.append(
+            f"Execution support: selected locations include {supported} explicit verified-success observation(s)."
+        )
     lines.append("Evidence: project-map and Git signals are structural priors; execution outcome evidence is counted separately.")
     text = "\n".join(lines)
     return text if len(text) <= 1800 else text[:1797] + "..."
