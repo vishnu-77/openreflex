@@ -9,6 +9,7 @@ successful work without rewriting structural inference as historical fact.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import time
@@ -24,6 +25,8 @@ ROLE_BONUS = {
     "agent-instructions": 3.0,
     "test": 2.0,
     "ci": 1.0,
+    "source": 0.75,
+    "execution-observed": 0.5,
 }
 
 
@@ -36,11 +39,25 @@ def _atomic_snapshot(project: Path, snapshot: dict) -> None:
 
 
 def _terms(text: str) -> set[str]:
+    """Tokenise human prompts, paths and code identifiers into comparable terms."""
     stop = {
         "this", "that", "with", "from", "into", "when", "where", "what", "fix", "add", "make", "please",
         "project", "issue", "bug", "code", "change", "update", "implement", "create",
     }
-    return {word for word in re.findall(r"[a-z0-9_./-]{3,}", text.lower()) if word not in stop}
+    # Split camelCase before lowercasing, then split path/identifier punctuation. This
+    # makes `charts/payments/values.yaml`, `validate_expired_token` and
+    # `imagePullSecrets` comparable with natural-language task descriptions.
+    expanded = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+    words = re.findall(r"[A-Za-z0-9]+", expanded)
+    terms: set[str] = set()
+    for word in words:
+        token = word.lower()
+        if len(token) < 3 or token in stop:
+            continue
+        terms.add(token)
+        if len(token) > 4 and token.endswith("s"):
+            terms.add(token[:-1])
+    return terms
 
 
 def _evidence_state(item: dict) -> str:
@@ -123,19 +140,14 @@ def reinforce_files(project: Path, files: list[str], *, status: str, verified: b
             0 if item.get("role") != "execution-observed" else 1,
             str(item.get("path", "")),
         ),
-    )[:300]
+    )[:600]
     snapshot["evidence_updated_at"] = round(at, 3)
     _atomic_snapshot(project, snapshot)
     return snapshot
 
 
 def reinforce_latest_execution(project: Path, agent: str, session: str) -> dict:
-    """Reinforce one completed execution once, while allowing an explicit verification upgrade.
-
-    Stop and SessionEnd may both report the same execution. The SQLite meta marker
-    makes that repetition idempotent. Unknown outcomes do not train the project
-    index; if the execution is reopened and later becomes known, it can then train.
-    """
+    """Reinforce one completed execution once, while allowing an explicit verification upgrade."""
     engine = Engine(project)
     try:
         execution = engine.current_execution(agent, session)
@@ -188,36 +200,105 @@ def account_project_context(project: Path, agent: str, session: str, context: st
         engine.close()
 
 
+def _file_score(item: dict, query: set[str]) -> float:
+    path_terms = _terms(str(item.get("path", "")))
+    symbol_terms = _terms(" ".join(str(symbol) for symbol in item.get("symbols", [])))
+    path_overlap = len(query & path_terms)
+    symbol_overlap = len(query & symbol_terms)
+    empirical = (
+        4.0 * int(item.get("verified_successes", 0))
+        + 1.5 * int(item.get("successful_outcomes", 0))
+        + 0.25 * int(item.get("observations", 0))
+        - 1.5 * int(item.get("failed_outcomes", 0))
+    )
+    hotspot = min(3.0, math.log1p(max(0, int(item.get("hotspot", 0)))) * 0.9)
+    return (
+        path_overlap * 10.0
+        + symbol_overlap * 7.0
+        + ROLE_BONUS.get(str(item.get("role")), 0.0)
+        + hotspot
+        + min(empirical, 12.0)
+    )
+
+
+def _relationship_expansion(project_map: dict, selected: list[dict], by_path: dict[str, dict], limit: int) -> tuple[list[dict], list[dict]]:
+    chosen = {str(item.get("path")) for item in selected}
+    additions: list[dict] = []
+    evidence: list[dict] = []
+    for relation in sorted(project_map.get("relationships", []), key=lambda item: -int(item.get("count", 0))):
+        left, right = str(relation.get("source", "")), str(relation.get("target", ""))
+        if left in chosen and right in chosen:
+            if not evidence:
+                evidence.append(relation)
+            continue
+        candidate = right if left in chosen else left if right in chosen else None
+        if not candidate or candidate in chosen or candidate not in by_path:
+            continue
+        additions.append(by_path[candidate])
+        evidence.append(relation)
+        chosen.add(candidate)
+        if len(additions) >= limit:
+            break
+    return additions, evidence
+
+
 def context_for_task(project: Path, description: str, *, max_files: int = 6, max_commands: int = 4) -> str | None:
-    """Hybrid project retrieval: lexical structure plus accumulated execution support."""
+    """Hybrid retrieval: source map + dependencies + Git structure + accumulated execution support."""
     snapshot = load_snapshot(project)
     if not snapshot:
         return None
     query = _terms(description)
-    scored: list[tuple[float, dict]] = []
-    for item in snapshot.get("indexed_files", []):
-        path_terms = _terms(str(item.get("path", "")))
-        overlap = len(query & path_terms)
-        empirical = (
-            4.0 * int(item.get("verified_successes", 0))
-            + 1.5 * int(item.get("successful_outcomes", 0))
-            + 0.25 * int(item.get("observations", 0))
-            - 1.5 * int(item.get("failed_outcomes", 0))
-        )
-        score = overlap * 10.0 + ROLE_BONUS.get(str(item.get("role")), 0.0) + min(empirical, 12.0)
-        if score > 0:
-            scored.append((score, item))
-    selected = [item for _, item in sorted(scored, key=lambda pair: (-pair[0], str(pair[1].get("path", ""))))[:max_files]]
-    files = [str(item["path"]) for item in selected]
-    commands = [item["command"] for item in snapshot.get("commands", []) if item.get("state") == "active"][:max_commands]
+    indexed = [item for item in snapshot.get("indexed_files", []) if item.get("path")]
+    by_path = {str(item["path"]): item for item in indexed}
+    scored = [(_file_score(item, query), item) for item in indexed]
+    scored = [(score, item) for score, item in scored if score > 0]
+
+    base_limit = max(1, max_files - 1)
+    selected = [
+        item
+        for _, item in sorted(scored, key=lambda pair: (-pair[0], str(pair[1].get("path", ""))))[:base_limit]
+    ]
+    project_map = snapshot.get("project_map") or {}
+    additions, relation_evidence = _relationship_expansion(
+        project_map, selected, by_path, max_files - len(selected)
+    )
+    selected += additions
+
+    dependencies = []
+    for item in project_map.get("dependencies", []):
+        if query & _terms(str(item.get("name", ""))):
+            dependencies.append(item)
+        if len(dependencies) >= 4:
+            break
+
+    commands = [
+        item["command"] for item in snapshot.get("commands", []) if item.get("state") == "active"
+    ][:max_commands]
     supported = sum(int(item.get("verified_successes", 0)) for item in selected)
 
     lines = [f"Project memory: {snapshot.get('project_kind', 'software repository')}."]
-    if files:
-        lines.append("Structurally relevant: " + ", ".join(files) + ".")
+    if selected:
+        lines.append("Likely project locations: " + ", ".join(str(item["path"]) for item in selected) + ".")
+        symbol_parts = []
+        for item in selected[:4]:
+            symbols = [str(symbol) for symbol in item.get("symbols", [])[:3]]
+            if symbols:
+                symbol_parts.append(f"{item['path']} -> {', '.join(symbols)}")
+        if symbol_parts:
+            lines.append("Indexed symbols: " + "; ".join(symbol_parts) + ".")
+    if dependencies:
+        lines.append("Relevant declared dependencies: " + ", ".join(str(item["name"]) for item in dependencies) + ".")
+    if relation_evidence:
+        rel = relation_evidence[0]
+        lines.append(
+            f"Git co-change signal: {rel['source']} and {rel['target']} changed together {rel['count']} time(s)."
+        )
     if commands:
         lines.append("Observed project verification: " + ", ".join(commands) + ".")
     if supported:
-        lines.append(f"Execution support: selected project locations include {supported} explicit verified-success observation(s).")
-    lines.append("Evidence: repository structure/config is a structural prior; execution support is counted separately.")
-    return "\n".join(lines)
+        lines.append(
+            f"Execution support: selected locations include {supported} explicit verified-success observation(s)."
+        )
+    lines.append("Evidence: project-map and Git signals are structural priors; execution outcome evidence is counted separately.")
+    text = "\n".join(lines)
+    return text if len(text) <= 1800 else text[:1797] + "..."

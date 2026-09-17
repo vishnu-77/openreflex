@@ -75,8 +75,11 @@ def statusline(project: Path, *, force_colour: bool = True) -> str:
         facts = state.get("facts", sum(f.get("state") == "active" for f in snapshot.get("facts", [])))
         experiences = state.get("experiences")
         verified = state.get("verified")
+        map_files = state.get("map_files")
         if facts:
             details.append(f"{facts} facts")
+        if map_files:
+            details.append(f"{map_files} indexed")
         if experiences is not None:
             details.append(f"{experiences} experiences")
         if verified is not None:
@@ -98,24 +101,45 @@ def dashboard(project: Path, *, colour: bool | None = None) -> str:
     task = state.get("task") or {}
     execution = state.get("execution") or {}
     recall = state.get("recall") or {}
+    project_map = snapshot.get("project_map") or {}
+    indexed = snapshot.get("indexed_files", [])
+    symbol_files = sum(bool(item.get("symbols")) for item in indexed)
+    dependencies = project_map.get("dependencies", [])
+    relationships = project_map.get("relationships", [])
+    hotspots = project_map.get("hotspots", [])[:3]
+
     lines = [header, "", project.name, "─" * 58, "", "PROJECT MEMORY",
              f"  type             {snapshot.get('project_kind', 'warming')}",
-             f"  indexed files    {len(snapshot.get('indexed_files', []))}",
+             f"  indexed files    {len(indexed)}",
              f"  facts            {active} active / {stale} stale",
-             f"  generation       {snapshot.get('generation', 0)}",
-             "", "EXECUTION MEMORY",
-             f"  experiences      {state.get('experiences', 0)}",
-             f"  verified         {state.get('verified', 0)}",
-             "", "CURRENT REFLEX",
-             f"  phase            {phase.upper()}",
-             f"  route            {task.get('route') or '-'}",
-             f"  recall           {recall.get('experiences', 0)} related",
-             f"  calls            {execution.get('calls', 0)}",
-             f"  budget           {float(execution.get('budget_used', 0)):.0%}"]
+             f"  generation       {snapshot.get('generation', 0)}"]
+
+    if project_map:
+        lines += ["", "PROJECT MAP",
+                  f"  tracked files    {project_map.get('tracked_files', 0)}",
+                  f"  symbol files     {symbol_files}",
+                  f"  dependencies     {len(dependencies)}",
+                  f"  co-change edges  {len(relationships)}"]
+        if hotspots:
+            lines.append("  hotspots         " + " · ".join(
+                f"{item.get('path')} ({item.get('changes', 0)})" for item in hotspots
+            ))
+
+    lines += ["", "EXECUTION MEMORY",
+              f"  experiences      {state.get('experiences', 0)}",
+              f"  known outcomes   {state.get('known_outcomes', 0)}",
+              f"  verified         {state.get('verified', 0)}",
+              f"  lessons          {state.get('lessons', 0)}",
+              "", "CURRENT REFLEX",
+              f"  phase            {phase.upper()}",
+              f"  route            {task.get('route') or '-'}",
+              f"  recall           {recall.get('experiences', 0)} related",
+              f"  calls            {execution.get('calls', 0)}",
+              f"  budget           {float(execution.get('budget_used', 0)):.0%}"]
     commands = [item.get("command") for item in snapshot.get("commands", []) if item.get("state") == "active"][:5]
     if commands:
         lines += ["", "VERIFICATION", "  " + " · ".join(str(item) for item in commands)]
-    lines += ["", _paint("Project facts are structural priors; verified outcomes remain separate evidence.", MUTED, enabled)]
+    lines += ["", _paint("Project-map signals are structural priors; verified outcomes remain separate evidence.", MUTED, enabled)]
     return "\n".join(lines)
 
 

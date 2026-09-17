@@ -18,6 +18,7 @@ from typing import Callable, TypeVar
 from . import cli
 from .claude_ui import configure_statusline, remove_statusline
 from .project import approval, log_error, project_root
+from .project_map import enrich_snapshot
 from .project_memory import ensure_background_refresh, load_snapshot, read_state, run_worker, update_state
 from .privacy import categorize
 from .reflex_index import account_project_context, context_for_task, reinforce_latest_execution, sync_counts
@@ -119,7 +120,6 @@ def _needs_verification(output: str) -> bool:
 
 def _stop_state(project: Path, agent: str, session: str, output: str) -> None:
     if _needs_verification(output):
-        # Claude is continuing the same task. Do not train memory or claim completion yet.
         update_state(project, "verify", outcome="verification required", verification="pending")
         return
 
@@ -153,7 +153,6 @@ def _hook(argv: list[str]) -> int:
         phase = _best_effort("start primer", lambda: ensure_background_refresh(project), "cold")
         _best_effort("sync counts", lambda: sync_counts(project), {})
 
-    # The established adapter remains authoritative for the actual agent protocol.
     output = safe_handle(agent, event, raw)
 
     if enabled and event in SESSION_EVENTS and phase in {"reflexing", "refreshing"}:
@@ -197,19 +196,26 @@ def _tui(argv: list[str]) -> int:
     return 0
 
 
+def _refresh_memory(project: Path, rebuild: bool = False) -> dict:
+    if rebuild:
+        from .project_memory import snapshot_path
+        snapshot_path(project).unlink(missing_ok=True)
+    result = run_worker(project)
+    _best_effort("project map", lambda: enrich_snapshot(project), {})
+    sync_counts(project)
+    return result
+
+
 def _memory(argv: list[str]) -> int:
     project = project_root(_project_arg(argv))
     action = argv[0] if argv and not argv[0].startswith("-") else "status"
     if action in {"refresh", "rebuild"}:
-        if action == "rebuild":
-            from .project_memory import snapshot_path
-            snapshot_path(project).unlink(missing_ok=True)
-        result = run_worker(project)
-        sync_counts(project)
+        result = _refresh_memory(project, rebuild=action == "rebuild")
         print(f"OPENREFLEX / MEMORY\n  action      {action}\n  state       ready\n  generation  {result.get('generation', 0)}")
         return 0
     sync_counts(project)
     snapshot, state = load_snapshot(project), read_state(project)
+    project_map = snapshot.get("project_map") or {}
     print("OPENREFLEX / MEMORY")
     print(f"  project     {project}")
     print(f"  state       {state.get('memory', 'cold')}")
@@ -217,7 +223,9 @@ def _memory(argv: list[str]) -> int:
     print(f"  generation  {snapshot.get('generation', 0)}")
     print(f"  facts       {sum(f.get('state') == 'active' for f in snapshot.get('facts', []))} active / "
           f"{sum(f.get('state') == 'stale' for f in snapshot.get('facts', []))} stale")
-    print(f"  files       {len(snapshot.get('indexed_files', []))} indexed")
+    print(f"  files       {len(snapshot.get('indexed_files', []))} indexed / {project_map.get('tracked_files', 0)} tracked")
+    print(f"  deps        {len(project_map.get('dependencies', []))}")
+    print(f"  relations   {len(project_map.get('relationships', []))}")
     print(f"  experiences {state.get('experiences', 0)}")
     print(f"  outcomes    {state.get('known_outcomes', 0)} known / {state.get('verified', 0)} verified")
     print(f"  lessons     {state.get('lessons', 0)}")
@@ -252,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv[0] == "primer-worker":
         project = project_root(_project_arg(argv))
         run_worker(project)
+        _best_effort("project map", lambda: enrich_snapshot(project), {})
         return 0
     if argv[0] == "statusline":
         return _statusline()
