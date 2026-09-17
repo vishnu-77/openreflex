@@ -38,6 +38,12 @@ export function Hero() {
               Set up your agent
             </a>
             <a
+              href="/tldr"
+              className="inline-flex h-11 items-center rounded-md border border-accent px-5 font-mono text-[0.86rem] font-medium tracking-[0.08em] text-accent transition-colors hover:bg-panel"
+            >
+              TLDR
+            </a>
+            <a
               href={LINKS.github}
               target="_blank"
               rel="noopener noreferrer"
