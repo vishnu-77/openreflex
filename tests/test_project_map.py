@@ -38,6 +38,45 @@ def test_project_map_indexes_source_symbols_and_dependencies_without_persisting_
     assert "structural priors" in context
 
 
+def test_project_map_indexes_nested_manifests_with_project_relative_provenance(project):
+    chart = project / "charts" / "payments"
+    chart.mkdir(parents=True)
+    (chart / "Chart.yaml").write_text(
+        "apiVersion: v2\nname: payments\ndependencies:\n  - name: redis\n    version: 20.0.0\n",
+        encoding="utf-8",
+    )
+    (chart / "values.yaml").write_text("replicaCount: 2\n", encoding="utf-8")
+
+    api = project / "services" / "api"
+    api.mkdir(parents=True)
+    (api / "package.json").write_text(
+        json.dumps({"dependencies": {"zod": "4"}, "devDependencies": {"vitest": "3"}}),
+        encoding="utf-8",
+    )
+
+    worker = project / "services" / "worker"
+    worker.mkdir(parents=True)
+    (worker / "pyproject.toml").write_text(
+        "[project]\nname='worker'\ndependencies=['pydantic>=2']\n[project.optional-dependencies]\ntest=['pytest>=8']\n",
+        encoding="utf-8",
+    )
+
+    build_snapshot(project)
+    snapshot = enrich_snapshot(project)
+    dependencies = snapshot["project_map"]["dependencies"]
+    by_name = {(item["name"], item["source"]) for item in dependencies}
+    roles = {item["path"]: item["role"] for item in snapshot["indexed_files"]}
+
+    assert ("redis", "charts/payments/Chart.yaml") in by_name
+    assert ("zod", "services/api/package.json") in by_name
+    assert ("vitest", "services/api/package.json") in by_name
+    assert ("pydantic", "services/worker/pyproject.toml") in by_name
+    assert ("pytest", "services/worker/pyproject.toml") in by_name
+    assert roles["charts/payments/Chart.yaml"] == "helm-config"
+    assert roles["services/api/package.json"] == "manifest"
+    assert snapshot["project_map"]["schema_version"] == "project-map.v2"
+
+
 def _git(project, *args):
     return subprocess.run(["git", *args], cwd=project, check=True, capture_output=True, text=True)
 
@@ -64,7 +103,11 @@ def test_git_history_adds_bounded_cochange_signal(project):
     snapshot = enrich_snapshot(project)
     relations = snapshot["project_map"]["relationships"]
 
-    relation = next(item for item in relations if {item["source"], item["target"]} == {"src/values.py", "src/renderer.py"})
+    relation = next(
+        item
+        for item in relations
+        if {item["source"], item["target"]} == {"src/values.py", "src/renderer.py"}
+    )
     assert relation["type"] == "cochange"
     assert relation["count"] == 2
 
