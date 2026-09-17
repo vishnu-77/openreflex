@@ -98,17 +98,19 @@ def reinforce_files(project: Path, files: list[str], *, status: str, verified: b
             item = {"path": path, "role": "execution-observed", "source_hash": ""}
             snapshot.setdefault("indexed_files", []).append(item)
             by_path[path] = item
+        for key in ("observations", "successful_outcomes", "failed_outcomes", "verified_successes"):
+            item.setdefault(key, 0)
         if verification_upgrade:
             if status == "success" and verified:
-                item["verified_successes"] = int(item.get("verified_successes", 0)) + 1
+                item["verified_successes"] += 1
         else:
-            item["observations"] = int(item.get("observations", 0)) + 1
+            item["observations"] += 1
             if status == "success":
-                item["successful_outcomes"] = int(item.get("successful_outcomes", 0)) + 1
+                item["successful_outcomes"] += 1
                 if verified:
-                    item["verified_successes"] = int(item.get("verified_successes", 0)) + 1
+                    item["verified_successes"] += 1
             elif status == "failure":
-                item["failed_outcomes"] = int(item.get("failed_outcomes", 0)) + 1
+                item["failed_outcomes"] += 1
         item["last_observed_at"] = round(at, 3)
         item["evidence_state"] = _evidence_state(item)
 
