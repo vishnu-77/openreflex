@@ -1,7 +1,8 @@
 import json
 
 from openreflex.claude_ui import configure_statusline, remove_statusline
-from openreflex.project_memory import build_snapshot, update_state
+from openreflex.entrypoint import _stop_state
+from openreflex.project_memory import build_snapshot, read_state, update_state
 from openreflex.tui import dashboard, statusline
 
 
@@ -16,6 +17,22 @@ def test_statusline_uses_openreflex_brand_states_and_colours(project):
     assert "\x1b[38;2;40;106;112m" in line
     assert "\x1b[38;2;192;122;44m" in line
     assert "work normally" in line
+
+
+def test_verification_continuation_stays_in_verify_instead_of_remember(project):
+    output = json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "Stop",
+            "additionalContext": "OpenReflex cannot verify this changed task yet. Run the relevant check.",
+        }
+    })
+
+    _stop_state(project, "claude-code", "s1", output)
+    state = read_state(project)
+
+    assert state["phase"] == "verify"
+    assert state["outcome"] == "verification required"
+    assert state["verification"] == "pending"
 
 
 def test_dashboard_is_readable_without_colour(project):
