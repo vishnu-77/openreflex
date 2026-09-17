@@ -115,7 +115,7 @@ def test_claude_hook_surfaces_recap_as_system_message(project, tmp_path, clock):
 
     complete = json.loads(hooks.handle("claude-code", "Stop", {"session_id": "s", "cwd": str(project)},
                                        engine_factory=factory))
-    assert complete["systemMessage"].startswith("↺ OpenReflex · COMPLETE")
+    assert complete["systemMessage"].startswith("↺ OpenReflex · UNVERIFIED")
 
 
 def test_codex_remains_non_chatty_on_stop(project, tmp_path, clock):
