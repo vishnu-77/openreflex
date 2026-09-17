@@ -110,7 +110,19 @@ def _tool_state(project: Path, payload: dict) -> None:
         update_state(project, "watch", execution=execution)
 
 
+def _needs_verification(output: str) -> bool:
+    data = _output_dict(output)
+    hook = data.get("hookSpecificOutput") if isinstance(data, dict) else {}
+    context = hook.get("additionalContext", "") if isinstance(hook, dict) else ""
+    return isinstance(context, str) and "OpenReflex cannot verify this changed task yet" in context
+
+
 def _stop_state(project: Path, agent: str, session: str, output: str) -> None:
+    if _needs_verification(output):
+        # Claude is continuing the same task. Do not train memory or claim completion yet.
+        update_state(project, "verify", outcome="verification required", verification="pending")
+        return
+
     outcome = "execution captured"
     data = _output_dict(output)
     notice = str(data.get("systemMessage") or "") if isinstance(data, dict) else ""
