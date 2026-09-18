@@ -20,7 +20,7 @@ AMBER = "\x1b[38;2;192;122;44m"
 MUTED = "\x1b[38;2;120;120;120m"
 BOLD = "\x1b[1m"
 RESET = "\x1b[0m"
-AMBER_PHASES = {"reflexing", "refreshing", "verify", "pivot", "stale", "cold"}
+AMBER_PHASES = {"reflexing", "refreshing", "verify", "waiting", "pivot", "stale", "cold"}
 
 
 def _colour_enabled(force: bool = False) -> bool:
@@ -43,7 +43,10 @@ def _display_phase(state: dict) -> str:
     # RECALL is a brief retrieval moment, not a long-running state. Once the recap window passes,
     # an active task is being watched; only a closed task should look READY.
     if phase == "recall" and changed and age > 4:
-        return "watch" if task.get("active") else "ready"
+        if not task.get("active"):
+            return "ready"
+        mode = str(task.get("mode") or "build")
+        return "investigate" if mode == "investigate" else "think" if mode == "think" else "watch"
     if phase == "remember" and changed and age > 6:
         return "ready"
     return phase
@@ -87,6 +90,8 @@ def statusline(project: Path, *, force_colour: bool = True) -> str:
     details: list[str] = []
     execution = state.get("execution") or {}
     activity = _activity_text(state)
+    usage = state.get("token_usage") or {}
+    total_tokens = sum(int(usage.get(key, 0) or 0) for key in ("input", "output", "cache_read", "cache_creation"))
 
     if phase == "reflexing":
         details.append("understanding project · work normally")
@@ -99,13 +104,27 @@ def statusline(project: Path, *, force_colour: bool = True) -> str:
         route = (state.get("task") or {}).get("route")
         if route:
             details.append(str(route))
-    elif phase == "watch":
+    elif phase in {"watch", "investigate", "think"}:
         if activity:
             details.append(activity)
+        elif phase == "investigate":
+            details.append("researching")
+        elif phase == "think":
+            details.append("reasoning")
         if execution.get("calls") is not None:
             details.append(f"{execution.get('calls', 0)} calls")
-        if execution.get("budget_used") is not None:
+        if total_tokens:
+            details.append(f"{total_tokens / 1000:.1f}k tokens")
+        if phase == "watch" and execution.get("budget_used") is not None:
             details.append(f"budget {float(execution['budget_used']):.0%}")
+    elif phase == "waiting":
+        pending = state.get("pending") or {}
+        if pending.get("background"):
+            details.append(f"{pending['background']} background")
+        if pending.get("scheduled"):
+            details.append(f"{pending['scheduled']} scheduled")
+        if not details:
+            details.append("work still scheduled")
     elif phase == "verify":
         if activity:
             details.append(activity)
@@ -117,6 +136,8 @@ def statusline(project: Path, *, force_colour: bool = True) -> str:
         details.append(str(state.get("outcome") or "experience retained"))
         if execution.get("calls") is not None:
             details.append(f"{execution.get('calls', 0)} calls")
+        if total_tokens:
+            details.append(f"{total_tokens / 1000:.1f}k tokens")
     else:
         facts = state.get("facts", sum(f.get("state") == "active" for f in snapshot.get("facts", [])))
         experiences = state.get("experiences")
@@ -166,6 +187,8 @@ def dashboard(project: Path, *, colour: bool | None = None) -> str:
     relationships = project_map.get("relationships", [])
     hotspots = project_map.get("hotspots", [])[:3]
     activity = _activity_text(state)
+    usage = state.get("token_usage") or {}
+    total_tokens = sum(int(usage.get(key, 0) or 0) for key in ("input", "output", "cache_read", "cache_creation"))
 
     version_status = "ALIGNED" if aligned else "MISMATCH"
     lines = [header, "", project.name, "─" * 58, "", "RUNTIME",
@@ -197,11 +220,21 @@ def dashboard(project: Path, *, colour: bool | None = None) -> str:
               f"  lessons          {state.get('lessons', 0)}",
               "", "CURRENT REFLEX",
               f"  phase            {phase.upper()}",
-              f"  route            {task.get('route') or '-'}",
+              f"  mode             {str(task.get('mode') or 'build').upper()}",
+              f"  suggested path   {task.get('route') or '-'}",
               f"  recall           {recall.get('experiences', 0)} related",
               f"  activity         {activity or '-'}",
               f"  calls            {execution.get('calls', 0)}",
               f"  budget           {float(execution.get('budget_used', 0)):.0%}"]
+    lines += ["", "TOKEN USAGE",
+              f"  tracking         {state.get('token_tracking', 'off')}",
+              f"  input            {int(usage.get('input', 0) or 0):,}",
+              f"  output           {int(usage.get('output', 0) or 0):,}",
+              f"  cache read       {int(usage.get('cache_read', 0) or 0):,}",
+              f"  cache creation   {int(usage.get('cache_creation', 0) or 0):,}",
+              f"  total            {total_tokens:,}",
+              f"  requests         {int(usage.get('requests', 0) or 0)}",
+              f"  est. cost        ${float(usage.get('cost_usd', 0) or 0):.4f}"]
     commands = [item.get("command") for item in snapshot.get("commands", []) if item.get("state") == "active"][:5]
     if commands:
         lines += ["", "VERIFICATION", "  " + " · ".join(str(item) for item in commands)]

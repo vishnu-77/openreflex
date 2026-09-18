@@ -68,20 +68,16 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
 
     def profile(group):
         known_group = [x for x in group if x.status != "unknown"]
+        model_token_values = [x.model_tokens for x in group if x.model_tokens > 0]
         return {"n": len(group), "tool_calls": _avg(x.tool_calls for x in group),
-                "output_tokens": _avg(x.output_tokens_estimate for x in group),
+                "model_tokens": _avg(model_token_values),
+                "tool_output_tokens_estimate": _avg(x.output_tokens_estimate for x in group),
                 "minutes": _avg(x.elapsed_seconds / 60 for x in group),
                 "success_rate": _avg(x.status == "success" for x in known_group), "known_outcomes": len(known_group)}
 
-    regret_trend = {}
-    by_class = defaultdict(list)
-    for x in experiences:
-        if x.estimated_regret is not None:
-            by_class[x.task_class].append(x.estimated_regret)
-    for task_class, values in by_class.items():
-        half = len(values) // 2
-        regret_trend[task_class] = {"n": len(values), "early": _avg(values[:half]) if half else None,
-                                    "recent": _avg(values[half:]) if half else None}
+    comparisons = [x for x in experiences if x.estimated_regret is not None]
+    better_options = [x for x in comparisons if x.estimated_regret and x.estimated_regret > 0]
+    comparison_by_class = Counter(x.task_class for x in comparisons)
 
     best = retrospective_best(experiences)
     agreements = []
@@ -119,10 +115,11 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
         "efficiency_observational": {
             "with_prior_experience": with_prior_profile, "without_prior_experience": without_prior_profile,
             "tool_call_change": _change(without_prior_profile["tool_calls"], with_prior_profile["tool_calls"]),
-            "token_change": _change(without_prior_profile["output_tokens"], with_prior_profile["output_tokens"]),
+            "model_token_change": _change(without_prior_profile["model_tokens"], with_prior_profile["model_tokens"]),
             "time_change": _change(without_prior_profile["minutes"], with_prior_profile["minutes"]),
         },
-        "execution_regret": {"mean": _avg(v for values in by_class.values() for v in values), "by_class": regret_trend},
+        "path_check": {"comparisons": len(comparisons), "better_option_found": len(better_options),
+                       "by_class": dict(comparison_by_class)},
         "routing": {"retrospective_best": best,
                     "agreement": round(sum(agreements) / len(agreements), 3) if agreements else None,
                     "compared_executions": len(agreements)},

@@ -119,9 +119,11 @@ def _acquire_state_lock(project: Path, timeout: float = STATE_LOCK_TIMEOUT_SECON
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(f"{os.getpid()} {time.time()}\n")
             return path
-        except FileExistsError:
+        except (FileExistsError, PermissionError) as error:
+            # Windows can transiently report access denied rather than FileExistsError while another process
+            # owns or is deleting the lock file. Treat it as bounded contention, never as a silent success.
             try:
-                if time.time() - path.stat().st_mtime >= STATE_LOCK_STALE_SECONDS:
+                if path.exists() and time.time() - path.stat().st_mtime >= STATE_LOCK_STALE_SECONDS:
                     path.unlink(missing_ok=True)
                     continue
             except FileNotFoundError:
@@ -129,7 +131,7 @@ def _acquire_state_lock(project: Path, timeout: float = STATE_LOCK_TIMEOUT_SECON
             except OSError:
                 pass
             if time.monotonic() >= deadline:
-                raise TimeoutError(f"timed out waiting for OpenReflex state lock: {path}")
+                raise TimeoutError(f"timed out waiting for OpenReflex state lock: {path}") from error
             time.sleep(0.005)
 
 

@@ -206,11 +206,9 @@ def format_report(report: dict) -> str:
     b, g, c = report["baseline"], report["guided"], report["relative_change"]
     rows = [
         ("tool calls / task", b["tool_calls"], g["tool_calls"], f"{c['tool_calls']:+.0%}"),
-        ("output tokens / task", b["tokens"], g["tokens"], f"{c['tokens']:+.0%}"),
+        ("sim. tool-output tokens / task", b["tokens"], g["tokens"], f"{c['tokens']:+.0%}"),
         ("time / task (s)", b["seconds"], g["seconds"], f"{c['time']:+.0%}"),
         ("success rate", b["success_rate"], g["success_rate"], f"{c['success_rate_points']:+.3f} pts"),
-        ("regret, first quarter", b["regret_first_quarter"], g["regret_first_quarter"], ""),
-        ("regret, last quarter", b["regret_last_quarter"], g["regret_last_quarter"], ""),
         ("routing agreement (2nd half)", "-", g["routing_agreement_second_half"], ""),
     ]
     lines = [f"SIMULATED benchmark - {report['episodes_per_arm']} tasks/arm x {report['seeds']} seeds "

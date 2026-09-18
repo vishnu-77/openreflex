@@ -38,7 +38,7 @@ class ExperienceSummary(BaseModel):
     score: float = Field(description="Similarity/retrieval score for this query; higher ranks first.")
     description: str = Field(description="Redacted task description stored for the past execution.")
     class_name: str = Field(alias="class", serialization_alias="class", description="OpenReflex task class.")
-    agent: str = Field(description="Coding agent that produced the experience.")
+    agent: str = Field(description="Agent that produced the experience.")
     strategy: str | None = Field(description="Strategy used for the past task when known.")
     status: str = Field(description="Observed outcome status: success, failure or unknown.")
     tool_calls: int = Field(ge=0, description="Number of captured tool calls in the execution.")
@@ -92,7 +92,7 @@ class EngagementMetrics(BaseModel):
     active_weeks: int = Field(ge=0, description="Distinct weeks containing captured executions.")
     weeks_since_start: int = Field(ge=1, description="Weeks elapsed since activation or first task.")
     active_week_ratio: float | None = Field(description="Share of elapsed weeks containing activity.")
-    agents: list[str] = Field(description="Coding agents observed in this project.")
+    agents: list[str] = Field(description="Agents observed in this project.")
 
 
 class ExperienceReuseMetrics(BaseModel):
@@ -110,7 +110,8 @@ class OutcomeMetrics(BaseModel):
 class EfficiencyProfile(BaseModel):
     n: int = Field(ge=0, description="Number of experiences in this observational group.")
     tool_calls: float | None = Field(description="Mean tool calls in the group.")
-    output_tokens: float | None = Field(description="Mean estimated tool-output tokens in the group.")
+    model_tokens: float | None = Field(description="Mean real model-token usage when Claude telemetry is available.")
+    tool_output_tokens_estimate: float | None = Field(description="Mean legacy estimate of tool-output tokens.")
     minutes: float | None = Field(description="Mean active execution time in minutes.")
     success_rate: float | None = Field(description="Success rate among known outcomes in the group.")
     known_outcomes: int = Field(ge=0, description="Number of known outcomes in the group.")
@@ -120,19 +121,14 @@ class EfficiencyObservational(BaseModel):
     with_prior_experience: EfficiencyProfile = Field(description="Observed metrics for tasks that reused prior experience.")
     without_prior_experience: EfficiencyProfile = Field(description="Observed metrics for tasks without prior experience.")
     tool_call_change: float | None = Field(description="Relative mean tool-call change; observational, not causal.")
-    token_change: float | None = Field(description="Relative mean output-token change; observational, not causal.")
+    model_token_change: float | None = Field(description="Relative mean model-token change when real telemetry exists; observational, not causal.")
     time_change: float | None = Field(description="Relative mean active-time change; observational, not causal.")
 
 
-class RegretTrendPoint(BaseModel):
-    n: int = Field(ge=0, description="Number of executions with a usable regret estimate in this task class.")
-    early: float | None = Field(description="Mean regret in the earlier half of observations.")
-    recent: float | None = Field(description="Mean regret in the more recent half of observations.")
-
-
-class ExecutionRegretMetrics(BaseModel):
-    mean: float | None = Field(description="Mean Execution Regret across executions where it is measurable.")
-    by_class: dict[str, RegretTrendPoint] = Field(description="Early-versus-recent regret by task class.")
+class PathCheckMetrics(BaseModel):
+    comparisons: int = Field(ge=0, description="Completed tasks with enough comparable past evidence to check another path.")
+    better_option_found: int = Field(ge=0, description="Tasks where comparable past evidence indicated a better option.")
+    by_class: dict[str, int] = Field(description="Number of evidence-backed path checks by task class.")
 
 
 class RoutingMetrics(BaseModel):
@@ -155,7 +151,7 @@ class ProjectInsightsResult(BaseModel):
     outcomes: OutcomeMetrics = Field(description="Known and verified outcome coverage.")
     efficiency_observational: EfficiencyObservational = Field(
         description="Observed efficiency with versus without reused experience; this is not a controlled comparison.")
-    execution_regret: ExecutionRegretMetrics = Field(description="Execution Regret aggregate and trend metrics.")
+    path_check: PathCheckMetrics = Field(description="Simple evidence-backed path comparison counts.")
     routing: RoutingMetrics = Field(description="Recommendation agreement with retrospective realised performance.")
     live_alerts: dict[str, int] = Field(description="Counts of loop, repetition, stagnation, context and budget alerts.")
     execution_control: ExecutionControlMetrics = Field(description="Runtime verdict and budget-adherence metrics.")

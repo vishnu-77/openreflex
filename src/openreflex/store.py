@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-from .models import Model, NODE_MODELS, Relation
+from .models import Model, NODE_MODELS, Relation, UsageSample
 from .project import home
 
 SCHEMA = """
@@ -42,9 +42,19 @@ CREATE TABLE IF NOT EXISTS events (
 PRAGMA user_version = 1;
 """
 
+USAGE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS usage_samples (
+    id TEXT PRIMARY KEY,
+    execution_id TEXT NOT NULL REFERENCES nodes(id),
+    data TEXT NOT NULL CHECK(json_valid(data))
+);
+CREATE INDEX IF NOT EXISTS usage_execution ON usage_samples(execution_id);
+PRAGMA user_version = 2;
+"""
+
 
 BUSY_TIMEOUT_SECONDS = 8
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _field(name: str) -> str:
@@ -71,15 +81,23 @@ class Store:
             self.db.close()
             raise ValueError("Database schema is newer than this engine")
         if version < SCHEMA_VERSION:
-            # Only a fresh database pays for schema setup. Re-running it on every hook process meant autocommit
-            # writes outside BEGIN IMMEDIATE, which in WAL mode can fail instantly with SQLITE_BUSY under contention.
+            # Only migrations pay for schema setup. Re-running DDL on every hook process meant autocommit writes
+            # outside BEGIN IMMEDIATE, which in WAL mode can fail instantly with SQLITE_BUSY under contention.
             if self.db.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
                 self.db.execute("PRAGMA journal_mode=WAL")
-            with self.transaction():
-                if self.db.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
-                    for statement in SCHEMA.split(";"):
-                        if statement.strip():
-                            self.db.execute(statement)
+            if version < 1:
+                with self.transaction():
+                    if self.db.execute("PRAGMA user_version").fetchone()[0] < 1:
+                        for statement in SCHEMA.split(";"):
+                            if statement.strip():
+                                self.db.execute(statement)
+                version = 1
+            if version < 2:
+                with self.transaction():
+                    if self.db.execute("PRAGMA user_version").fetchone()[0] < 2:
+                        for statement in USAGE_SCHEMA.split(";"):
+                            if statement.strip():
+                                self.db.execute(statement)
 
     def close(self):
         self.db.close()
@@ -99,6 +117,22 @@ class Store:
             "INSERT INTO nodes VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
             (node.id, type(node).__name__, node.model_dump_json()),
         )
+
+    def put_usage(self, sample: UsageSample):
+        self.db.execute(
+            "INSERT INTO usage_samples VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
+            (sample.id, sample.execution_id, sample.model_dump_json()),
+        )
+
+    def usage_exists(self, sample_id: str) -> bool:
+        return self.db.execute("SELECT 1 FROM usage_samples WHERE id=?", (sample_id,)).fetchone() is not None
+
+    def usage_for_execution(self, execution_id: str, limit: int = 10000) -> list[UsageSample]:
+        rows = self.db.execute(
+            "SELECT data FROM usage_samples WHERE execution_id=? ORDER BY rowid ASC LIMIT ?",
+            (execution_id, limit),
+        )
+        return [UsageSample.model_validate_json(row[0]) for row in rows]
 
     def get(self, node_id: str):
         row = self.db.execute("SELECT kind,data FROM nodes WHERE id=?", (node_id,)).fetchone()
@@ -147,6 +181,7 @@ class Store:
         """Drop the session binding and event records that point at an execution being deleted."""
         self.db.execute("DELETE FROM sessions WHERE execution_id=?", (execution_id,))
         self.db.execute("DELETE FROM events WHERE execution_id=?", (execution_id,))
+        self.db.execute("DELETE FROM usage_samples WHERE execution_id=?", (execution_id,))
 
     def exists(self, node_id: str) -> bool:
         return self.db.execute("SELECT 1 FROM nodes WHERE id=?", (node_id,)).fetchone() is not None

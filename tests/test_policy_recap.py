@@ -92,9 +92,8 @@ def test_completion_recap_shows_realised_path_cost_and_comparison(engine, clock)
     assert recap.startswith("↺ OpenReflex · COMPLETE")
     assert "success · test-first" in recap
     assert "5 calls" in recap
-    assert "regret" in recap
-    if snapshot.next_best_strategy:
-        assert f"vs {snapshot.next_best_strategy}" in recap
+    assert "Path check · better option: none proven" in recap
+    assert "regret" not in recap.lower()
 
 
 def test_claude_hook_surfaces_recap_as_system_message(project, tmp_path, clock):

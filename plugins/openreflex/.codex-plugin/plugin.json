@@ -1,6 +1,6 @@
 {
   "name": "openreflex",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Muscle memory for AI coding agents: learns from every task, advises the next one, and flags failure loops live.",
   "author": {
     "name": "vishnu-77",
@@ -18,8 +18,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "OpenReflex",
-    "shortDescription": "Local execution memory and path advice for coding tasks.",
-    "longDescription": "Captures task trajectories through lifecycle hooks, retrieves relevant past experience before substantial tasks, scores candidate strategies, flags failure loops and stagnation, and learns lessons after each task. All data stays local.",
+    "shortDescription": "Local execution memory and path advice for coding, investigation and reasoning.",
+    "longDescription": "Captures substantial coding, investigation and reasoning work through lifecycle hooks, reuses relevant past experience, tracks execution cost, flags loops and stagnation, and learns from confirmed outcomes. Core memory stays local.",
     "developerName": "vishnu-77",
     "category": "Productivity",
     "capabilities": [],

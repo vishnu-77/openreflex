@@ -4,6 +4,25 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.5.0 (2026-09-18)
+
+General agent work memory beyond edit/test coding loops, with truthful token accounting.
+
+- Add three work modes: **BUILD**, **INVESTIGATE**, and **THINK**. Coding keeps inspect/test/incremental paths;
+  investigation gets source-first/cross-check/broad-then-deep; reasoning gets reason-first/compare-options/evidence-first.
+- Read Claude Code Stop metadata so active background work and /loop schedules remain **WAITING** instead of being
+  incorrectly finalized as complete.
+- Treat substantive zero-tool reasoning and investigation as real executions. Recommendations stay separate from
+  observed paths, so OpenReflex never claims a suggested path was executed when it was not observed.
+- Replace user-facing numeric path-comparison jargon with a plain **Path check**: either a better option supported by
+  comparable completed tasks, or **none proven**.
+- Add opt-in Claude Code model-token accounting through a loopback-only OTLP/HTTP receiver. Store input, output,
+  cache-read, cache-creation counts, model/source labels and estimated cost; prompt, response, thinking, tool
+  arguments and raw API bodies remain disabled.
+- Show real model-token totals in the status line, TUI and observational efficiency metrics when available. Legacy
+  tool-output estimates are labelled separately and zero tool calls are never presented as zero model usage.
+- Harden Windows UI-state locking by treating transient access-denied errors as bounded lock contention.
+
 ## 0.4.1 (2026-09-17)
 
 Truthful Claude Code runtime presentation and completion semantics.

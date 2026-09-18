@@ -80,6 +80,7 @@ class Task(Model):
     agent: str
     started_at: float
     substantial: bool = True
+    task_mode: str = one_of(("build", "investigate", "think"), "build")
 
 
 @dataclass(kw_only=True)
@@ -135,6 +136,7 @@ class Execution(Model):
     verdicts: list[str] = field(default_factory=list)
     decision_history: list[dict] = field(default_factory=list)
     visible_decisions: int = 0
+    waiting_for_future_work: bool = False
 
 
 @dataclass(kw_only=True)
@@ -168,6 +170,15 @@ class Outcome(Model):
     best_alternative: str | None = None
     estimated_regret: float | None = None
     regret_basis: str = "unavailable: chosen path or verified outcome missing"
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+
+    @property
+    def model_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_creation_tokens
 
 
 @dataclass(kw_only=True)
@@ -190,6 +201,32 @@ class Experience(Model):
     verdicts: list[str] = field(default_factory=list)
     embedding: list[float]
     created_at: float
+    task_mode: str = one_of(("build", "investigate", "think"), "build")
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+
+    @property
+    def model_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_creation_tokens
+
+
+@dataclass(kw_only=True)
+class UsageSample(Model):
+    execution_id: str
+    session_id: str
+    prompt_id: str = ""
+    request_id: str = ""
+    model: str = ""
+    query_source: str = "main"
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+    observed_at: float = 0.0
 
 
 @dataclass(kw_only=True)
