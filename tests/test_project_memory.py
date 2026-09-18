@@ -1,6 +1,15 @@
 import json
+import os
+import time
 
-from openreflex.project_memory import build_snapshot, context_for_task, load_snapshot
+from openreflex.project_memory import (
+    _acquire_state_lock,
+    _release_state_lock,
+    build_snapshot,
+    context_for_task,
+    load_snapshot,
+    state_lock_path,
+)
 
 
 def _helm_project(project):
@@ -64,3 +73,33 @@ def test_snapshot_round_trip_uses_project_local_memory_directory(project):
     loaded = load_snapshot(project)
     assert loaded["source_fingerprint"] == built["source_fingerprint"]
     assert loaded["generation"] == 1
+
+
+def test_default_timeout_reaches_stale_lock_reclaim(project):
+    """A lock abandoned by a crashed process must be reclaimed before a default caller times out."""
+    path = state_lock_path(project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("99999 0\n", encoding="utf-8")
+    old = time.time() - 5
+    os.utime(path, (old, old))
+
+    acquired = _acquire_state_lock(project)  # default timeout, must not raise TimeoutError
+    try:
+        assert acquired == path
+    finally:
+        _release_state_lock(acquired)
+
+
+def test_stale_reclaim_never_fires_for_a_freshly_held_lock(project):
+    """Normal, briefly-held contention must not be mistaken for an abandoned lock."""
+    path = state_lock_path(project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{os.getpid()} {time.time()}\n", encoding="utf-8")
+
+    try:
+        _acquire_state_lock(project, timeout=0.05)
+        assert False, "expected TimeoutError while the lock is freshly held"
+    except TimeoutError:
+        pass
+    finally:
+        path.unlink(missing_ok=True)

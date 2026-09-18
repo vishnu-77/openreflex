@@ -372,6 +372,12 @@ def _tokens(argv: list[str]) -> int:
     from .usage import configured, disable, enable, receiver_running, serve
 
     action = argv[0] if argv else "status"
+    if action in {"-h", "--help"}:
+        print("usage: openreflex tokens {enable,disable,status}\n")
+        print("  enable   Turn on local Claude Code token accounting (loopback receiver)")
+        print("  disable  Turn off token accounting and stop the receiver")
+        print("  status   Show whether tracking is configured and whether the receiver is running")
+        return 0
     if action == "serve":
         serve()
         return 0
@@ -402,6 +408,7 @@ def _tokens(argv: list[str]) -> int:
         print("  content     prompts/responses/thinking/tool arguments are not collected")
         return 0
     print(f"Unknown tokens action: {action}")
+    print("usage: openreflex tokens {enable,disable,status}")
     return 2
 
 

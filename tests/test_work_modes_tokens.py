@@ -163,6 +163,69 @@ def test_active_loop_reports_waiting_and_does_not_finalize(project, tmp_path, cl
         engine.close()
 
 
+def test_waiting_execution_resumes_on_a_non_identical_next_prompt(project, tmp_path, clock):
+    """A real /loop iteration rarely resends byte-identical text (timestamps, tick counters); the
+    waiting execution must still resume rather than being silently finalized as unknown."""
+    approve(project)
+    database = tmp_path / "waiting.sqlite3"
+
+    def factory(root):
+        return Engine(root, Store(database), clock=clock)
+
+    base = {"session_id": "loop", "cwd": str(project)}
+    handle("claude-code", "UserPromptSubmit",
+           {**base, "prompt": "Investigate this deployment pipeline and report what is still changing"}, factory)
+    handle("claude-code", "Stop", {
+        **base,
+        "last_assistant_message": "Initial pass complete.",
+        "background_tasks": [],
+        "session_crons": [{"id": "loop-1", "schedule": "30m"}],
+    }, factory)
+
+    engine = factory(project)
+    try:
+        waiting = engine.store.latest("claude-code", "loop")
+        assert waiting.waiting_for_future_work is True
+    finally:
+        engine.close()
+
+    clock.advance(1800)
+    handle("claude-code", "UserPromptSubmit",
+           {**base, "prompt": "Investigate this deployment pipeline and report what is still changing (tick 2)"}, factory)
+
+    engine = factory(project)
+    try:
+        resumed = engine.store.latest("claude-code", "loop")
+        assert resumed.id == waiting.id
+        assert resumed.ended_at is None
+        assert resumed.waiting_for_future_work is False
+        assert engine.store.find("Outcome", execution_id=waiting.id) == []
+    finally:
+        engine.close()
+
+
+def test_trivial_zero_tool_response_is_not_recorded_as_success(project, tmp_path, clock):
+    """A one-character final response should not count as a completed reasoning answer."""
+    approve(project)
+    database = tmp_path / "trivial.sqlite3"
+
+    def factory(root):
+        return Engine(root, Store(database), clock=clock)
+
+    base = {"session_id": "think-1", "cwd": str(project)}
+    handle("claude-code", "UserPromptSubmit",
+           {**base, "prompt": "Why does the retry queue keep growing under load?"}, factory)
+    handle("claude-code", "Stop", {**base, "last_assistant_message": "."}, factory)
+
+    engine = factory(project)
+    try:
+        execution = engine.store.latest("claude-code", "think-1")
+        outcome = engine.store.find("Outcome", execution_id=execution.id)[0]
+        assert outcome.status != "success"
+    finally:
+        engine.close()
+
+
 def test_otlp_token_usage_is_correlated_deduped_and_saved(project):
     session = "tokens-1"
     engine = Engine(project)
