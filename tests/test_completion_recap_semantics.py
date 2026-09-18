@@ -39,18 +39,20 @@ def test_unknown_completion_is_unverified_and_hides_legacy_regret():
     assert "vs test-first" not in recap
 
 
-def test_success_completion_remains_complete_and_can_show_regret():
+def test_success_completion_remains_complete_and_can_show_path_check():
     recap = render_recap(_snapshot(outcome="success", expected_regret=0.25))
     assert recap.startswith("↺ OpenReflex · COMPLETE")
     assert "success · incremental" in recap
-    assert "regret 0.25 vs test-first" in recap
+    assert "Path check · better option: test-first" in recap
+    assert "regret" not in recap.lower()
 
 
 def test_failure_completion_is_labelled_failed():
     recap = render_recap(_snapshot(outcome="failure", expected_regret=0.4))
     assert recap.startswith("↺ OpenReflex · FAILED")
     assert "failure · incremental" in recap
-    assert "regret 0.40 vs test-first" in recap
+    assert "Path check · better option: test-first" in recap
+    assert "regret" not in recap.lower()
 
 
 def test_unverified_stop_can_upgrade_to_verified_completion(engine, clock):
