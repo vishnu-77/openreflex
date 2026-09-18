@@ -36,7 +36,9 @@ def classify(description: str) -> str:
     words = set(re.findall(r"[a-z]+", description.lower()))
     for name, terms in [("debug", {"fix", "bug", "failure", "error", "broken"}),
                         ("refactor", {"refactor", "migrate", "migration"}),
-                        ("test", {"test", "tests", "coverage"})]:
+                        ("test", {"test", "tests", "coverage"}),
+                        ("explore", {"explore", "exploration", "understand", "understanding",
+                                     "architecture", "overview", "map", "inventory"})]:
         if words & terms:
             return name
     return "build"
