@@ -185,7 +185,7 @@ Agents can also query OpenReflex directly through its MCP server.
 | `why` / `trace` | Explain the latest recommendation, or show the decision timeline |
 | `doctor` | Installation, project resolution, and recent hook activity checks |
 | `forget --yes` | Delete the project's data |
-| `tokens enable|status|disable` | Opt in to local Claude Code token accounting, inspect it, or remove OpenReflex-owned telemetry settings |
+| `tokens enable` / `tokens status` / `tokens disable` | Opt in to local Claude Code token accounting, inspect it, or remove OpenReflex-owned telemetry settings |
 | `benchmark` | Run the simulated benchmark |
 | `hook <agent> <event>` / `mcp` | Used by agent configs |
 
