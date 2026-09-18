@@ -44,6 +44,8 @@ class DecisionSnapshot:
     actual_tokens: int | None = None
     elapsed_seconds: float | None = None
     outcome: str | None = None
+    model_tokens: int | None = None
+    token_usage: dict[str, int | float] = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -99,7 +101,8 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
                   context_tokens: int = 0, budget_used: float = 0.0, event: str = "",
                   actual_tool_calls: int | None = None, actual_tokens: int | None = None,
                   elapsed_seconds: float | None = None, outcome: str | None = None,
-                  expected_regret: float | None = None) -> DecisionSnapshot:
+                  expected_regret: float | None = None, model_tokens: int | None = None,
+                  token_usage: dict[str, int | float] | None = None) -> DecisionSnapshot:
     if best is None:
         components = {name: 0.0 for name in policy.table("score.weights")}
         score = reflex_score(components, policy)
@@ -112,7 +115,8 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
             budget_used=_clamp(budget_used), budget_pressure=_clamp(budget_used), score_components=components,
             reason_codes=[], visibility=_visibility(phase, event, policy), event=event,
             actual_tool_calls=actual_tool_calls, actual_tokens=actual_tokens,
-            elapsed_seconds=elapsed_seconds, outcome=outcome,
+            elapsed_seconds=elapsed_seconds, outcome=outcome, model_tokens=model_tokens,
+            token_usage=token_usage or {},
         )
 
     components = score_components(best, paths, experiences, policy)
@@ -134,7 +138,8 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
         budget_used=max(0.0, budget_used), budget_pressure=_clamp(budget_used),
         score_components=components, reason_codes=reason_codes, visibility=_visibility(phase, event, policy),
         event=event, actual_tool_calls=actual_tool_calls, actual_tokens=actual_tokens,
-        elapsed_seconds=elapsed_seconds, outcome=outcome,
+        elapsed_seconds=elapsed_seconds, outcome=outcome, model_tokens=model_tokens,
+        token_usage=token_usage or {},
     )
 
 
@@ -149,18 +154,19 @@ def render_recap(snapshot: DecisionSnapshot, previous: DecisionSnapshot | None =
         cost = []
         if snapshot.actual_tool_calls is not None:
             cost.append(f"{snapshot.actual_tool_calls} calls")
-        if snapshot.actual_tokens is not None:
-            cost.append(f"{snapshot.actual_tokens / 1000:.1f}k tokens")
+        if snapshot.model_tokens is not None and snapshot.model_tokens > 0:
+            cost.append(f"{snapshot.model_tokens / 1000:.1f}k model tokens")
+        elif snapshot.actual_tokens is not None and snapshot.actual_tokens > 0:
+            cost.append(f"{snapshot.actual_tokens / 1000:.1f}k tool-output est.")
         if snapshot.elapsed_seconds is not None:
             cost.append(f"{snapshot.elapsed_seconds / 60:.1f}m")
 
         comparison = None
-        # Unknown outcomes do not support counterfactual regret. Guard at render time as well as
-        # calculation time so old snapshots with legacy 0.00 values cannot imply false precision.
-        if snapshot.outcome != "unknown" and snapshot.expected_regret is not None:
-            comparison = f"regret {snapshot.expected_regret:.2f}"
-            if snapshot.next_best_strategy:
-                comparison += f" vs {snapshot.next_best_strategy}"
+        if snapshot.outcome != "unknown":
+            if snapshot.expected_regret is not None and snapshot.next_best_strategy:
+                comparison = f"Path check · better option: {snapshot.next_best_strategy}"
+            else:
+                comparison = "Path check · better option: none proven"
 
         state = {
             "success": "COMPLETE",
