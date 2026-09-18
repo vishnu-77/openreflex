@@ -117,7 +117,7 @@ def cmd_status(args) -> int:
     if args.json:
         print(json.dumps(data, indent=2))
         return 0
-    reuse, regret, routing = data["experience_reuse"], data["execution_regret"], data["routing"]
+    reuse, path_check, routing = data["experience_reuse"], data["path_check"], data["routing"]
     eff = data["efficiency_observational"]
     print(f"OpenReflex {__version__} - {project}")
     print(f"  enabled: {data['enabled']}   agents: {', '.join(data['engagement']['agents']) or '-'}")
@@ -128,7 +128,10 @@ def cmd_status(args) -> int:
     print(f"  success rate (known outcomes): {data['outcomes']['success_rate']}   verified: {data['outcomes']['verified']}")
     print(f"  tool calls with vs without prior experience: {eff['with_prior_experience']['tool_calls']} vs "
           f"{eff['without_prior_experience']['tool_calls']} (observational)")
-    print(f"  mean execution regret: {regret['mean']}   routing agreement: {routing['agreement']}")
+    print(f"  model tokens with vs without prior experience: {eff['with_prior_experience']['model_tokens']} vs "
+          f"{eff['without_prior_experience']['model_tokens']} (observational)")
+    print(f"  path checks: {path_check['comparisons']}   better option found: {path_check['better_option_found']}   "
+          f"routing agreement: {routing['agreement']}")
     print(f"  live alerts: {data['live_alerts'] or '-'}")
     control = data["execution_control"]
     print(f"  verdicts: {control['verdicts'] or '-'}   tasks within tool-call budget: {control['tasks_within_tool_call_budget']}")
@@ -436,7 +439,7 @@ def build_parser() -> argparse.ArgumentParser:
     self_uninstall.add_argument("--yes", action="store_true", help="Confirm package removal")
     self_uninstall.set_defaults(func=cmd_self)
 
-    status = sub.add_parser("status", help="Show capture, reuse, regret, and routing metrics")
+    status = sub.add_parser("status", help="Show capture, reuse, token efficiency, path checks, and routing metrics")
     status.add_argument("--project")
     status.add_argument("--json", action="store_true")
     status.set_defaults(func=cmd_status)
