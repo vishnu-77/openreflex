@@ -247,8 +247,9 @@ class Engine:
             return dict(removed)
 
     def preview(self, description: str) -> str:
-        task = Task(description=redact(description, 1000), task_class=classify(description), session_id="preview",
-                    agent="preview", started_at=self.clock())
+        task_class = classify(description)
+        task = Task(description=redact(description, 1000), task_class=task_class, session_id="preview",
+                    agent="preview", started_at=self.clock(), task_mode=task_mode(task_class))
         retrieved = self.retrieve(task.description, task.task_class)
         limits = limits_from_env()
         paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits,
@@ -387,7 +388,7 @@ class Engine:
             self.store.delete(node.id)
         limits = limits or limits_from_env()
         paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits,
-                           self.policy)
+                           self.policy, task_mode_name=task.task_mode)
         for path in paths:
             self.store.put(path)
             self.store.link(path.id, "recommended_for", task.id)
@@ -481,8 +482,11 @@ class Engine:
         declared = self.store.get(execution.chosen_path_id) if execution.chosen_path_id and not execution.chosen_inferred \
             and self.store.exists(execution.chosen_path_id) else None
         recommended = next((p for p in paths if p.id == execution.recommended_path_id), None)
-        inferred = learning.infer_strategy(calls) or ("test-first" if any(c.category == "test" for c in calls) else "")
-        current = (by_strategy.get(history[-1][1]) if history else None) or declared or by_strategy.get(inferred) or recommended
+        task = self._task(execution)
+        inferred = learning.infer_strategy(calls, task.task_mode)
+        if task.task_mode == "build" and not inferred and any(c.category == "test" for c in calls):
+            inferred = "test-first"
+        current = (by_strategy.get(history[-1][1]) if history else None) or declared or by_strategy.get(inferred or "") or recommended
         tried = {name for source, target, _ in history for name in (source, target)}
         since = max(execution.last_progress_at, control.switch_time(execution, calls))
         return control.assess(execution, calls, current, paths, budget, active, since, tried, self.policy)
@@ -591,7 +595,9 @@ class Engine:
         if last_completion is None or last_completion.get("outcome") != outcome.status:
             budget = self._budget(execution)
             used = budget.usage(outcome.elapsed_seconds, outcome.tool_calls, outcome.output_tokens_estimate)
-            self._record_decision(execution, "complete", "complete", chosen, paths,
+            comparison_path = next((p for p in alternatives if p.strategy == outcome.best_alternative), None)
+            completion_paths = [p for p in (chosen, comparison_path) if p is not None]
+            self._record_decision(execution, "complete", "complete", chosen, completion_paths,
                                   now, context_tokens=execution.context_tokens or 0, budget_used=used,
                                   event="complete", actual_tool_calls=outcome.tool_calls,
                                   actual_tokens=outcome.output_tokens_estimate, elapsed_seconds=outcome.elapsed_seconds,
