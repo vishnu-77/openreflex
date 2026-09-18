@@ -153,7 +153,8 @@ def _merge_notice(output: str, notice: str) -> str:
 def _prompt_state(project: Path, output: str, project_context: str | None) -> None:
     experiences = 0
     route = None
-    mode = "build"
+    previous_task = read_state(project).get("task") or {}
+    mode = str(previous_task.get("mode") or "build")
     data = _output_dict(output)
     hook = data.get("hookSpecificOutput") if isinstance(data, dict) else {}
     text = hook.get("additionalContext", "") if isinstance(hook, dict) else ""
