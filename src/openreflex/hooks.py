@@ -39,6 +39,9 @@ class Event:
     success: bool = True
     error: str | None = None
     output_chars: int = 0
+    assistant_response_chars: int = 0
+    pending_background: int = 0
+    pending_crons: int = 0
 
 
 CLAUDE_KINDS = {"SessionStart": "session_start", "UserPromptSubmit": "prompt", "PreToolUse": "tool_start",
@@ -150,6 +153,12 @@ def normalize(agent: str, name: str, payload: dict) -> Event:
             if agent == "codex" and not failed and isinstance(response, str) and not EXIT_CODE.search(response[:400]):
                 failed, error = output_failure(categorize(event.tool, event.arguments), response)
             event.success, event.error = not failed, error
+        elif name == "Stop":
+            event.assistant_response_chars = len(_text(payload, "last_assistant_message").strip())
+            background = payload.get("background_tasks")
+            crons = payload.get("session_crons")
+            event.pending_background = len(background) if isinstance(background, list) else 0
+            event.pending_crons = len(crons) if isinstance(crons, list) else 0
         return event
 
     if agent == "cursor":
@@ -256,10 +265,19 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
         elif event.kind == "compaction":
             engine.compaction(agent, event.session)
         elif event.kind == "stop":
-            outcome = engine.stop(agent, event.session)
-            context = _closure_context(agent, name, payload, outcome)
-            if agent == "claude-code":
-                notice = engine.take_notice(agent, event.session)
+            if name == "Stop" and (event.pending_background or event.pending_crons):
+                total = event.pending_background + event.pending_crons
+                detail = []
+                if event.pending_background:
+                    detail.append(f"{event.pending_background} background")
+                if event.pending_crons:
+                    detail.append(f"{event.pending_crons} scheduled")
+                notice = f"↺ OpenReflex · WAITING\n{total} pending · " + " · ".join(detail)
+            else:
+                outcome = engine.stop(agent, event.session, assistant_completed=event.assistant_response_chars > 0)
+                context = _closure_context(agent, name, payload, outcome)
+                if agent == "claude-code":
+                    notice = engine.take_notice(agent, event.session)
         return render(agent, name, context, notice)
     finally:
         engine.close()
