@@ -4,6 +4,8 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.5.1 (2026-09-18)
+
 Fixes found by a local QA pass of the released 0.5.0 package.
 
 - A WAITING execution now resumes on the next prompt for that session even when the text is not byte-identical to
