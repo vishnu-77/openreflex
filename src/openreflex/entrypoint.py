@@ -222,7 +222,8 @@ def _needs_verification(output: str) -> bool:
     return isinstance(context, str) and "OpenReflex cannot verify this changed task yet" in context
 
 
-def _stop_state(project: Path, agent: str, session: str, output: str, payload: dict) -> None:
+def _stop_state(project: Path, agent: str, session: str, output: str, payload: dict | None = None) -> None:
+    payload = payload or {}
     state = read_state(project)
     task = dict(state.get("task") or {})
     background = payload.get("background_tasks")
