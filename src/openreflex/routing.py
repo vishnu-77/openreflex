@@ -39,7 +39,8 @@ def classify(description: str) -> str:
         ("refactor", {"refactor", "migrate", "migration"}),
         ("test", {"test", "tests", "coverage"}),
         ("investigate", {"research", "investigate", "investigation", "architecture", "overview", "understand",
-                         "understanding", "explain", "review", "audit", "inspect", "trace", "inventory", "map"}),
+                         "understanding", "explain", "review", "audit", "inspect", "trace", "inventory", "map",
+                         "analysis", "analyse", "analyze", "summarise", "summarize"}),
         ("think", {"decide", "decision", "compare", "choose", "plan", "brainstorm", "reason", "evaluate",
                    "assess", "recommend", "strategy", "ideate"}),
     ]:
