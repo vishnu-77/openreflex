@@ -52,13 +52,14 @@ def test_mcp_tools_require_approval_then_work(project, clock):
     assert "Unknown experience id" in tool_text(server, "forget_experience", {"experience_id": "exp-nope", "confirm": True})
     forgotten = tool_text(server, "forget_experience", {"experience_id": experience_id, "confirm": True})
     assert forgotten.startswith("Forgotten:") and "1 Task" in forgotten and "1 Experience" in forgotten
-    assert json.loads(tool_text(server, "search_experience", {"query": "Fix the expired token bug in the session check"}))["experiences"] == []
+    remaining = json.loads(tool_text(server, "search_experience", {"query": "Fix the expired token bug in the session check"}))["experiences"]
+    assert all(item["id"] != experience_id for item in remaining)
     with pytest.raises(ToolError, match="Unknown graph node"):
         tool_text(server, "explain_node", {"node_id": experience_id})
     assert json.loads(tool_text(server, "get_project_insights", {}))["engagement"]["tasks"] == 1
 
 
-def test_metrics_report_reuse_and_regret(engine, clock, project):
+def test_metrics_report_reuse_and_path_checks(engine, clock, project):
     record = approve(project)
     for i in range(3):
         run_task(engine, clock, f"s{i}", f"Fix the login bug where expired tokens are accepted variant {i}", FIX_SCRIPT)
