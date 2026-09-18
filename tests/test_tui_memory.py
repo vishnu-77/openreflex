@@ -77,7 +77,7 @@ def test_new_prompt_resets_previous_task_activity_and_calls(project):
     assert state["phase"] == "watch"
     assert state["execution"] == {"calls": 0}
     assert state["activity"] == {}
-    assert state["task"] == {"active": True}
+    assert state["task"] == {"active": True, "mode": "build"}
 
 
 def test_verification_continuation_stays_in_verify_instead_of_remember(project):
