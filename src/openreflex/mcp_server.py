@@ -244,7 +244,7 @@ def build_server(project: Path) -> FastMCP:
     ) -> str:
         """Record the verified outcome of the most recent task and learn from it.
         Returns: one line with the recorded status and the Execution Regret estimate (how much better the best
-        alternative strategy was estimated to do; 0.00 means none), or 'n/a' with the reason.
+        evidenced alternative strategy was estimated to do), or 'n/a' when no evidenced counterfactual exists.
         Use when: the result is verified: tests, lint or build passed, the user confirmed, or the task failed or was
         abandoned. Without this call the outcome is inferred from the checks that ran after the last edit, which is
         less reliable.
