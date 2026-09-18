@@ -1,6 +1,6 @@
 import json
 
-from openreflex.decision import make_snapshot, render_recap
+from openreflex.decision import render_recap
 from openreflex.engine import Engine
 from openreflex.hooks import handle, normalize
 from openreflex.policy import load_policy
@@ -206,7 +206,6 @@ def test_completion_recap_prefers_real_model_tokens(project):
     try:
         engine.prompt("claude-code", "recap",
                       "Compare our rollout options and recommend the most reversible migration strategy")
-        execution = engine.store.latest("claude-code", "recap")
         register_session(project, "recap")
         ingest_otlp_logs(_otlp_api_request("recap", input_tokens=2200, output_tokens=800,
                                            cache_read=1000, cache_creation=0))
