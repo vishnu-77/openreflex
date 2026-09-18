@@ -118,7 +118,7 @@ def _records(payload: dict) -> list[tuple[dict[str, Any], int]]:
 
 
 def usage_totals(store: Store, execution_id: str) -> dict[str, Any]:
-    samples = store.list("UsageSample", "execution_id", execution_id, limit=10000)
+    samples = store.usage_for_execution(execution_id, limit=10000)
     return {
         "input": sum(x.input_tokens for x in samples),
         "output": sum(x.output_tokens for x in samples),
@@ -172,7 +172,7 @@ def _record(attrs: dict[str, Any], timestamp_ns: int) -> bool:
         sequence = str(attrs.get("event.sequence") or "")
         identity = "|".join((session_id, request_id, sequence, str(timestamp_ns), str(attrs.get("model") or "")))
         sample_id = "usage-" + hashlib.sha256(identity.encode()).hexdigest()[:24]
-        if store.exists(sample_id):
+        if store.usage_exists(sample_id):
             return False
         sample = UsageSample(
             id=sample_id,
@@ -189,7 +189,7 @@ def _record(attrs: dict[str, Any], timestamp_ns: int) -> bool:
             estimated_cost_usd=max(0.0, float(attrs.get("cost_usd") or 0.0)),
             observed_at=(timestamp_ns / 1_000_000_000) if timestamp_ns else time.time(),
         )
-        store.put(sample)
+        store.put_usage(sample)
         totals = usage_totals(store, execution.id)
         _sync_closed_nodes(store, execution.id, totals)
     finally:
