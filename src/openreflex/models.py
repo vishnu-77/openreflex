@@ -136,6 +136,7 @@ class Execution(Model):
     verdicts: list[str] = field(default_factory=list)
     decision_history: list[dict] = field(default_factory=list)
     visible_decisions: int = 0
+    waiting_for_future_work: bool = False
 
 
 @dataclass(kw_only=True)
