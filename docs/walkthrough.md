@@ -70,7 +70,7 @@ Claude then did what it normally does: `Grep` for `apply_discount`, `Read` the m
 ↺ OpenReflex · COMPLETE
 success · inspect-first
 5 calls · 1.0k tokens · 0.8m
-regret 0.00 vs test-first
+Path check · better option: none proven
 ```
 
 Three things happened here:
@@ -78,7 +78,7 @@ Three things happened here:
 - The outcome is `success` because a test run passed after the last edit. OpenReflex infers outcomes only from
   checks that actually ran; without one, the outcome would stay `unknown` and nothing would be learned.
 - The path taken was inferred as `inspect-first` (search, read, edit, verify), not the suggested `test-first`.
-- Execution Regret is 0.00: the realised run was at least as good as the best alternative's estimate.
+- Path check says no better option is proven: OpenReflex does not claim an alternative was better without comparable completed-task evidence.
 
 What was stored for this task, from the local database:
 
@@ -140,7 +140,7 @@ minute, all five tests passing, and a completion recap:
 ↺ OpenReflex · COMPLETE
 success · inspect-first
 5 calls · 1.3k tokens · 1.0m
-regret 0.00 vs test-first
+Path check · better option: none proven
 ```
 
 An honest reading of this pair: in a three-file repository there is not much for a well-behaved agent to save, and
@@ -162,7 +162,7 @@ OpenReflex 0.3.0 - D:\demo\shop
   tasks that used prior experience: 0.5
   success rate (known outcomes): 1   verified: 0
   tool calls with vs without prior experience: 5 vs 5 (observational)
-  mean execution regret: 0.0   routing agreement: 0.0
+  path checks: 0   routing agreement: 0.0
   live alerts: {'retry_warning': 0}
   verdicts: -   tasks within tool-call budget: 1
 ```
