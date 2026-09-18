@@ -80,11 +80,27 @@ def test_recap_reports_retrieved_experience_and_context_cost(engine, clock):
 
 
 def test_completion_recap_shows_realised_path_cost_and_comparison(engine, clock):
+    description = "Fix the login bug where expired tokens are accepted"
+    engine.store.put(Experience(
+        task_id="prior-task",
+        execution_id="prior-execution",
+        outcome_id="prior-outcome",
+        agent="claude-code",
+        description=description,
+        task_class=classify(description),
+        strategy="inspect-first",
+        status="success",
+        elapsed_seconds=180,
+        tool_calls=9,
+        output_tokens_estimate=2200,
+        embedding=embed(description),
+        created_at=clock(),
+    ))
     outcome, _ = run_task(
         engine,
         clock,
         "complete",
-        "Fix the login bug where expired tokens are accepted",
+        description,
         FIX_SCRIPT,
     )
     snapshot = engine.decision_snapshots(outcome.execution_id)[-1]
