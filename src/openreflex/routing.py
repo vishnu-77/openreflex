@@ -34,11 +34,25 @@ def similarity(a: list[float], b: list[float]) -> float:
 
 def classify(description: str) -> str:
     words = set(re.findall(r"[a-z]+", description.lower()))
-    for name, terms in [("debug", {"fix", "bug", "failure", "error", "broken"}),
-                        ("refactor", {"refactor", "migrate", "migration"}),
-                        ("test", {"test", "tests", "coverage"})]:
+    for name, terms in [
+        ("debug", {"fix", "bug", "failure", "error", "broken"}),
+        ("refactor", {"refactor", "migrate", "migration"}),
+        ("test", {"test", "tests", "coverage"}),
+        ("investigate", {"research", "investigate", "investigation", "architecture", "overview", "understand",
+                         "understanding", "explain", "review", "audit", "inspect", "trace", "inventory", "map"}),
+        ("think", {"decide", "decision", "compare", "choose", "plan", "brainstorm", "reason", "evaluate",
+                   "assess", "recommend", "strategy", "ideate"}),
+    ]:
         if words & terms:
             return name
+    return "build"
+
+
+def task_mode(task_class: str) -> str:
+    if task_class == "investigate":
+        return "investigate"
+    if task_class == "think":
+        return "think"
     return "build"
 
 
@@ -142,15 +156,19 @@ def budget_for(path: CandidatePath, limits: Limits = Limits(), policy: Policy | 
 
 
 def candidates(task_id: str, task_class: str, experiences: list[Experience], limits: Limits = Limits(),
-               policy: Policy | None = None) -> list[CandidatePath]:
+               policy: Policy | None = None, task_mode_name: str | None = None) -> list[CandidatePath]:
     cfg = _policy(policy)
     result = []
     prior_weight = cfg.number("routing.prior_weight")
     regret_weight = cfg.number("routing.regret_weight")
     detour_alerts = set(cfg.strings("routing.alerts.detour"))
     adjustment = cfg.data.get("routing", {}).get("task_adjustments", {}).get(task_class, {})
+    mode = task_mode_name or task_mode(task_class)
 
     for template in cfg.tables("routing.strategies"):
+        modes = [str(item) for item in template.get("modes", ["build"])]
+        if mode not in modes:
+            continue
         strategy = str(template["name"])
         steps = [str(item) for item in template["steps"]]
         prior = float(template["prior_success"])
