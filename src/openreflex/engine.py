@@ -48,8 +48,7 @@ class Engine:
             if current is not None and not is_substantial(prompt):
                 self._reopen(current)
                 return None
-            if current is not None and current.waiting_for_future_work and \
-                    self._task(current).description == redact(prompt, 1000):
+            if current is not None and current.waiting_for_future_work:
                 current.waiting_for_future_work = False
                 current.last_progress_at = now
                 self.store.put(current)

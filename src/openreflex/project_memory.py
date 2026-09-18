@@ -22,8 +22,10 @@ SNAPSHOT_SCHEMA = "project-memory.v1"
 STATE_SCHEMA = "openreflex-ui.v1"
 FRESHNESS_CHECK_SECONDS = 15
 STALE_LOCK_SECONDS = 180
+# Stale must be well under the default timeout, or a lock abandoned by a crashed process is
+# never reclaimed before a default caller times out instead.
 STATE_LOCK_TIMEOUT_SECONDS = 2.0
-STATE_LOCK_STALE_SECONDS = 10.0
+STATE_LOCK_STALE_SECONDS = 1.0
 IGNORE_DIRS = {
     ".git", ".hg", ".svn", ".idea", ".vscode", ".next", ".venv", "venv", "node_modules", "vendor",
     "dist", "build", "target", "coverage", ".terraform", ".tox", ".nox", "__pycache__",

@@ -4,6 +4,20 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+Fixes found by a local QA pass of the released 0.5.0 package.
+
+- A WAITING execution now resumes on the next prompt for that session even when the text is not byte-identical to
+  the original, instead of being silently finalized as unknown.
+- A trivial zero-tool response (for example a single character) is no longer recorded as a completed, reusable
+  THINK-mode experience.
+- `openreflex tokens disable` now actually stops the local receiver instead of only rewriting Claude Code's
+  telemetry settings.
+- The receiver health check now verifies it is actually the OpenReflex token receiver on 127.0.0.1:4319, rather than
+  treating any process on that port as one.
+- The Windows UI-state lock's stale-lock reclaim can now actually trigger before a default caller times out.
+- `openreflex tokens --help` and an unknown `tokens` action now print usage instead of an unhandled error, and the
+  `tui`/`memory`/`tokens`/`statusline` commands are mentioned in `openreflex --help`.
+
 ## 0.5.0 (2026-09-18)
 
 General agent work memory beyond edit/test coding loops, with truthful token accounting.

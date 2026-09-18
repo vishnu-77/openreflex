@@ -7,10 +7,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from .store import Store, database_path
 HOST = "127.0.0.1"
 PORT = 4319
 ENDPOINT = f"http://{HOST}:{PORT}/v1/logs"
+SERVICE_ID = "openreflex-tokens-v1"
 OWNED_ENV = {
     "OPENREFLEX_TOKEN_TRACKING": "1",
     "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
@@ -213,7 +215,24 @@ def ingest_otlp_logs(payload: dict) -> int:
 class _Handler(BaseHTTPRequestHandler):
     server_version = "OpenReflexTokens/0.5"
 
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path.rstrip("/") != "/healthz":
+            self.send_response(404)
+            self.end_headers()
+            return
+        body = json.dumps({"service": SERVICE_ID}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self) -> None:  # noqa: N802
+        if self.path.rstrip("/") == "/shutdown":
+            self.send_response(200)
+            self.end_headers()
+            self.server.shutdown()
+            return
         if self.path.rstrip("/") != "/v1/logs":
             self.send_response(404)
             self.end_headers()
@@ -238,15 +257,31 @@ class _Handler(BaseHTTPRequestHandler):
 
 def receiver_running() -> bool:
     try:
-        with socket.create_connection((HOST, PORT), timeout=0.08):
-            return True
-    except OSError:
+        with urllib.request.urlopen(f"http://{HOST}:{PORT}/healthz", timeout=0.2) as response:
+            return json.loads(response.read()).get("service") == SERVICE_ID
+    except (OSError, urllib.error.URLError, ValueError):
         return False
+
+
+def stop_receiver() -> None:
+    if not receiver_running():
+        return
+    try:
+        urllib.request.urlopen(urllib.request.Request(f"http://{HOST}:{PORT}/shutdown", method="POST"), timeout=0.2)
+    except (OSError, urllib.error.URLError):
+        pass
+    for _ in range(20):
+        if not receiver_running():
+            return
+        time.sleep(0.025)
 
 
 def serve() -> None:
     server = ThreadingHTTPServer((HOST, PORT), _Handler)
-    server.serve_forever(poll_interval=0.5)
+    try:
+        server.serve_forever(poll_interval=0.5)
+    finally:
+        server.server_close()
 
 
 def ensure_receiver() -> bool:
@@ -320,6 +355,7 @@ def disable() -> dict[str, Any]:
     else:
         settings.pop("env", None)
     _atomic_json(_settings_path(), settings)
+    stop_receiver()
     return {"status": "disabled", "path": str(_settings_path())}
 
 

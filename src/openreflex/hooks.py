@@ -20,7 +20,7 @@ import time
 import traceback
 from dataclasses import dataclass, field
 
-from .engine import Engine
+from .engine import Engine, is_substantial
 from .privacy import categorize
 from .project import approval, log_error, project_root, should_notify_unapproved
 
@@ -40,6 +40,7 @@ class Event:
     error: str | None = None
     output_chars: int = 0
     assistant_response_chars: int = 0
+    assistant_response_substantial: bool = False
     pending_background: int = 0
     pending_crons: int = 0
 
@@ -154,7 +155,9 @@ def normalize(agent: str, name: str, payload: dict) -> Event:
                 failed, error = output_failure(categorize(event.tool, event.arguments), response)
             event.success, event.error = not failed, error
         elif name == "Stop":
-            event.assistant_response_chars = len(_text(payload, "last_assistant_message").strip())
+            message = _text(payload, "last_assistant_message").strip()
+            event.assistant_response_chars = len(message)
+            event.assistant_response_substantial = is_substantial(message)
             background = payload.get("background_tasks")
             crons = payload.get("session_crons")
             event.pending_background = len(background) if isinstance(background, list) else 0
@@ -275,7 +278,7 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
                     detail.append(f"{event.pending_crons} scheduled")
                 notice = f"↺ OpenReflex · WAITING\n{total} pending · " + " · ".join(detail)
             else:
-                outcome = engine.stop(agent, event.session, assistant_completed=event.assistant_response_chars > 0)
+                outcome = engine.stop(agent, event.session, assistant_completed=event.assistant_response_substantial)
                 context = _closure_context(agent, name, payload, outcome)
                 if agent == "claude-code":
                     notice = engine.take_notice(agent, event.session)
