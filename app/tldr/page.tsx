@@ -6,7 +6,7 @@ import { LINKS } from "@/lib/site";
 export const metadata: Metadata = {
   title: "TLDR | OpenReflex",
   description:
-    "OpenReflex in one page: managed project memory, ReflexIndex, Project Map, verification lifecycle, privacy and the 0.4.1 live runtime UI.",
+    "OpenReflex in one page: managed project memory, ReflexIndex, Project Map, verification lifecycle, privacy, work modes, real token accounting and the 0.5.0 live runtime UI.",
   alternates: { canonical: "/tldr" },
 };
 
@@ -114,6 +114,61 @@ export default function TldrPage() {
               </FactCard>
               <FactCard title="Statusline + TUI">
                 The Claude statusline reads cached state only and follows live PreToolUse activity. The optional TUI exposes lifecycle, project-memory health, versions, known outcomes, verified outcomes and the evidence OpenReflex has accumulated.
+              </FactCard>
+            </div>
+          </div>
+        </section>
+
+        <section className="border-b border-line">
+          <div className="mx-auto max-w-[1120px] px-5 py-14 sm:px-10 sm:py-20">
+            <SectionLabel>Work modes / 0.5.0</SectionLabel>
+            <div className="mt-5 grid gap-8 lg:grid-cols-[1fr_1fr]">
+              <div>
+                <h2 className="font-serif text-[2.2rem] leading-tight text-ink sm:text-[3rem]">
+                  BUILD, INVESTIGATE and THINK are different jobs. OpenReflex stops treating them the same.
+                </h2>
+                <p className="mt-5 text-[1rem] leading-8 text-muted">
+                  Coding tasks still get inspect-first, test-first and incremental paths. Investigation gets its own
+                  paths — source-first, cross-check, broad-then-deep — and reasoning gets reason-first,
+                  compare-options and evidence-first. Substantive zero-tool reasoning and investigation now count as
+                  real executions, and recommendations stay separate from observed paths so OpenReflex never claims a
+                  suggested path ran when it was not actually observed.
+                </p>
+                <p className="mt-4 text-[1rem] leading-8 text-muted">
+                  A /loop or scheduled or background task now shows WAITING instead of being finalised early, and
+                  resumes the same execution when the next matching scheduled iteration runs. The confusing numeric
+                  comparison language is gone: the runtime shows a plain Path check, either a better option backed by
+                  comparable completed tasks, or none proven.
+                </p>
+              </div>
+
+              <div className="border border-line bg-term p-5 font-mono text-[0.78rem] leading-7 text-term-text sm:p-6">
+                <div className="text-term-dim">Claude statusline</div>
+                <div className="mt-2 text-accent">↺ OpenReflex v0.5.0  INVESTIGATE</div>
+                <div>project · READ README.md · 4 calls · 8.3k tokens</div>
+                <div className="mt-3 text-accent">↺ OpenReflex v0.5.0  THINK</div>
+                <div>project · reasoning · 0 calls · 4.2k tokens</div>
+                <div className="mt-3 text-accent">↺ OpenReflex v0.5.0  WAITING</div>
+                <div>project · 1 scheduled</div>
+                <div className="mt-3 text-term-dim">completion</div>
+                <div>success · cross-check</div>
+                <div>7 calls · 18.2k model tokens · 2.5m</div>
+                <div>Path check · better option: none proven</div>
+              </div>
+            </div>
+
+            <div className="mt-8 grid gap-4 md:grid-cols-2">
+              <FactCard title="Real model-token accounting">
+                An opt-in local receiver on 127.0.0.1:4319 reads Claude Code's documented api_request OpenTelemetry
+                data and stores input, output, cache-read and cache-creation token counts, model and main/subagent
+                source, and estimated cost. Prompts, responses, thinking, tool arguments and raw API bodies are never
+                collected.
+              </FactCard>
+              <FactCard title="Token samples, not a schema rewrite">
+                Token samples live in their own table alongside the existing Experience Graph database, so a 0.4.x
+                project upgrades without rewriting existing graph nodes. The status line and TUI show real model
+                tokens when available, and legacy tool-output estimates stay labelled separately rather than being
+                mixed in.
               </FactCard>
             </div>
           </div>
@@ -231,7 +286,7 @@ export default function TldrPage() {
 
         <section className="border-b border-line">
           <div className="mx-auto max-w-[1120px] px-5 py-14 sm:px-10 sm:py-20">
-            <SectionLabel>What exists in 0.4.1</SectionLabel>
+            <SectionLabel>What exists in 0.5.0</SectionLabel>
             <div className="mt-5 grid gap-4 lg:grid-cols-2">
               <FactCard title="Managed project memory">
                 Non-blocking Project Primer, provenance-aware project facts, staleness handling, bounded retrieval and explicit separation between structural priors and execution evidence.
@@ -244,6 +299,12 @@ export default function TldrPage() {
               </FactCard>
               <FactCard title="Truthful runtime UI">
                 Live operation state, accurate COMPLETE / FAILED / UNVERIFIED semantics, reload-aware package/plugin/MCP versions, ALIGNED or VERSION MISMATCH diagnostics, and per-task call/activity reset.
+              </FactCard>
+              <FactCard title="Work modes beyond coding">
+                BUILD, INVESTIGATE and THINK paths, substantive zero-tool reasoning and investigation counted as real executions, and a plain Path check instead of numeric regret comparisons.
+              </FactCard>
+              <FactCard title="Real token accounting">
+                Opt-in local Claude Code token accounting from documented OpenTelemetry data, stored in its own schema-v2 table so existing 0.4.x databases migrate without rewriting graph nodes.
               </FactCard>
             </div>
 
@@ -279,6 +340,14 @@ export default function TldrPage() {
                 className="border border-line px-4 py-2 text-ink transition-colors hover:bg-panel"
               >
                 Live TUI PR #21
+              </a>
+              <a
+                href={`${LINKS.github}/pull/24`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="border border-line px-4 py-2 text-ink transition-colors hover:bg-panel"
+              >
+                Work modes + tokens PR #24
               </a>
             </div>
           </div>
