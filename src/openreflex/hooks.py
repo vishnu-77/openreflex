@@ -266,6 +266,7 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
             engine.compaction(agent, event.session)
         elif event.kind == "stop":
             if name == "Stop" and (event.pending_background or event.pending_crons):
+                engine.wait(agent, event.session)
                 total = event.pending_background + event.pending_crons
                 detail = []
                 if event.pending_background:
