@@ -11,7 +11,7 @@ from .decision import DecisionSnapshot, make_snapshot, render_recap, render_trac
 from .models import CandidatePath, Context, Execution, Experience, Lesson, Outcome, Status, Task, ToolCall, uid
 from .policy import load_policy
 from .privacy import PROGRESS, categorize, error_signature, file_paths, fingerprint, redact
-from .routing import Budget, Limits, budget_for, candidates, classify, embed, limits_from_env, similarity
+from .routing import Budget, Limits, budget_for, candidates, classify, embed, limits_from_env, similarity, task_mode
 from .store import Store, database_path
 
 FOLLOW_UP = re.compile(r"^\s*(yes|no|ok(ay)?|thanks|thank you|continue|go on|go ahead|proceed|sure|lgtm|do it|"
@@ -143,10 +143,10 @@ class Engine:
                 execution.compactions += 1
                 self.store.put(execution)
 
-    def stop(self, agent: str, session: str) -> Outcome | None:
+    def stop(self, agent: str, session: str, *, assistant_completed: bool = False) -> Outcome | None:
         with self.store.transaction():
             execution = self.store.active(agent, session)
-            return self._finalize(execution) if execution is not None else None
+            return self._finalize(execution, assistant_completed=assistant_completed) if execution is not None else None
 
     # ------------------------------------------------------------------ explicit agent-facing operations
 
@@ -252,7 +252,7 @@ class Engine:
         retrieved = self.retrieve(task.description, task.task_class)
         limits = limits_from_env()
         paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits,
-                           self.policy)
+                           self.policy, task_mode_name=task.task_mode)
         return render_context(task, paths, retrieved, self.lessons([x for x, _ in retrieved]),
                               budget_for(paths[0], limits, self.policy), self.policy)
 
@@ -352,11 +352,12 @@ class Engine:
 
     def _start(self, agent: str, session: str, description: str, now: float,
                substantial: bool, limits: Limits | None = None) -> tuple[Execution, Context]:
-        task = Task(description=redact(description, 1000), task_class=classify(description), session_id=session,
-                    agent=agent, started_at=now, substantial=substantial)
+        task_class = classify(description)
+        task = Task(description=redact(description, 1000), task_class=task_class, session_id=session,
+                    agent=agent, started_at=now, substantial=substantial, task_mode=task_mode(task_class))
         limits = limits or limits_from_env()
         paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits,
-                           self.policy)
+                           self.policy, task_mode_name=task.task_mode)
         execution = Execution(task_id=task.id, agent=agent, session_id=session, recommended_path_id=paths[0].id,
                               started_at=now, last_progress_at=now)
         self._set_budget(execution, budget_for(paths[0], limits, self.policy))
@@ -379,6 +380,7 @@ class Engine:
     def _describe(self, execution: Execution, description: str, now: float, limits: Limits | None = None) -> Context:
         task = self._task(execution)
         task.description, task.task_class = redact(description, 1000), classify(description)
+        task.task_mode = task_mode(task.task_class)
         task.substantial = is_substantial(description) or task.substantial
         self.store.put(task)
         for node in self.store.list("CandidatePath", "task_id", task.id) + self.store.list("Context", "task_id", task.id):
@@ -426,14 +428,16 @@ class Engine:
                          paths: list[CandidatePath], now: float, *, context_tokens: int = 0,
                          budget_used: float = 0.0, event: str = "", actual_tool_calls: int | None = None,
                          actual_tokens: int | None = None, elapsed_seconds: float | None = None,
-                         outcome: str | None = None, expected_regret: float | None = None) -> DecisionSnapshot:
+                         outcome: str | None = None, expected_regret: float | None = None,
+                         model_tokens: int | None = None,
+                         token_usage: dict[str, int | float] | None = None) -> DecisionSnapshot:
         task = self._task(execution)
         experiences = self.retrieve(task.description, task.task_class) if task.substantial else []
         snapshot = make_snapshot(now=now, phase=phase, action=action, best=best, paths=paths,
                                  experiences=experiences, policy=self.policy, context_tokens=context_tokens,
                                  budget_used=budget_used, event=event, actual_tool_calls=actual_tool_calls,
                                  actual_tokens=actual_tokens, elapsed_seconds=elapsed_seconds, outcome=outcome,
-                                 expected_regret=expected_regret)
+                                 expected_regret=expected_regret, model_tokens=model_tokens, token_usage=token_usage)
         if not task.substantial:
             # A greeting or a follow-up that only triggered a tool call is not a task; keep its snapshot quiet.
             snapshot = DecisionSnapshot.from_dict({**snapshot.as_dict(), "visibility": "ambient"})
@@ -538,7 +542,7 @@ class Engine:
         return " ".join(parts)
 
     def _finalize(self, execution: Execution, status: Status | None = None, evidence: str | None = None,
-                  verified: bool = False) -> Outcome:
+                  verified: bool = False, assistant_completed: bool = False) -> Outcome:
         now = self.clock()
         calls = self._calls(execution.id)
         stale = self.policy.number("engine.stale_running_call_seconds")
@@ -554,20 +558,26 @@ class Engine:
             if existing is not None and existing.verified:
                 status, evidence, verified = existing.status, existing.evidence, True
             else:
-                status, evidence = learning.infer_status(calls)
+                status, evidence = learning.infer_status(calls, task.task_mode, assistant_completed)
         paths = self.store.list("CandidatePath", "task_id", task.id)
         chosen = self.store.get(execution.chosen_path_id) if execution.chosen_path_id and not execution.chosen_inferred else None
         if chosen is None:
-            strategy = learning.infer_strategy(calls)
+            strategy = learning.infer_strategy(calls, task.task_mode)
             chosen = next((p for p in paths if p.strategy == strategy), None)
             execution.chosen_path_id, execution.chosen_inferred = (chosen.id if chosen else None), True
+        from .usage import usage_totals
+        usage = usage_totals(self.store, execution.id)
         outcome = Outcome(id=outcome_id, execution_id=execution.id, status=status, evidence=evidence or "",
                           verified=verified, elapsed_seconds=round(learning.active_seconds(execution, calls, now), 1),
                           tool_calls=len(calls), failures=sum(c.status == "failure" for c in calls),
                           output_tokens_estimate=execution.output_tokens_estimate,
-                          chosen_strategy=chosen.strategy if chosen else None)
+                          chosen_strategy=chosen.strategy if chosen else None,
+                          input_tokens=usage["input"], output_tokens=usage["output"],
+                          cache_read_tokens=usage["cache_read"], cache_creation_tokens=usage["cache_creation"],
+                          estimated_cost_usd=usage["cost_usd"])
         alternatives = candidates(task.id, task.task_class,
-                                  self._evidence(task.task_class, task.description, execution.id), policy=self.policy)
+                                  self._evidence(task.task_class, task.description, execution.id), policy=self.policy,
+                                  task_mode_name=task.task_mode)
         outcome.estimated_regret, outcome.best_alternative, outcome.regret_basis = learning.regret(outcome, chosen, alternatives)
         self.store.put(outcome)
         self.store.link(execution.id, "caused", outcome.id)
@@ -581,14 +591,18 @@ class Engine:
         if last_completion is None or last_completion.get("outcome") != outcome.status:
             budget = self._budget(execution)
             used = budget.usage(outcome.elapsed_seconds, outcome.tool_calls, outcome.output_tokens_estimate)
-            self._record_decision(execution, "complete", "complete", chosen or (paths[0] if paths else None), paths,
+            self._record_decision(execution, "complete", "complete", chosen, paths,
                                   now, context_tokens=execution.context_tokens or 0, budget_used=used,
                                   event="complete", actual_tool_calls=outcome.tool_calls,
                                   actual_tokens=outcome.output_tokens_estimate, elapsed_seconds=outcome.elapsed_seconds,
-                                  outcome=outcome.status, expected_regret=outcome.estimated_regret)
+                                  outcome=outcome.status, expected_regret=outcome.estimated_regret,
+                                  model_tokens=outcome.model_tokens or None,
+                                  token_usage={"input": outcome.input_tokens, "output": outcome.output_tokens,
+                                               "cache_read": outcome.cache_read_tokens,
+                                               "cache_creation": outcome.cache_creation_tokens})
         self.store.put(execution)
 
-        if not calls:
+        if not task.substantial and not calls:
             return outcome
 
         context = next(iter(self.store.list("Context", "task_id", task.id, limit=1)), None)
@@ -602,7 +616,10 @@ class Engine:
             tool_calls=outcome.tool_calls, output_tokens_estimate=outcome.output_tokens_estimate, files=files[:20],
             benefited=bool(context and context.experience_ids), estimated_regret=outcome.estimated_regret,
             alerts=[a for a in execution.alerts if not a.startswith("retry:")], verdicts=list(execution.verdicts),
-            embedding=embed(task.description), created_at=now)
+            embedding=embed(task.description), created_at=now, task_mode=task.task_mode,
+            input_tokens=outcome.input_tokens, output_tokens=outcome.output_tokens,
+            cache_read_tokens=outcome.cache_read_tokens, cache_creation_tokens=outcome.cache_creation_tokens,
+            estimated_cost_usd=outcome.estimated_cost_usd)
         self.store.put(experience)
         self.store.link(outcome.id, "caused", experience.id)
         for old in self.store.list("Lesson", "experience_id", experience.id):
@@ -622,7 +639,8 @@ def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple
     experiences = [e for e, _ in retrieved]
     succeeded = sum(e.status == "success" for e in experiences)
     best, rest = paths[0], paths[1:]
-    lines = [f"[OpenReflex] {task.task_class} task | {len(experiences)} similar past task(s) here, {succeeded} succeeded."]
+    lines = [f"[OpenReflex] {task.task_mode.upper()} · {task.task_class} | "
+             f"{len(experiences)} similar past task(s) here, {succeeded} succeeded."]
     basis = f"from {best.evidence_count} past run(s)" if best.evidence_count else "default prior"
     lines.append(f"Suggested path: {best.strategy} - {' -> '.join(best.steps)} "
                  f"(success~{best.success_probability:.0%}, ~{best.tool_calls:.0f} tool calls, {basis}).")
