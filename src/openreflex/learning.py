@@ -22,13 +22,28 @@ def active_seconds(execution: Execution, calls: list[ToolCall], now: float) -> f
     return sum(min(b - a, IDLE_GAP_CAP) for a, b in zip(stamps, stamps[1:])) + min(max(0.0, end - stamps[-1]), 60)
 
 
-def infer_status(calls: list[ToolCall]) -> tuple[Status, str]:
-    """Only verification after the last edit counts as evidence; anything else stays unknown."""
+def infer_status(calls: list[ToolCall], task_mode: str = "build",
+                 assistant_completed: bool = False) -> tuple[Status, str]:
+    """Infer completion using evidence appropriate to the kind of work."""
+    completed = [c for c in calls if c.status != "running"]
+    if task_mode == "think":
+        if assistant_completed:
+            return "success", "reasoning response completed (inferred)"
+        return "unknown", "no completed response observed"
+    if task_mode == "investigate":
+        failed = [c for c in completed if c.status == "failure"]
+        evidence_calls = [c for c in completed if c.category in {"read", "search", "web", "mcp", "shell", "vcs"}]
+        if assistant_completed and evidence_calls and not failed:
+            return "success", f"analysis completed after {len(evidence_calls)} successful evidence-gathering calls (inferred)"
+        if assistant_completed and not calls:
+            return "success", "analysis response completed without external tool evidence (inferred)"
+        if failed and not any(c.status == "success" for c in completed):
+            return "failure", "evidence gathering failed (inferred)"
+        return "unknown", "analysis ended without enough observable completion evidence"
+
     last_edit = max((i for i, c in enumerate(calls) if c.category == "edit" and c.status == "success"), default=-1)
     checks = [c for c in calls[last_edit + 1:] if c.category in VERIFICATION and c.status != "running"]
     if not checks:
-        if last_edit == -1 and calls and all(c.status == "success" for c in calls):
-            return "unknown", "no edits or verification observed (likely exploration)"
         return "unknown", "no verification observed after the last edit"
     last = checks[-1]
     if last.status == "success":
@@ -36,8 +51,18 @@ def infer_status(calls: list[ToolCall]) -> tuple[Status, str]:
     return "failure", f"last {last.category} after the last edit failed (inferred)"
 
 
-def infer_strategy(calls: list[ToolCall]) -> str | None:
+def infer_strategy(calls: list[ToolCall], task_mode: str = "build") -> str | None:
     categories = [c.category for c in calls]
+    if task_mode == "think":
+        return "reason-first" if not calls else ("evidence-first" if any(c in {"web", "search", "mcp", "read"} for c in categories)
+                                                 else "reason-first")
+    if task_mode == "investigate":
+        evidence_categories = [c for c in categories if c in {"read", "search", "web", "mcp", "vcs", "shell"}]
+        if len(calls) >= 9:
+            return "broad-then-deep"
+        if len(set(evidence_categories)) >= 2 or len(evidence_categories) >= 4:
+            return "cross-check"
+        return "source-first" if evidence_categories else None
     if "edit" not in categories:
         return None
     first_edit = categories.index("edit")
@@ -76,10 +101,13 @@ def regret(outcome: Outcome, chosen: CandidatePath | None, alternatives: list[Ca
     others = [p for p in alternatives if p.strategy != chosen.strategy]
     if not others:
         return None, None, "unavailable: no alternative paths"
-    best = max(others, key=lambda p: p.score)
+    evidenced = [p for p in others if p.evidence_count > 0]
+    if not evidenced:
+        return None, None, "unavailable: no proven better option from comparable past tasks"
+    best = max(evidenced, key=lambda p: p.score)
     value = max(0.0, best.score - realized)
-    basis = (f"chosen {chosen.strategy} realized U={realized:.3f}; best alternative {best.strategy} "
-             f"expected U={best.score:.3f} (evidence n={best.evidence_count})")
+    basis = (f"used {chosen.strategy}; compared with {best.strategy} from "
+             f"{best.evidence_count} comparable past task(s)")
     return round(value, 4), best.strategy, basis
 
 
