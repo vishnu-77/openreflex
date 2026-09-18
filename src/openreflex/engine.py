@@ -48,6 +48,12 @@ class Engine:
             if current is not None and not is_substantial(prompt):
                 self._reopen(current)
                 return None
+            if current is not None and current.waiting_for_future_work and \
+                    self._task(current).description == redact(prompt, 1000):
+                current.waiting_for_future_work = False
+                current.last_progress_at = now
+                self.store.put(current)
+                return None
             if current is not None and now - current.started_at < self.policy.number("engine.duplicate_prompt_window_seconds") and \
                     self._task(current).description == redact(prompt, 1000):
                 return None
@@ -147,6 +153,16 @@ class Engine:
         with self.store.transaction():
             execution = self.store.active(agent, session)
             return self._finalize(execution, assistant_completed=assistant_completed) if execution is not None else None
+
+    def wait(self, agent: str, session: str) -> Execution | None:
+        """Keep an execution open when Claude reports scheduled/background work still pending."""
+        with self.store.transaction():
+            execution = self.store.active(agent, session)
+            if execution is None:
+                return None
+            execution.waiting_for_future_work = True
+            self.store.put(execution)
+            return execution
 
     # ------------------------------------------------------------------ explicit agent-facing operations
 
@@ -555,6 +571,7 @@ class Engine:
                 call.status, call.ended_at, call.error_signature = "failure", call.started_at, "no completion observed"
                 self.store.put(call)
         execution.ended_at = execution.ended_at or now
+        execution.waiting_for_future_work = False
         task = self._task(execution)
         outcome_id = "out-" + execution.id
         existing = self.store.get(outcome_id) if self.store.exists(outcome_id) else None
