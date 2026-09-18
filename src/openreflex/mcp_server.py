@@ -24,7 +24,8 @@ from .routing import Limits
 INSTRUCTIONS = """OpenReflex is local execution memory for this project. Hooks capture work automatically.
 Use get_execution_context before a substantial task if no [OpenReflex] context was already provided.
 Call choose_path if you deliberately take a different approach than suggested, check_progress when unsure
-whether more work is paying off, and record_outcome once the result is verified (tests pass, user confirmed).
+whether more work is paying off, and record_outcome once the result is confirmed. Research and reasoning tasks are
+first-class: verification can be tests/builds, cross-checked evidence, or explicit user confirmation.
 Use explain_decision or get_execution_trace when the user asks why OpenReflex recommended something.
 Never call approve_project or forget_experience unless the user explicitly asked for it."""
 
@@ -91,11 +92,11 @@ def build_server(project: Path) -> FastMCP:
                                                                         "Default: no cap.")] = None,
     ) -> str:
         """Plan a task from this project's past experience.
-        Returns: plain text: the [OpenReflex] context block (similar past tasks, the suggested strategy with
-        alternatives, an execution budget, likely relevant files, lessons), then each candidate strategy's estimates
-        (success, tool calls, minutes, context tokens, risk, uncertainty, reversibility, expected regret, evidence
-        count; dominated or over-limit strategies are marked) and the execution id.
-        Use when: starting a bug fix, feature, refactor or migration and no [OpenReflex] block was injected.
+        Returns: plain text: the [OpenReflex] context block (similar past tasks, the suggested path with alternatives,
+        an execution budget where relevant, likely files/sources, and lessons), then each candidate path's estimates
+        and how much comparable past evidence exists.
+        Use when: starting any substantial coding, investigation, research, analysis, review, planning or reasoning task
+        and no [OpenReflex] block was injected.
         Not for: looking up history (use search_experience) or checking progress mid-task (use check_progress).
         Side effects: starts or re-plans the current task in the local Experience Graph; touches no project files,
         runs no commands, sends nothing over the network. Calling it again for the same task returns the same plan
@@ -117,7 +118,7 @@ def build_server(project: Path) -> FastMCP:
                 f"- {p.strategy}: score {p.score:+.3f} ({status(p)}), success~{p.success_probability:.0%}, "
                 f"~{p.tool_calls:.0f} calls, ~{p.time_seconds / 60:.0f} min, ~{p.context_tokens / 1000:.1f}k tokens, "
                 f"risk {p.risk:.2f}, uncertainty {p.uncertainty:.2f}, reversibility {p.reversibility:.2f}, "
-                f"expected regret {p.expected_regret:.3f}, evidence n={p.evidence_count}" for p in paths)
+                f"past evidence n={p.evidence_count}" for p in paths)
             return f"{context.text}\n\nCandidate paths:\n{scored}\n(execution {execution.id})"
         return run(operation)
 
@@ -222,9 +223,8 @@ def build_server(project: Path) -> FastMCP:
     ) -> str:
         """Declare the strategy you are following for the most recent task.
         Returns: one line, 'Recorded chosen path: <strategy>'.
-        Use when: deliberately departing from the suggested strategy, so the outcome and Execution Regret (how much
-        better the best alternative was estimated to do) are judged against the right plan and the budget follows
-        your path.
+        Use when: deliberately departing from the suggested path, so OpenReflex remembers what was actually done
+        rather than confusing the recommendation with the observed work.
         Not for: tasks that follow the suggestion; the path is then inferred from tool activity.
         Side effects: writes the choice to the local Experience Graph; calling it again replaces the earlier choice.
         Touches no project files.
@@ -234,29 +234,29 @@ def build_server(project: Path) -> FastMCP:
 
     @tool("Record outcome", WRITE)
     def record_outcome(
-        status: Annotated[Literal["success", "failure"], Field(description="'success' when tests, lint or build "
-                                                                           "passed or the user confirmed the result; "
-                                                                           "'failure' when the task failed or was "
-                                                                           "abandoned.")],
+        status: Annotated[Literal["success", "failure"], Field(description="'success' when the result is confirmed "
+                                                                           "(tests/builds passed, research was cross-checked, "
+                                                                           "or the user confirmed it); 'failure' when the "
+                                                                           "task failed or was abandoned.")],
         evidence: Annotated[str, Field(min_length=1, max_length=500,
                                        description="Short proof of the result, e.g. 'pytest tests/test_auth.py "
                                                    "passed' or 'user confirmed the fix'. Secrets are redacted.")],
     ) -> str:
         """Record the verified outcome of the most recent task and learn from it.
-        Returns: one line with the recorded status and the Execution Regret estimate (how much better the best
-        alternative strategy was estimated to do; 0.00 means none), or 'n/a' with the reason.
-        Use when: the result is verified: tests, lint or build passed, the user confirmed, or the task failed or was
-        abandoned. Without this call the outcome is inferred from the checks that ran after the last edit, which is
-        less reliable.
+        Returns: the recorded status plus a plain-language Path check. A better path is only named when comparable
+        completed tasks provide evidence; otherwise the result says that no better option is proven.
+        Use when: the result is confirmed: tests/lint/build passed, research was cross-checked against relevant
+        evidence, the user confirmed the answer, or the task failed/was abandoned.
         Not for: declaring the strategy (use choose_path).
         Side effects: finalizes the task in the local Experience Graph and updates its experience, lessons and
-        regret; calling it again for the same task replaces the recorded outcome. Touches no project files.
+        path comparison; calling it again for the same task replaces the recorded outcome. Touches no project files.
         Errors: 'No execution to record an outcome for' before any task was planned; a 'not enabled' message until
         the project is approved."""
         def operation(e: Engine):
             outcome = e.record_outcome(status, evidence)
-            regret = "n/a" if outcome.estimated_regret is None else f"{outcome.estimated_regret:.3f}"
-            return f"Outcome recorded: {outcome.status}. Execution regret {regret} ({outcome.regret_basis})."
+            path_check = (f"better option: {outcome.best_alternative} (supported by comparable past tasks)"
+                          if outcome.best_alternative else "better option: none proven")
+            return f"Outcome recorded: {outcome.status}. Path check: {path_check}."
         return run(operation)
 
     @tool("Search experience", READ)
@@ -318,7 +318,7 @@ def build_server(project: Path) -> FastMCP:
     def get_project_insights() -> ProjectInsightsResult:
         """Summarize what OpenReflex has recorded and learned in this project.
         Returns: structured activation, engagement, experience reuse, outcomes, observational efficiency with and
-        without prior experience, Execution Regret trends, routing agreement, live alerts, execution-control metrics
+        without prior experience, path-comparison trends, routing agreement, live alerts, execution-control metrics
         and lesson count. Efficiency comparisons are observational and are not presented as causal evidence.
         Use when: the user asks how OpenReflex is doing in this project or a program needs project-level metrics.
         Not for: individual past tasks (use search_experience).
