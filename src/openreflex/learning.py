@@ -76,9 +76,14 @@ def regret(outcome: Outcome, chosen: CandidatePath | None, alternatives: list[Ca
     others = [p for p in alternatives if p.strategy != chosen.strategy]
     if not others:
         return None, None, "unavailable: no alternative paths"
-    best = max(others, key=lambda p: p.score)
+    # Priors are useful for planning, but they are not retrospective counterfactual evidence.
+    # Do not turn "no evidence that an alternative was better" into a precise zero-regret claim.
+    evidenced = [p for p in others if p.evidence_count > 0]
+    if not evidenced:
+        return None, None, "unavailable: no evidenced alternative paths for this task class"
+    best = max(evidenced, key=lambda p: p.score)
     value = max(0.0, best.score - realized)
-    basis = (f"chosen {chosen.strategy} realized U={realized:.3f}; best alternative {best.strategy} "
+    basis = (f"chosen {chosen.strategy} realized U={realized:.3f}; best evidenced alternative {best.strategy} "
              f"expected U={best.score:.3f} (evidence n={best.evidence_count})")
     return round(value, 4), best.strategy, basis
 
