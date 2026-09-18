@@ -239,5 +239,5 @@ class Lesson(Model):
     evidence_ids: list[str]
 
 
-NODE_MODELS = {m.__name__: m for m in (Task, Context, CandidatePath, Execution, ToolCall, Outcome, Experience, UsageSample, Lesson)}
+NODE_MODELS = {m.__name__: m for m in (Task, Context, CandidatePath, Execution, ToolCall, Outcome, Experience, Lesson)}
 Relation = Literal["used", "caused", "failed_with", "resolved_by", "recommended_for"]
