@@ -153,6 +153,7 @@ def _merge_notice(output: str, notice: str) -> str:
 def _prompt_state(project: Path, output: str, project_context: str | None) -> None:
     experiences = 0
     route = None
+    mode = "build"
     data = _output_dict(output)
     hook = data.get("hookSpecificOutput") if isinstance(data, dict) else {}
     text = hook.get("additionalContext", "") if isinstance(hook, dict) else ""
@@ -162,12 +163,17 @@ def _prompt_state(project: Path, output: str, project_context: str | None) -> No
     match = re.search(r"Suggested path:\s*([a-z0-9_-]+)", text, re.I)
     if match:
         route = match.group(1)
-    task = {"active": True}
+    match = re.search(r"\[OpenReflex\]\s+(BUILD|INVESTIGATE|THINK)", text, re.I)
+    if match:
+        mode = match.group(1).lower()
+    task = {"active": True, "mode": mode}
     if route:
         task["route"] = route
     # A new prompt is a new task surface. Do not carry the previous task's call count/activity into it.
-    update_state(project, "recall" if experiences or project_context else "watch",
-                 recall={"experiences": experiences}, task=task, execution={"calls": 0}, activity={})
+    phase = "recall" if experiences or project_context else ("investigate" if mode == "investigate" else
+                                                              "think" if mode == "think" else "watch")
+    update_state(project, phase, recall={"experiences": experiences}, task=task,
+                 execution={"calls": 0}, activity={})
 
 
 def _activity(project: Path, payload: dict, *, status: str) -> dict:
@@ -190,7 +196,9 @@ def _tool_start_state(project: Path, payload: dict) -> None:
     state = read_state(project)
     execution = dict(state.get("execution") or {})
     execution.setdefault("calls", 0)
-    phase = "verify" if activity["category"] in {"test", "lint", "build"} else "watch"
+    mode = str((state.get("task") or {}).get("mode") or "build")
+    phase = ("verify" if activity["category"] in {"test", "lint", "build"} else
+             "investigate" if mode == "investigate" else "think" if mode == "think" else "watch")
     update_state(project, phase, execution=execution, activity=activity,
                  verification=activity["label"].lower() if phase == "verify" else None)
 
@@ -200,7 +208,9 @@ def _tool_end_state(project: Path, payload: dict, *, failed: bool = False) -> No
     execution = dict(state.get("execution") or {})
     execution["calls"] = int(execution.get("calls", 0)) + 1
     activity = _activity(project, payload, status="failed" if failed else "complete")
-    phase = "verify" if activity["category"] in {"test", "lint", "build"} else "watch"
+    mode = str((state.get("task") or {}).get("mode") or "build")
+    phase = ("verify" if activity["category"] in {"test", "lint", "build"} else
+             "investigate" if mode == "investigate" else "think" if mode == "think" else "watch")
     update_state(project, phase, execution=execution, activity=activity,
                  verification=activity["label"].lower() if phase == "verify" else None)
 
@@ -212,9 +222,18 @@ def _needs_verification(output: str) -> bool:
     return isinstance(context, str) and "OpenReflex cannot verify this changed task yet" in context
 
 
-def _stop_state(project: Path, agent: str, session: str, output: str) -> None:
+def _stop_state(project: Path, agent: str, session: str, output: str, payload: dict) -> None:
     state = read_state(project)
     task = dict(state.get("task") or {})
+    background = payload.get("background_tasks")
+    crons = payload.get("session_crons")
+    pending_background = len(background) if isinstance(background, list) else 0
+    pending_crons = len(crons) if isinstance(crons, list) else 0
+    if pending_background or pending_crons:
+        task["active"] = True
+        update_state(project, "waiting", outcome="work still scheduled", task=task, activity={},
+                     pending={"background": pending_background, "scheduled": pending_crons})
+        return
     if _needs_verification(output):
         task["active"] = True
         update_state(project, "verify", outcome="verification required", verification="pending",
@@ -252,6 +271,13 @@ def _hook(argv: list[str]) -> int:
     if enabled and event in SESSION_EVENTS:
         if agent == "claude-code":
             _best_effort("configure statusline", lambda: configure_statusline(project), "unavailable")
+            def _tokens_start():
+                from .usage import configured, ensure_receiver, register_session
+                register_session(project, session)
+                active = ensure_receiver() if configured() else False
+                update_state(project, token_tracking="active" if active else "off")
+                return active
+            _best_effort("token tracking", _tokens_start, False)
         phase = _best_effort("start primer", lambda: ensure_background_refresh(project), "cold")
         _best_effort("sync counts", lambda: sync_counts(project), {})
 
@@ -277,7 +303,7 @@ def _hook(argv: list[str]) -> int:
         _best_effort("update tool state",
                      lambda: _tool_end_state(project, payload, failed=event == "PostToolUseFailure"), None)
     elif enabled and event in STOP_EVENTS:
-        _best_effort("reinforce outcome", lambda: _stop_state(project, agent, session, output), None)
+        _best_effort("reinforce outcome", lambda: _stop_state(project, agent, session, output, payload), None)
 
     if output:
         sys.stdout.write(output)
@@ -339,6 +365,44 @@ def _memory(argv: list[str]) -> int:
     return 0
 
 
+
+def _tokens(argv: list[str]) -> int:
+    from .usage import configured, disable, enable, receiver_running, serve
+
+    action = argv[0] if argv else "status"
+    if action == "serve":
+        serve()
+        return 0
+    if action == "enable":
+        result = enable()
+        print("OPENREFLEX / TOKENS")
+        if result["status"] == "conflict":
+            print("  state       not changed")
+            print("  reason      existing Claude telemetry settings are user-owned")
+            print("  conflicts   " + ", ".join(result["keys"]))
+            return 2
+        print("  state       enabled")
+        print("  source      Claude Code api_request telemetry")
+        print("  privacy     counts only; prompt/response/tool content disabled")
+        print("  receiver    " + ("running" if receiver_running() else "configured"))
+        print("\nRestart or reload Claude Code so its telemetry environment is refreshed.")
+        return 0
+    if action == "disable":
+        result = disable()
+        print("OPENREFLEX / TOKENS")
+        print(f"  state       {result['status']}")
+        return 0
+    if action == "status":
+        print("OPENREFLEX / TOKENS")
+        print(f"  configured  {configured()}")
+        print(f"  receiver    {'running' if receiver_running() else 'stopped'}")
+        print("  captures    input, output, cache read, cache creation, model, source, estimated cost")
+        print("  content     prompts/responses/thinking/tool arguments are not collected")
+        return 0
+    print(f"Unknown tokens action: {action}")
+    return 2
+
+
 def _augment_install(argv: list[str], result: int) -> None:
     if result != 0 or len(argv) < 2 or argv[1] != "claude-code" or "--dry-run" in argv:
         return
@@ -375,6 +439,8 @@ def main(argv: list[str] | None = None) -> int:
         return _tui(argv[1:])
     if argv[0] == "memory":
         return _memory(argv[1:])
+    if argv[0] == "tokens":
+        return _tokens(argv[1:])
     if argv[0] == "mcp":
         project = project_root(_project_arg(argv))
         if approval(project):
