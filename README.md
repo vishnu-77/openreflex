@@ -22,16 +22,17 @@
 
 ## What is OpenReflex
 
-OpenReflex gives AI coding agents muscle memory. It plugs into Claude Code, Codex, Cursor, and OpenCode through
-lifecycle hooks and MCP, quietly records how each task actually went, and hands the next similar task what worked
-before: the approach, the files that mattered, and the fix for the error you hit last time.
+OpenReflex gives AI coding agents muscle memory across coding, investigation, and reasoning work. It plugs into
+Claude Code, Codex, Cursor, and OpenCode through lifecycle hooks and MCP, quietly records how each task actually
+went, and hands the next similar task the useful parts of that experience.
 
-You install it once and keep working normally. Everything stays on your machine in a local SQLite database.
-There is no account, no service, and no telemetry.
+You install it once and keep working normally. Core memory stays on your machine in a local SQLite database.
+There is no OpenReflex account or hosted service. Optional Claude token accounting uses Claude Code's local
+OpenTelemetry export to a loopback-only OpenReflex receiver and stores counts only.
 
 <p align="center">
   <a href="docs/walkthrough.md">
-    <img alt="Recording of a real Claude Code session with OpenReflex: OpenReflex reports one similar past task and adds 162 context tokens, Claude finds and fixes the coupon bug, runs the tests, records the verified outcome through OpenReflex's MCP tool, and OpenReflex shows the completion recap with the path taken, cost and regret" src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/docs/screenshots/claude-code-session.gif" width="860">
+    <img alt="Recording of a real Claude Code session with OpenReflex: OpenReflex reports one similar past task and adds 162 context tokens, Claude finds and fixes the coupon bug, runs the tests, records the verified outcome through OpenReflex's MCP tool, and OpenReflex shows the completion recap with the path taken and observed cost" src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/docs/screenshots/claude-code-session.gif" width="860">
   </a>
   <br>
   <sub>A real Claude Code session, recorded from the terminal and sped up. OpenReflex had seen one similar task in this repository, so it adds 162 tokens of context before the first tool call; after the fix, Claude records the outcome through OpenReflex's MCP tool. The step-by-step walkthrough is in <a href="docs/walkthrough.md">docs/walkthrough.md</a>.</sub>
@@ -45,15 +46,16 @@ There is no account, no service, and no telemetry.
 - **It catches loops while they happen.** Repeated failing commands, identical retries, stalled progress, and
   runaway context growth raise one alert that says whether to continue, pivot to another approach, or stop and
   check in with you, never a stream of nags.
-- **It learns after every task.** OpenReflex infers the outcome from real verification (a test or build that
-  passed or failed after the last edit), estimates Execution Regret against the alternatives, and extracts lessons.
+- **It learns after every task.** Build work closes against tests/lint/build evidence; investigations can close
+  against cross-checked sources; reasoning-only work can complete without external tools. A simple **Path check**
+  only names a better option when comparable past tasks actually support one.
 - **It is private by design.** Only coarse, project-relative metadata is stored. File contents, commands, tool
   output, and transcripts never are, and capture is off until you approve a project.
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/how-it-works-dark.svg">
-    <img alt="Before a task: retrieve similar experience, score candidate paths, inject context and a budget. During a task: watch every tool call, flag loops and stalls, advise continue, pivot or stop. After a task: infer the outcome from checks, estimate Execution Regret, extract lessons. Lessons feed the Experience Graph for the next task." src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/how-it-works-light.svg" width="860">
+    <img alt="Before a task: retrieve similar experience, score candidate paths, inject context and a budget. During a task: watch every tool call, flag loops and stalls, advise continue, pivot or stop. After a task: close the outcome using evidence appropriate to the work, run a simple Path check, extract lessons. Lessons feed the Experience Graph for the next task." src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/assets/how-it-works-light.svg" width="860">
   </picture>
 </p>
 
@@ -121,12 +123,11 @@ Execution -failed_with-> ToolCall -resolved_by-> ToolCall
 Execution -caused-> Outcome -caused-> Experience -caused-> Lesson
 ```
 
-- **Before a task:** similar experiences are retrieved and three strategies (`inspect-first`, `test-first`,
-  `incremental`) are estimated on success probability, time, tool calls, context cost, risk, uncertainty,
-  reversibility, and expected regret. Strategies that another one beats on every measure are dropped as
-  dominated (Pareto efficiency), the rest are ranked by utility within any limits you set, and the chosen path
-  gets an execution budget for time, tool calls, and context. A context of at most 1,400 characters is
-  injected; nothing is injected without relevant experience.
+- **Before a task:** similar experiences are retrieved and OpenReflex first identifies the work mode. **BUILD**
+  uses `inspect-first`, `test-first`, and `incremental`; **INVESTIGATE** uses `source-first`,
+  `cross-check`, and `broad-then-deep`; **THINK** uses `reason-first`, `compare-options`, and
+  `evidence-first`. Paths are ranked using past evidence, estimated cost, risk, uncertainty and reversibility.
+  A compact context is injected only when relevant experience exists.
 - **During a task:** when a detector finds a failure loop, repeated calls, stalled progress, context growth,
   or work past the budget, OpenReflex estimates the marginal value of more work. The current path's success
   estimate is updated with each call that makes no progress or fails, and compared with the cost of the work
@@ -134,9 +135,9 @@ Execution -caused-> Outcome -caused-> Experience -caused-> Lesson
   to another strategy, or **stop** and ask the user. Each problem, pivot, or stop is raised once, with a cooldown
   between messages.
 - **After a task:** outcome and chosen path come from the agent's `record_outcome` / `choose_path` MCP calls when
-  available, and are otherwise inferred from tool activity. Execution Regret compares the path taken with the
-  best plausible alternative; it is withheld when the outcome is unknown, and feeds back into how strategies
-  are ranked next time, along with success, cost, and how often a strategy ran into trouble.
+  available, and are otherwise inferred from work-mode-appropriate evidence. The **Path check** says either
+  `better option: <path>` when comparable completed tasks support it or `better option: none proven`.
+  Recommendations are never presented as paths that were actually executed.
 
 Every recommendation is stored as a decision snapshot with a **Reflex Score** (0-100): how strong the
 recommendation is, which is separate from the estimated chance that the task succeeds. `openreflex why` explains
@@ -157,7 +158,7 @@ Agents can also query OpenReflex directly through its MCP server.
 | `get_execution_context` | Plan a task: similar past tasks, the suggested strategy with alternatives, a budget, likely files, lessons. Optional `max_tool_calls`, `max_minutes`, `max_context_tokens`. |
 | `check_progress` | Whether more work on the current path is worth it: continue, pivot or stop. |
 | `choose_path` | Declare the strategy being followed when it differs from the suggestion. |
-| `record_outcome` | Record a verified outcome (tests passed, user confirmed, or failure) and learn from it. |
+| `record_outcome` | Record a confirmed outcome (tests/builds, cross-checked research, user confirmation, or failure) and learn from it. |
 | `explain_decision` | Why the latest recommendation was made: Reflex Score, signals, confidence, next-best route. |
 | `get_execution_trace` | The decision timeline of the most recent task. |
 | `get_reflex_score` | The latest Reflex Score and its components as JSON. |
@@ -180,10 +181,11 @@ Agents can also query OpenReflex directly through its MCP server.
 | `self uninstall --yes` | Remove only the managed OpenReflex package; memory/config remain on disk |
 | `approve` / `revoke` | Enable or disable capture for the current project |
 | `context "<task>"` | Preview the Execution Context a task would receive |
-| `status [--json]` | What has been captured, reused, and learned |
+| `status [--json]` | What has been captured, reused, learned, and how model-token usage compares |
 | `why` / `trace` | Explain the latest recommendation, or show the decision timeline |
 | `doctor` | Installation, project resolution, and recent hook activity checks |
 | `forget --yes` | Delete the project's data |
+| `tokens enable|status|disable` | Opt in to local Claude Code token accounting, inspect it, or remove OpenReflex-owned telemetry settings |
 | `benchmark` | Run the simulated benchmark |
 | `hook <agent> <event>` / `mcp` | Used by agent configs |
 
@@ -195,8 +197,9 @@ Agents can also query OpenReflex directly through its MCP server.
 | A fingerprint of the arguments | Command text |
 | Project-relative file paths | Tool output |
 | Pass or fail, duration, output size | Transcripts and model output |
+| Optional model-token counts, model/source label, estimated cost | Prompt/response/tool contents from Claude telemetry |
 | A masked one-line error signature | Paths outside the project |
-| The prompt as a task description (up to 1,000 characters, secrets redacted) | Anything sent to a server: there is none |
+| The prompt as a task description (up to 1,000 characters, secrets redacted) | Anything sent to an OpenReflex-hosted service: there is none |
 
 Data lives in `~/.openreflex/projects/<hash>/experience.sqlite3`. Set `OPENREFLEX_HOME` to move it,
 `OPENREFLEX_DISABLE=1` to turn capture off everywhere, `openreflex forget --yes` to delete a project's data, or ask
@@ -205,9 +208,10 @@ your agent to `forget_experience` a single task.
 ## Research
 
 OpenReflex is also a research project in budget-aware execution: instead of treating success as a yes or no, it
-studies how agents choose execution paths, spend tool calls and context, respond to uncertainty, and whether more
-computation still adds value. The loop is experience retrieval, Pareto path selection, budget-aware execution and
-counterfactual regret. The [Researcher view](https://openreflex.cc/?view=research) on the site explains the idea,
+studies how agents choose execution paths, spend tool calls, model tokens and context, respond to uncertainty, and
+whether past work makes similar future work cheaper without reducing outcome quality. The loop is experience
+retrieval, evidence-aware path selection, budget-aware execution, work-mode-specific completion and plain-language
+path comparison. The [Researcher view](https://openreflex.cc/?view=research) on the site explains the idea,
 lets you step through one reflex forming in the graph, and places it next to related work.
 
 ## Community & Contributing
