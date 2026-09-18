@@ -234,20 +234,21 @@ def build_server(project: Path) -> FastMCP:
 
     @tool("Record outcome", WRITE)
     def record_outcome(
-        status: Annotated[Literal["success", "failure"], Field(description="'success' when tests, lint or build "
-                                                                           "passed or the user confirmed the result; "
-                                                                           "'failure' when the task failed or was "
-                                                                           "abandoned.")],
+        status: Annotated[Literal["success", "failure"], Field(description="'success' when the result is verified "
+                                                                           "(for example tests/lint/build passed, "
+                                                                           "the user confirmed it, or read-only analysis "
+                                                                           "was cross-checked against repository evidence); "
+                                                                           "'failure' when the task failed or was abandoned.")],
         evidence: Annotated[str, Field(min_length=1, max_length=500,
                                        description="Short proof of the result, e.g. 'pytest tests/test_auth.py "
                                                    "passed' or 'user confirmed the fix'. Secrets are redacted.")],
     ) -> str:
         """Record the verified outcome of the most recent task and learn from it.
         Returns: one line with the recorded status and the Execution Regret estimate (how much better the best
-        alternative strategy was estimated to do; 0.00 means none), or 'n/a' with the reason.
-        Use when: the result is verified: tests, lint or build passed, the user confirmed, or the task failed or was
-        abandoned. Without this call the outcome is inferred from the checks that ran after the last edit, which is
-        less reliable.
+        evidenced alternative strategy was estimated to do), or 'n/a' when no evidenced counterfactual exists.
+        Use when: the result is verified: tests, lint or build passed; the user confirmed it; read-only analysis was
+        cross-checked against repository evidence; or the task failed or was abandoned. Without this call the outcome
+        is inferred from observed checks, which is less reliable.
         Not for: declaring the strategy (use choose_path).
         Side effects: finalizes the task in the local Experience Graph and updates its experience, lessons and
         regret; calling it again for the same task replaces the recorded outcome. Touches no project files.

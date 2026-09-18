@@ -130,13 +130,15 @@ def test_duplicate_hook_delivery_is_idempotent(engine, clock):
     assert engine.store.latest("claude-code", "s1").output_tokens_estimate == 25
 
 
-def test_regret_is_withheld_for_unknown_outcomes_and_computed_for_known(engine, clock):
+def test_regret_is_withheld_without_outcome_or_counterfactual_evidence(engine, clock):
     unknown, _ = run_task(engine, clock, "s1", "Explore how the caching layer invalidates entries", [step(READ), step(GREP)])
     assert unknown.status == "unknown" and unknown.estimated_regret is None
     failed, _ = run_task(engine, clock, "s2", "Fix the cache invalidation bug for user profiles",
                          [step(EDIT), step(TEST, False, "E   AssertionError: stale profile")])
-    assert failed.estimated_regret is not None and failed.estimated_regret > 0
-    assert failed.best_alternative in {"test-first", "incremental"}
+    assert failed.status == "failure"
+    assert failed.estimated_regret is None
+    assert failed.best_alternative is None
+    assert "no evidenced alternative" in failed.regret_basis
 
 
 def test_choose_path_accepts_custom_strategy(engine, clock):

@@ -102,6 +102,10 @@ success_bonus = 0.08
 strategy = "incremental"
 success_bonus = 0.08
 
+[routing.task_adjustments.explore]
+strategy = "inspect-first"
+success_bonus = 0.08
+
 [control]
 success_value = 0.55
 fallback_success_probability = 0.50
