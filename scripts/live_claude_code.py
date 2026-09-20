@@ -108,14 +108,16 @@ class Harness:
         return {"events": events, "raw": stream, "result": final, "seconds": round(time.time() - started, 1),
                 "stderr": result.stderr.decode("utf-8", errors="replace")[-2000:], "code": result.returncode}
 
-    @staticmethod
-    def delivered_context(run: dict) -> list[str]:
+    def delivered_context(self, run: dict) -> list[str]:
         """Hook additionalContext the model actually received. stream-json omits these, so read the session
-        transcript Claude Code writes to ~/.claude/projects/<encoded cwd>/<session_id>.jsonl."""
+        transcript Claude Code writes to <config dir>/projects/<encoded cwd>/<session_id>.jsonl. <config dir>
+        defaults to ~/.claude but follows CLAUDE_CONFIG_DIR - this matters when the harness itself runs
+        inside a Claude Code session using a custom profile, or the child inherits one from its environment."""
+        config_dir = Path(self.env["CLAUDE_CONFIG_DIR"]) if self.env.get("CLAUDE_CONFIG_DIR") else Path.home() / ".claude"
         session = run["result"].get("session_id") or next(
             (e.get("session_id") for e in run["events"] if e.get("session_id")), None)
         texts = []
-        for transcript in (Path.home() / ".claude" / "projects").glob(f"*/{session}.jsonl") if session else []:
+        for transcript in (config_dir / "projects").glob(f"*/{session}.jsonl") if session else []:
             for line in transcript.read_text(encoding="utf-8", errors="replace").splitlines():
                 record = json.loads(line) if line.startswith("{") else {}
                 attachment = record.get("attachment") or {}
