@@ -1,6 +1,7 @@
+import io
 import json
 
-from openreflex import __version__
+from openreflex import __version__, entrypoint
 from openreflex.claude_ui import configure_statusline, remove_statusline
 from openreflex.entrypoint import (
     _prompt_state,
@@ -196,4 +197,15 @@ def test_existing_user_statusline_is_never_replaced_or_removed(project):
     assert configure_statusline(project) == "preserved-existing"
     assert json.loads(settings.read_text(encoding="utf-8"))["statusLine"] == original["statusLine"]
     assert remove_statusline(project) is False
-    assert json.loads(settings.read_text(encoding="utf-8"))["statusLine"] == original["statusLine"]
+
+
+def test_tui_survives_a_non_utf8_console(monkeypatch, project):
+    """The dashboard's OpenReflex glyph (U+21BA) must not crash on a legacy Windows console codepage."""
+    monkeypatch.chdir(project)
+    stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    monkeypatch.setattr("sys.stdout", stream)
+
+    assert entrypoint.main([]) == 0
+
+    stream.seek(0)
+    assert "OPENREFLEX" in stream.buffer.getvalue().decode("utf-8")

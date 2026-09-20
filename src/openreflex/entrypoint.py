@@ -432,6 +432,7 @@ def _augment_uninstall(argv: list[str], result: int) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    cli._utf8_stdio()
     argv = sys.argv[1:] if argv is None else argv
     if not argv:
         return _tui([])
