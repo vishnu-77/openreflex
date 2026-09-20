@@ -4,6 +4,12 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.5.2 (2026-09-20)
+
+- Fix a `UnicodeEncodeError` that crashed `openreflex tui`, `openreflex statusline`, and bare `openreflex` on a
+  Windows console using a legacy (non-UTF-8) codepage. `entrypoint.main()` dispatches several commands before
+  ever reaching the CLI's UTF-8 stdio setup; it now configures stdout/stderr encoding itself, first.
+
 ## 0.5.1 (2026-09-18)
 
 Fixes found by a local QA pass of the released 0.5.0 package.
