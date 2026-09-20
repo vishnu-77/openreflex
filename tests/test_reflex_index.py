@@ -1,4 +1,5 @@
 from openreflex.engine import Engine
+from openreflex.project_map import enrich_snapshot
 from openreflex.project_memory import build_snapshot, load_snapshot
 from openreflex.reflex_index import account_project_context, context_for_task, reinforce_latest_execution
 
@@ -15,6 +16,34 @@ def _project_with_auth(project):
 
 def _auth_memory(project):
     return next(item for item in load_snapshot(project)["indexed_files"] if item["path"] == "src/auth.py")
+
+
+def test_expanded_stopwords_rank_real_content_match_above_boilerplate_only_overlap(project):
+    (project / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
+    (project / "src").mkdir()
+    (project / "src" / "shell_completion.py").write_text("def shell_complete():\n    pass\n", encoding="utf-8")
+    (project / "src" / "file_reader.py").write_text("def read_file():\n    pass\n", encoding="utf-8")
+    build_snapshot(project)
+    enrich_snapshot(project)
+
+    context = context_for_task(project, "Without editing any files, investigate how shell completion works")
+
+    line = next(entry for entry in context.splitlines() if entry.startswith("Likely project locations:"))
+    # file_reader.py only overlaps the query via now-stopped words ("file", "how", "any", "without");
+    # it must not outrank shell_completion.py, which matches on real content ("shell", "completion").
+    assert line.index("shell_completion.py") < line.index("file_reader.py")
+
+
+def test_terms_stem_gerund_forms_to_match_base_word(project):
+    (project / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
+    (project / "src").mkdir()
+    (project / "src" / "wrap_text.py").write_text("def format():\n    pass\n", encoding="utf-8")
+    build_snapshot(project)
+    enrich_snapshot(project)
+
+    context = context_for_task(project, "Investigate the wrapping behaviour")
+
+    assert "src/wrap_text.py" in context
 
 
 def test_verified_execution_reinforces_project_file_without_rewriting_structural_provenance(project, clock):
@@ -38,7 +67,6 @@ def test_verified_execution_reinforces_project_file_without_rewriting_structural
     context = context_for_task(project, "Fix expired token handling in auth")
     assert "src/auth.py" in context
     assert "explicit verified-success observation" in context
-    assert "structural prior" in context
 
 
 def test_repeated_verified_success_promotes_file_to_reinforced(project, clock):

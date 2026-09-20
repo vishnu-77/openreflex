@@ -13,6 +13,7 @@ import math
 import os
 import re
 import time
+from collections import Counter
 from pathlib import Path
 
 from .engine import Engine
@@ -43,6 +44,9 @@ def _terms(text: str) -> set[str]:
     stop = {
         "this", "that", "with", "from", "into", "when", "where", "what", "fix", "add", "make", "please",
         "project", "issue", "bug", "code", "change", "update", "implement", "create",
+        "how", "why", "who", "which", "any", "all", "some", "without", "within",
+        "the", "and", "for", "are", "was", "were", "has", "have", "had", "not", "but",
+        "used", "use", "using", "uses", "need", "needs", "file", "files",
     }
     # Split camelCase before lowercasing, then split path/identifier punctuation. This
     # makes `charts/payments/values.yaml`, `validate_expired_token` and
@@ -57,7 +61,22 @@ def _terms(text: str) -> set[str]:
         terms.add(token)
         if len(token) > 4 and token.endswith("s"):
             terms.add(token[:-1])
+        stem = _stem(token)
+        if stem:
+            terms.add(stem)
     return terms
+
+
+def _stem(token: str) -> str | None:
+    """Strip a gerund "-ing" suffix so e.g. "wrapping" also matches a symbol named `wrap_text`.
+    Added as an extra term alongside the original (never replacing it), same as the plural-`s` handling
+    above, so a wrong guess only adds a low-value extra term rather than losing a real match."""
+    if len(token) > 6 and token.endswith("ing"):
+        stem = token[:-3]
+        if len(stem) >= 4 and stem[-1] == stem[-2] and stem[-1] not in "aeiou":
+            stem = stem[:-1]
+        return stem
+    return None
 
 
 def _evidence_state(item: dict) -> str:
@@ -200,11 +219,23 @@ def account_project_context(project: Path, agent: str, session: str, context: st
         engine.close()
 
 
-def _file_score(item: dict, query: set[str]) -> float:
+def _term_idf(indexed: list[dict]) -> dict[str, float]:
+    """Smoothed IDF so a match on a rare term (`shell_completion`) outweighs a match on a
+    term shared by dozens of files (`test`, `type`) - otherwise a test file with many
+    generically-named symbols can out-score the one source file that actually matters."""
+    doc_count = len(indexed) or 1
+    frequency: Counter[str] = Counter()
+    for item in indexed:
+        terms = _terms(str(item.get("path", ""))) | _terms(" ".join(str(s) for s in item.get("symbols", [])))
+        frequency.update(terms)
+    return {term: math.log((doc_count + 1) / (count + 1)) + 1.0 for term, count in frequency.items()}
+
+
+def _file_score(item: dict, query: set[str], idf: dict[str, float]) -> float:
     path_terms = _terms(str(item.get("path", "")))
     symbol_terms = _terms(" ".join(str(symbol) for symbol in item.get("symbols", [])))
-    path_overlap = len(query & path_terms)
-    symbol_overlap = len(query & symbol_terms)
+    path_weight = sum(idf.get(term, 1.0) for term in query & path_terms)
+    symbol_weight = sum(idf.get(term, 1.0) for term in query & symbol_terms)
     empirical = (
         4.0 * int(item.get("verified_successes", 0))
         + 1.5 * int(item.get("successful_outcomes", 0))
@@ -213,8 +244,8 @@ def _file_score(item: dict, query: set[str]) -> float:
     )
     hotspot = min(3.0, math.log1p(max(0, int(item.get("hotspot", 0)))) * 0.9)
     return (
-        path_overlap * 10.0
-        + symbol_overlap * 7.0
+        path_weight * 10.0
+        + symbol_weight * 7.0
         + ROLE_BONUS.get(str(item.get("role")), 0.0)
         + hotspot
         + min(empirical, 12.0)
@@ -250,7 +281,8 @@ def context_for_task(project: Path, description: str, *, max_files: int = 6, max
     query = _terms(description)
     indexed = [item for item in snapshot.get("indexed_files", []) if item.get("path")]
     by_path = {str(item["path"]): item for item in indexed}
-    scored = [(_file_score(item, query), item) for item in indexed]
+    idf = _term_idf(indexed)
+    scored = [(_file_score(item, query, idf), item) for item in indexed]
     scored = [(score, item) for score, item in scored if score > 0]
 
     base_limit = max(1, max_files - 1)
@@ -280,8 +312,8 @@ def context_for_task(project: Path, description: str, *, max_files: int = 6, max
     if selected:
         lines.append("Likely project locations: " + ", ".join(str(item["path"]) for item in selected) + ".")
         symbol_parts = []
-        for item in selected[:4]:
-            symbols = [str(symbol) for symbol in item.get("symbols", [])[:3]]
+        for item in selected[:2]:
+            symbols = [str(symbol) for symbol in item.get("symbols", [])[:2]]
             if symbols:
                 symbol_parts.append(f"{item['path']} -> {', '.join(symbols)}")
         if symbol_parts:
@@ -299,6 +331,5 @@ def context_for_task(project: Path, description: str, *, max_files: int = 6, max
         lines.append(
             f"Execution support: selected locations include {supported} explicit verified-success observation(s)."
         )
-    lines.append("Evidence: project-map and Git signals are structural priors; execution outcome evidence is counted separately.")
     text = "\n".join(lines)
     return text if len(text) <= 1800 else text[:1797] + "..."

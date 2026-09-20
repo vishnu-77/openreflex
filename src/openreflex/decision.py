@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Iterable
 
-from .models import CandidatePath, Experience
+from .models import CandidatePath, Execution, Experience, Task
 from .policy import Policy
 
 
@@ -232,4 +232,32 @@ def render_trace(snapshots: list[DecisionSnapshot]) -> str:
         if snapshot.event:
             detail += f" · {snapshot.event}"
         lines.append(f"{minute:02d}:{second:02d} {label:<9} {detail}")
+    return "\n".join(lines)
+
+
+def render_paths(execution: Execution, task: Task, paths: list[CandidatePath]) -> str:
+    best = min(paths, key=lambda p: (p.dominated_by is not None, not p.within_limits, -p.score))
+    chosen = next((p for p in paths if p.id == execution.chosen_path_id), None)
+    recommended = next((p for p in paths if p.id == execution.recommended_path_id), None)
+    lines = ["OPENREFLEX / PATHS", "",
+             f"Task           {task.task_class} - {task.description}",
+             f"Recommended    {recommended.strategy if recommended else 'n/a'}"]
+    if chosen is not None:
+        lines.append(f"Followed       {chosen.strategy} "
+                      f"({'inferred from tool calls' if execution.chosen_inferred else 'explicit'})")
+    else:
+        lines.append("Followed       not yet determined" +
+                      (" (execution still running)" if execution.ended_at is None
+                       else " (no strategy could be inferred from tool-call evidence)"))
+    lines += ["", "CANDIDATES"]
+    for path in paths:
+        tags = ", ".join(tag for tag in (("recommended" if path is recommended else None),
+                                          ("followed" if path is chosen else None)) if tag)
+        note = (f"dominated by {path.dominated_by}" if path.dominated_by else
+                "over your limit" if not path.within_limits else
+                (f"{path.score:+.2f} vs {best.score:+.2f}" if path is not best else ""))
+        suffix = " ".join(part for part in (f"[{tags}]" if tags else "", f"({note})" if note else "") if part)
+        lines.append(f"  {path.strategy:<14} score {path.score:+.2f}  success {path.success_probability:.0%}  "
+                      f"~{path.tool_calls:.0f} calls  ~{path.time_seconds / 60:.0f} min  risk {path.risk:.2f} "
+                      f"{suffix}".rstrip())
     return "\n".join(lines)

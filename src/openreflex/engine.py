@@ -7,7 +7,7 @@ from collections import Counter
 from pathlib import Path
 
 from . import control, detect, learning
-from .decision import DecisionSnapshot, make_snapshot, render_recap, render_trace, render_why
+from .decision import DecisionSnapshot, make_snapshot, render_paths, render_recap, render_trace, render_why
 from .models import CandidatePath, Context, Execution, Experience, Lesson, Outcome, Status, Task, ToolCall, uid
 from .policy import load_policy
 from .privacy import PROGRESS, categorize, error_signature, file_paths, fingerprint, redact
@@ -292,6 +292,24 @@ class Engine:
 
     def trace(self, execution_id: str | None = None) -> str:
         return render_trace(self.decision_snapshots(execution_id))
+
+    def candidate_paths(self, execution_id: str | None = None) -> tuple[Execution, Task, list[CandidatePath]] | None:
+        execution = self.store.get(execution_id) if execution_id else self.current_execution()
+        if execution is None:
+            return None
+        task = self._task(execution)
+        paths = self.store.list("CandidatePath", "task_id", task.id)
+        paths.sort(key=lambda p: (p.dominated_by is not None, not p.within_limits, -p.score, p.strategy))
+        return execution, task, paths
+
+    def paths(self, execution_id: str | None = None) -> str:
+        found = self.candidate_paths(execution_id)
+        if found is None:
+            return "OPENREFLEX / PATHS\n\nNo execution recorded yet."
+        execution, task, paths = found
+        if not paths:
+            return "OPENREFLEX / PATHS\n\nNo candidate paths recorded for the current task."
+        return render_paths(execution, task, paths)
 
     def retrieve(self, description: str, task_class: str | None = None,
                  k: int | None = None) -> list[tuple[Experience, float]]:
@@ -684,7 +702,7 @@ def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple
     if shown:
         lines.append("Lessons:")
         lines += [f"- {lesson.text}" + (f" (seen {support}x)" if support > 1 else "") for lesson, _, support in shown]
-    lines.append("Advisory only. If you follow a different approach, the choose_path tool records it.")
+    lines.append("Advisory; choose_path records deviations.")
     text = "\n".join(lines)
     max_chars = cfg.integer("context.max_chars")
     return text if len(text) <= max_chars else text[: max_chars - 1] + "..."

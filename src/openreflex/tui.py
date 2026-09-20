@@ -222,6 +222,8 @@ def dashboard(project: Path, *, colour: bool | None = None) -> str:
               f"  phase            {phase.upper()}",
               f"  mode             {str(task.get('mode') or 'build').upper()}",
               f"  suggested path   {task.get('route') or '-'}",
+              f"  alternatives     {task.get('alternatives') or '-'}",
+              f"  followed         {task.get('followed') or '-'}",
               f"  recall           {recall.get('experiences', 0)} related",
               f"  activity         {activity or '-'}",
               f"  calls            {execution.get('calls', 0)}",

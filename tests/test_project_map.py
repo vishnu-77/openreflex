@@ -35,7 +35,6 @@ def test_project_map_indexes_source_symbols_and_dependencies_without_persisting_
     assert "src/auth/token_validator.py" in context
     assert "validate_expired_token" in context
     assert "pydantic" in context
-    assert "structural priors" in context
 
 
 def test_project_map_indexes_nested_manifests_with_project_relative_provenance(project):

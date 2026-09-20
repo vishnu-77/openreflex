@@ -164,12 +164,18 @@ def _prompt_state(project: Path, output: str, project_context: str | None) -> No
     match = re.search(r"Suggested path:\s*([a-z0-9_-]+)", text, re.I)
     if match:
         route = match.group(1)
+    alternatives = None
+    match = re.search(r"Alternatives:\s*(.+)", text)
+    if match:
+        alternatives = match.group(1).strip()
     match = re.search(r"\[OpenReflex\]\s+(BUILD|INVESTIGATE|THINK)", text, re.I)
     if match:
         mode = match.group(1).lower()
     task = {"active": True, "mode": mode}
     if route:
         task["route"] = route
+    if alternatives:
+        task["alternatives"] = alternatives
     # A new prompt is a new task surface. Do not carry the previous task's call count/activity into it.
     phase = "recall" if experiences or project_context else ("investigate" if mode == "investigate" else
                                                               "think" if mode == "think" else "watch")
@@ -245,9 +251,11 @@ def _stop_state(project: Path, agent: str, session: str, output: str, payload: d
     outcome = "execution captured"
     data = _output_dict(output)
     notice = str(data.get("systemMessage") or "") if isinstance(data, dict) else ""
-    match = re.search(r"(?:COMPLETE|FAILED|UNVERIFIED|FINISHED)\s*\n\s*([^\s·]+)", notice)
+    match = re.search(r"(?:COMPLETE|FAILED|UNVERIFIED|FINISHED)\s*\n\s*([^\s·]+)(?:\s*·\s*([a-z0-9_-]+))?", notice)
     if match:
         outcome = match.group(1)
+        if match.group(2):
+            task["followed"] = match.group(2)
     reinforce_latest_execution(project, agent, session)
     task["active"] = False
     update_state(project, "remember", outcome=outcome, execution={}, task=task, activity={})

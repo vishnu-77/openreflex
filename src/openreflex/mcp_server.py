@@ -179,6 +179,22 @@ def build_server(project: Path) -> FastMCP:
         project is approved."""
         return run(lambda e: e.trace())
 
+    @tool("Get candidate paths", READ)
+    def get_candidate_paths() -> str:
+        """Show every candidate path OpenReflex considered for the most recent task side by side.
+        Returns: plain text with each strategy's score, success probability, cost/risk numbers, and whether it
+        was dominated; which path was recommended; and which one was actually followed - explicit (via
+        choose_path), inferred from tool-call evidence, or not yet determined while the execution is still
+        running.
+        Use when: the user asks what other approaches were considered, or whether the agent followed the
+        suggested path.
+        Not for: a single recommendation's reasoning (use explain_decision) or the decision timeline (use
+        get_execution_trace).
+        Side effects: none; read-only.
+        Errors: 'No execution recorded yet' before any task was planned; a 'not enabled' message until the
+        project is approved."""
+        return run(lambda e: e.paths())
+
     @tool("Get Reflex Score", READ)
     def get_reflex_score() -> ReflexScoreResult:
         """Return the latest decision's Reflex Score and machine-readable components.

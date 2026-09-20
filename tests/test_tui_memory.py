@@ -81,6 +81,26 @@ def test_new_prompt_resets_previous_task_activity_and_calls(project):
     assert state["task"] == {"active": True, "mode": "build"}
 
 
+def test_prompt_state_captures_suggested_path_and_alternatives(project):
+    output = json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "UserPromptSubmit",
+            "additionalContext": "[OpenReflex] BUILD · debug | 1 similar past task(s) here, 1 succeeded.\n"
+                                  "Suggested path: test-first - Reproduce -> Fix -> Verify "
+                                  "(success~85%, ~18 tool calls, default prior).\n"
+                                  "Alternatives: incremental (+0.29 vs +0.30), inspect-first (dominated by test-first)\n",
+        }
+    })
+
+    _prompt_state(project, output, None)
+    state = read_state(project)
+
+    assert state["task"]["route"] == "test-first"
+    assert state["task"]["alternatives"] == "incremental (+0.29 vs +0.30), inspect-first (dominated by test-first)"
+    assert "test-first" in dashboard(project, colour=False)
+    assert "incremental (+0.29 vs +0.30)" in dashboard(project, colour=False)
+
+
 def test_verification_continuation_stays_in_verify_instead_of_remember(project):
     output = json.dumps({
         "hookSpecificOutput": {
@@ -105,6 +125,8 @@ def test_final_stop_marks_task_inactive(project):
     assert state["phase"] == "remember"
     assert state["task"]["active"] is False
     assert state["outcome"] == "success"
+    assert state["task"]["followed"] == "inspect-first"
+    assert "inspect-first" in dashboard(project, colour=False)
 
 
 def test_hook_runtime_records_plugin_manifest_version_without_cache_path(project, tmp_path):

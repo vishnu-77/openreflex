@@ -23,8 +23,8 @@ def test_mcp_tools_require_approval_then_work(project, clock):
     server = build_server(project)
     names = {tool.name for tool in asyncio.run(server.list_tools())}
     assert {"get_execution_context", "choose_path", "check_progress", "record_outcome", "search_experience",
-            "explain_decision", "get_execution_trace", "get_reflex_score", "explain_node", "get_project_insights",
-            "approve_project", "forget_experience"} == names
+            "explain_decision", "get_execution_trace", "get_candidate_paths", "get_reflex_score", "explain_node",
+            "get_project_insights", "approve_project", "forget_experience"} == names
     assert "not enabled" in tool_text(server, "get_execution_context", {"task": "Fix the login redirect loop"})
     assert "Not approved" in tool_text(server, "approve_project", {})
     assert "enabled" in tool_text(server, "approve_project", {"confirm": True})
@@ -33,6 +33,7 @@ def test_mcp_tools_require_approval_then_work(project, clock):
     assert "Suggested path" in context and "Candidate paths" in context and "Pareto-efficient" in context
     assert "OPENREFLEX / WHY" in tool_text(server, "explain_decision", {})
     assert "OPENREFLEX / TRACE" in tool_text(server, "get_execution_trace", {})
+    assert "OPENREFLEX / PATHS" in tool_text(server, "get_candidate_paths", {})
     score = json.loads(tool_text(server, "get_reflex_score", {}))
     assert score["available"] is True and 0 <= score["reflex_score"] <= 100
     assert "Recorded chosen path: incremental" in tool_text(server, "choose_path", {"strategy": "incremental"})
@@ -92,5 +93,5 @@ def test_every_mcp_tool_is_fully_described(project):
         for name, schema in tool.inputSchema.get("properties", {}).items():
             assert schema.get("description"), f"{tool.name}.{name} has no description"
     read_only = {t.name for t in tools if t.annotations.readOnlyHint}
-    assert read_only == {"check_progress", "explain_decision", "get_execution_trace", "get_reflex_score",
-                         "search_experience", "explain_node", "get_project_insights"}
+    assert read_only == {"check_progress", "explain_decision", "get_execution_trace", "get_candidate_paths",
+                         "get_reflex_score", "search_experience", "explain_node", "get_project_insights"}

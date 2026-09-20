@@ -149,6 +149,34 @@ def test_choose_path_accepts_custom_strategy(engine, clock):
     assert path.uncertainty == 1.0
 
 
+def test_candidate_paths_reports_explicit_choice(engine, clock):
+    engine.prompt("claude-code", "s1", "Migrate the settings loader from yaml to toml")
+    chosen = engine.choose_path("spike-then-rewrite", ["Prototype toml loader", "Swap callers"])
+
+    execution, task, paths = engine.candidate_paths()
+    assert any(p.id == chosen.id for p in paths)
+    text = engine.paths()
+    assert "OPENREFLEX / PATHS" in text
+    assert "Followed       spike-then-rewrite (explicit)" in text
+    assert "[followed]" in text
+
+
+def test_candidate_paths_reports_inferred_choice_after_finalize(engine, clock):
+    outcome, _ = run_task(engine, clock, "s1", "Fix the login bug where expired tokens are accepted", FIX_SCRIPT)
+    execution = engine.store.get(outcome.execution_id)
+    assert execution.chosen_inferred
+
+    text = engine.paths()
+    assert "inferred from tool calls" in text
+
+
+def test_candidate_paths_reports_not_yet_determined_while_running(engine, clock):
+    engine.prompt("claude-code", "s1", "Fix the login bug where expired tokens are accepted")
+
+    text = engine.paths()
+    assert "Followed       not yet determined (execution still running)" in text
+
+
 def test_compound_commands_are_categorized_by_the_program_they_run():
     from openreflex.privacy import categorize
     assert categorize("Bash", {"command": "Get-Location; rg --files -g '*test*' -g pytest.ini"}) == "search"
