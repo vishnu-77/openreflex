@@ -4,6 +4,17 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.5.3 (2026-09-21)
+
+- Improve cold-start retrieval ranking: broaden the query stopword list beyond bug-fixing jargon, and stem
+  `-ing` suffixes so phrasing like "wrapping" matches a symbol named `wrap_text`. Verified against a real
+  repository: 2 of 3 pilot tasks now rank the correct file first, up from 1 of 3.
+- Add path visibility: `get_candidate_paths` (MCP) and the TUI dashboard now show every strategy OpenReflex
+  considered for a task, which one was recommended, and which one was actually followed - explicit
+  (`choose_path`) or inferred from tool-call evidence.
+- Trim repeated static boilerplate from the context injected into every prompt (a fixed "Evidence: ..."
+  sentence, an over-long advisory line, and oversized symbol listings).
+
 ## 0.5.2 (2026-09-20)
 
 - Fix a `UnicodeEncodeError` that crashed `openreflex tui`, `openreflex statusline`, and bare `openreflex` on a
