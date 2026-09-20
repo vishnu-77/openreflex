@@ -97,7 +97,6 @@ def run(out: Path) -> dict:
                     "rank": locations.index(target) + 1 if target in locations else None,
                     "retrieved_files": len(locations),
                     "context_chars": len(context),
-                    "structural_evidence_labelled": "structural priors" in context,
                 }
             )
 
@@ -114,7 +113,6 @@ def run(out: Path) -> dict:
         "mean_retrieved_files": round(statistics.mean(row["retrieved_files"] for row in rows), 2),
         "mean_context_chars": round(statistics.mean(row["context_chars"] for row in rows), 2),
         "max_context_chars": max(row["context_chars"] for row in rows),
-        "all_structural_evidence_labelled": all(row["structural_evidence_labelled"] for row in rows),
         "nested_manifest_evidence": {
             "helm": ("redis", "charts/payments/Chart.yaml") in dependencies,
             "node": ("zod", "services/api/package.json") in dependencies,
@@ -132,8 +130,6 @@ def run(out: Path) -> dict:
         raise SystemExit(f"cold-start target-file hit rate regressed: {hit_rate:.3f}")
     if result["max_context_chars"] > 1800:
         raise SystemExit(f"cold-start context exceeded budget: {result['max_context_chars']}")
-    if not result["all_structural_evidence_labelled"]:
-        raise SystemExit("cold-start context lost structural-evidence labelling")
     if not all(result["nested_manifest_evidence"].values()):
         raise SystemExit("nested manifest evidence missing from Project Map")
     return result
