@@ -62,7 +62,10 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
     weeks = {int((e.started_at - (approved_at or first_task or now)) // WEEK) for e in executions}
     weeks_elapsed = int((now - (approved_at or first_task or now)) // WEEK) + 1
     substantial = [t for t in tasks if t.substantial]
-    reused = [t for t in substantial if contexts.get(t.id) and contexts[t.id].experience_ids]
+    reused = [
+        t for t in substantial
+        if contexts.get(t.id) and (contexts[t.id].experience_ids or contexts[t.id].reflex_id)
+    ]
 
     known = [x for x in experiences if x.status != "unknown"]
     with_prior = [x for x in experiences if x.benefited]
