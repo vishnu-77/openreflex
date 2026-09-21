@@ -149,7 +149,7 @@ def _state(known: int, successes: int, verified: int, previous: str | None = Non
     rate = successes / known if known else 0.0
     if successes >= 4 and verified >= 2 and rate >= 0.80:
         return "proven"
-    if successes >= 2 and rate >= 0.67:
+    if successes >= 2 and rate >= (2 / 3):
         return "learned"
     if previous in {"learned", "proven"} and known >= 3:
         return "stale"
