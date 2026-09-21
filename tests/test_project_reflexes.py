@@ -212,3 +212,35 @@ def test_engine_learns_then_reuses_project_reflex(engine, clock):
     assert recap is not None
     assert "Helm values change" in recap
     assert "inspect-first" not in recap
+
+
+def test_contradictory_failures_make_a_learned_reflex_stale(tmp_path):
+    store = Store(tmp_path / "stale.sqlite3")
+    try:
+        latest = None
+        for index in range(1, 3):
+            experience, outcome, calls = _experience(index)
+            store.put(outcome)
+            store.put(experience)
+            for call in calls:
+                store.put(call)
+            latest = compile_for_experience(store, experience, now=30 + index)
+        assert latest is not None and latest.state == "learned"
+
+        for index in range(3, 5):
+            experience, outcome, calls = _experience(index)
+            experience = experience.model_copy(update={"status": "failure"})
+            outcome = outcome.model_copy(update={"status": "failure", "evidence": "verification failed"})
+            store.put(outcome)
+            store.put(experience)
+            for call in calls:
+                store.put(call)
+            latest = compile_for_experience(store, experience, now=30 + index)
+
+        assert latest is not None
+        assert latest.state == "stale"
+        assert latest.success_count == 2
+        assert latest.support_count == 4
+        assert match_reflex(store, "Update Helm values for worker resources", "build", "build") is None
+    finally:
+        store.close()
