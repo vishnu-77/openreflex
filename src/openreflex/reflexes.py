@@ -23,10 +23,31 @@ def _words(text: str) -> set[str]:
     return {word for word in re.findall(r"[a-z0-9_]+", text.lower()) if len(word) > 2 and word not in _STOPWORDS}
 
 
+def _family_hints(text: str) -> set[str]:
+    words = _words(text)
+    families = {
+        "authentication": {
+            "auth", "authentication", "login", "logout", "token", "tokens", "oauth", "jwt",
+            "session", "sessions", "permission", "permissions", "authorisation", "authorization",
+            "role", "roles",
+        },
+        "database": {"database", "schema", "migration", "migrations", "alembic", "sql", "table", "tables", "orm"},
+        "ci": {"ci", "pipeline", "pipelines", "workflow", "workflows", "github", "actions"},
+        "deployment": {"deploy", "deployment", "rollout", "release"},
+        "cache": {"cache", "caching", "invalidate", "invalidation"},
+        "configuration": {"config", "configuration", "settings", "workspace"},
+        "api": {"api", "endpoint", "endpoints", "route", "routes", "handler", "handlers", "webhook"},
+        "dependencies": {"dependency", "dependencies", "package", "packages", "lockfile"},
+        "tests": {"test", "tests", "testing", "spec", "specs"},
+        "documentation": {"docs", "documentation", "readme", "guide", "guides"},
+        "architecture-review": {"architecture", "overview", "inventory", "map", "module", "modules"},
+    }
+    return {family for family, terms in families.items() if words & terms}
+
+
 def _family(experience: Experience) -> str:
     paths = [path.lower() for path in experience.files]
     names = {PurePosixPath(path).name for path in paths}
-    words = _words(experience.description)
 
     if "values.yaml" in names or "values.yml" in names:
         return "helm-values"
@@ -36,22 +57,23 @@ def _family(experience: Experience) -> str:
         return "helm-template"
     if any(path.endswith(".tf") or path.endswith(".tfvars") for path in paths):
         return "terraform"
+    if any(path.startswith(".github/workflows/") or "/.github/workflows/" in f"/{path}" for path in paths):
+        return "ci"
+    if any("/migrations/" in f"/{path}" or "/migration/" in f"/{path}" for path in paths):
+        return "database"
     if names & {"package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "uv.lock", "poetry.lock"}:
         return "dependencies"
     if any(part in path for path in paths for part in ("/test", "/tests/", "_test.", ".spec.", ".test.")):
         return "tests"
-    if words & {"architecture", "overview", "inventory", "map", "module", "modules"}:
-        return "architecture-review"
-    if words & {"deploy", "deployment", "rollout", "release"}:
-        return "deployment"
-    if words & {"auth", "authentication", "login", "token", "tokens"}:
-        return "authentication"
-    if words & {"cache", "caching"}:
-        return "cache"
-    if words & {"config", "configuration", "settings", "workspace"}:
-        return "configuration"
-    return f"{experience.task_mode}-{experience.task_class}"
 
+    hinted = _family_hints(experience.description)
+    for family in (
+        "authentication", "database", "ci", "deployment", "cache", "configuration", "api",
+        "dependencies", "tests", "documentation", "architecture-review",
+    ):
+        if family in hinted:
+            return family
+    return f"{experience.task_mode}-{experience.task_class}"
 
 def _name(family: str, experience: Experience) -> str:
     fixed = {
@@ -63,8 +85,12 @@ def _name(family: str, experience: Experience) -> str:
         "tests": "Test update",
         "architecture-review": "Repository architecture review",
         "deployment": "Deployment workflow",
-        "authentication": "Authentication fix" if experience.task_class == "debug" else "Authentication change",
-        "cache": "Cache fix" if experience.task_class == "debug" else "Cache change",
+        "authentication": "Authentication change",
+        "database": "Database change",
+        "ci": "CI workflow",
+        "api": "API change",
+        "documentation": "Documentation workflow",
+        "cache": "Cache change",
         "configuration": "Configuration change",
     }
     if family in fixed:
@@ -94,6 +120,21 @@ def _common_files(group: list[Experience]) -> list[str]:
     counts = Counter(path for item in group for path in set(item.files))
     minimum = max(2, math.ceil(len(group) / 2))
     return [path for path, count in counts.most_common(5) if count >= minimum]
+
+
+def _common_modules(group: list[Experience]) -> list[str]:
+    counts: Counter[str] = Counter()
+    for item in group:
+        seen: set[str] = set()
+        for raw in item.files:
+            parts = PurePosixPath(raw).parent.parts
+            for depth in range(2, min(4, len(parts)) + 1):
+                seen.add("/".join(parts[:depth]))
+        counts.update(seen)
+    minimum = max(2, math.ceil(len(group) / 2))
+    eligible = [(path, count) for path, count in counts.items() if count >= minimum]
+    eligible.sort(key=lambda item: (-item[1], -item[0].count("/"), item[0]))
+    return [path for path, _ in eligible[:5]]
 
 
 def _step(category: str, files: list[str]) -> str:
@@ -166,10 +207,10 @@ def _confidence(known: int, successes: int, verified: int) -> float:
 
 
 def compile_for_experience(store: Store, experience: Experience, now: float) -> ProjectReflex:
-    """Compile or refresh the Reflex family represented by one experience."""
+    """Compile or refresh the project family represented by one experience."""
     family = _family(experience)
     group = [
-        item for item in store.list("Experience", "task_class", experience.task_class, limit=5000)
+        item for item in store.list("Experience", limit=5000)
         if item.task_mode == experience.task_mode and _family(item) == family and item.status != "unknown"
     ]
     group.sort(key=lambda item: item.created_at)
@@ -182,7 +223,7 @@ def compile_for_experience(store: Store, experience: Experience, now: float) -> 
             continue
         verified += int(bool(getattr(outcome, "verified", False)))
 
-    key = f"{experience.task_mode}|{experience.task_class}|{family}"
+    key = f"{experience.task_mode}|{family}"
     reflex_id = "reflex-" + hashlib.sha1(key.encode()).hexdigest()[:16]
     try:
         previous = store.get_reflex(reflex_id)
@@ -194,12 +235,15 @@ def compile_for_experience(store: Store, experience: Experience, now: float) -> 
 
     seed_counts = Counter(item.strategy for item in successes if item.strategy)
     seed_strategy = seed_counts.most_common(1)[0][0] if seed_counts else None
+    class_counts = Counter(item.task_class for item in (successes or group))
+    primary_class = class_counts.most_common(1)[0][0] if class_counts else experience.task_class
     descriptions = " ".join(item.description for item in successes[-20:]) or experience.description
     reflex = ProjectReflex(
         id=reflex_id,
         name=_name(family, experience),
+        family=family,
         task_mode=experience.task_mode,
-        task_class=experience.task_class,
+        task_class=primary_class,
         state=_state(len(group), len(successes), verified, previous_state),
         seed_strategy=seed_strategy,
         procedure=_procedure(store, successes or group or [experience]),
@@ -210,29 +254,73 @@ def compile_for_experience(store: Store, experience: Experience, now: float) -> 
         confidence=_confidence(len(group), len(successes), verified),
         embedding=embed(descriptions),
         file_patterns=_common_files(successes),
+        module_patterns=_common_modules(successes),
         created_at=created_at,
         updated_at=now,
     )
     store.put_reflex(reflex)
     return reflex
 
+def _reflex_family(reflex: ProjectReflex) -> str:
+    if reflex.family:
+        return reflex.family
+    name = reflex.name.lower()
+    for family in (
+        "helm-values", "helm-chart", "helm-template", "terraform", "authentication", "database", "ci",
+        "deployment", "cache", "configuration", "api", "dependencies", "tests", "documentation",
+        "architecture-review",
+    ):
+        if family.replace("-", " ") in name:
+            return family
+    paths = [path.lower() for path in reflex.file_patterns]
+    if any(PurePosixPath(path).name in {"values.yaml", "values.yml"} for path in paths):
+        return "helm-values"
+    if any("/templates/" in f"/{path}" for path in paths):
+        return "helm-template"
+    return f"{reflex.task_mode}-{reflex.task_class}"
+
+
+def _locality(description: str, reflex: ProjectReflex) -> float:
+    query = _words(description)
+    scope = _words(" ".join([*reflex.file_patterns, *reflex.module_patterns]))
+    if not query or not scope:
+        return 0.0
+    overlap = len(query & scope)
+    return round(min(1.0, overlap / max(1, min(3, len(scope)))), 4)
+
 
 def match_reflex(store: Store, description: str, task_mode: str, task_class: str,
-                 threshold: float = 0.20) -> tuple[ProjectReflex, float] | None:
-    """Return the strongest learned/proven project Reflex applicable to a new task."""
+                 threshold: float = 0.28) -> tuple[ProjectReflex, float] | None:
+    """Resolve the strongest project Reflex using intent, family, locality and execution evidence."""
     query = embed(description)
+    hints = _family_hints(description)
     scored: list[tuple[ProjectReflex, float]] = []
+
     for reflex in store.list_reflexes(task_mode=task_mode, states=_VISIBLE_STATES, limit=500):
-        if reflex.task_class != task_class:
+        semantic = max(0.0, similarity(query, reflex.embedding))
+        family = _reflex_family(reflex)
+        family_score = 1.0 if family in hints else 0.0
+        locality = _locality(description, reflex)
+        class_score = 1.0 if reflex.task_class == task_class else 0.55
+        evidence = reflex.confidence
+
+        if semantic < 0.20 and family_score == 0.0 and locality < 0.34:
             continue
-        score = similarity(query, reflex.embedding)
+
+        score = (
+            0.50 * semantic
+            + 0.25 * family_score
+            + 0.15 * locality
+            + 0.05 * class_score
+            + 0.05 * evidence
+        )
+        if reflex.state == "proven":
+            score += 0.03
         if score < threshold:
             continue
-        score += 0.04 if reflex.state == "proven" else 0.0
-        score += min(0.06, reflex.success_count * 0.01)
         scored.append((reflex, round(score, 4)))
-    return max(scored, key=lambda item: (item[1], item[0].confidence), default=None)
 
+    return max(scored, key=lambda item: (item[1], item[0].confidence, item[0].success_count), default=None)
 
 def visible_reflexes(store: Store) -> list[ProjectReflex]:
     return store.list_reflexes(states=_VISIBLE_STATES, limit=500)
