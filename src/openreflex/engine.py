@@ -715,7 +715,9 @@ def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple
     files = Counter(f for e in experiences if e.status == "success" for f in e.files[:max_files])
     if files:
         lines.append("Likely relevant files: " + ", ".join(f for f, _ in files.most_common(max_files)))
-    shown = [item for item in lessons if item[0].kind != "files"]
+    # Strategy lessons remain internal routing evidence. Normal context presents project Reflexes,
+    # not bootstrap strategy names such as inspect-first/test-first.
+    shown = [item for item in lessons if item[0].kind not in {"files", "strategy"}]
     if shown:
         lines.append("Lessons:")
         lines += [f"- {lesson.text}" + (f" (seen {support}x)" if support > 1 else "") for lesson, _, support in shown]
