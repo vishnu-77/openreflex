@@ -267,6 +267,15 @@ class Store:
         verb = "DO UPDATE SET value=excluded.value" if overwrite else "DO NOTHING"
         self.db.execute(f"INSERT INTO meta VALUES(?,?) ON CONFLICT(key) {verb}", (key, value))
 
+    def increment_meta_int(self, key: str, amount: int = 1) -> None:
+        """Atomically increment an integer counter stored in meta."""
+        self.db.execute(
+            """INSERT INTO meta(key,value) VALUES(?,?)
+               ON CONFLICT(key) DO UPDATE
+               SET value=CAST(meta.value AS INTEGER)+CAST(excluded.value AS INTEGER)""",
+            (key, str(int(amount))),
+        )
+
     def edges(self, source: str | None = None, relation: str | None = None, target: str | None = None):
         clauses, args = [], []
         for column, value in (("source", source), ("relation", relation), ("target", target)):
