@@ -166,9 +166,9 @@ def render_recap(snapshot: DecisionSnapshot, previous: DecisionSnapshot | None =
         comparison = None
         if snapshot.outcome != "unknown":
             if snapshot.expected_regret is not None and snapshot.next_best_strategy:
-                comparison = f"Path check · better option: {snapshot.next_best_strategy}"
+                comparison = "Path check · another approach may be better"
             else:
-                comparison = "Path check · better option: none proven"
+                comparison = "Path check · no better option proven"
 
         state = {
             "success": "COMPLETE",
