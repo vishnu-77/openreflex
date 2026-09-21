@@ -1,10 +1,29 @@
 name: Release
 
-# Publishing uses PyPI Trusted Publishing (OIDC): no API tokens are stored anywhere.
-#   TestPyPI: Actions -> Release -> Run workflow (target: testpypi), then the verify job installs it on 3 OSes.
-#   PyPI:     run with target: pypi, or publish a GitHub Release.
-
+# One publisher workflow for every release path:
+# - workflow_call: automatic releases after green main CI
+# - workflow_dispatch: explicit TestPyPI/PyPI publishing
+# - release: compatibility for manually published GitHub Releases
+#
+# PyPI uses Trusted Publishing (OIDC); no package API token is stored.
 on:
+  workflow_call:
+    inputs:
+      target:
+        description: Package index to publish to
+        required: false
+        type: string
+        default: pypi
+      ref:
+        description: Exact commit/ref to build
+        required: false
+        type: string
+        default: ""
+      create_github_release:
+        description: Create the vX.Y.Z GitHub Release after all registries succeed
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       target:
@@ -12,6 +31,10 @@ on:
         type: choice
         options: [testpypi, pypi]
         default: testpypi
+      create_github_release:
+        description: Create the GitHub Release after successful PyPI + MCP publication
+        type: boolean
+        default: false
   release:
     types: [published]
 
@@ -23,21 +46,53 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - id: version
-        run: python -c "import tomllib; print('version=' + tomllib.load(open('pyproject.toml','rb'))['project']['version'])" >> "$GITHUB_OUTPUT"
-      - name: Verify GitHub Release tag matches package version
+        name: Validate release metadata
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import re
+          import tomllib
+          from pathlib import Path
+
+          root = Path(".")
+          version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+          runtime = {}
+          exec((root / "src/openreflex/__init__.py").read_text(), runtime)
+          manifests = [
+              root / "plugins/openreflex/.claude-plugin/plugin.json",
+              root / "plugins/openreflex/.codex-plugin/plugin.json",
+              root / "plugins/openreflex/.cursor-plugin/plugin.json",
+          ]
+          server = json.loads((root / "server.json").read_text())
+          changelog = (root / "CHANGELOG.md").read_text()
+
+          assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?", version), version
+          assert runtime["__version__"] == version
+          assert all(json.loads(path.read_text())["version"] == version for path in manifests)
+          assert server["version"] == version
+          assert server["packages"][0]["version"] == version
+          assert f"## {version} " in changelog or f"## {version}\n" in changelog
+
+          print(f"version={version}")
+          print(f"tag=v{version}")
+          PY
+      - name: Verify manual GitHub Release tag matches package version
         if: github.event_name == 'release'
         shell: bash
         env:
           TAG_NAME: ${{ github.event.release.tag_name }}
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          test "$TAG_NAME" = "v$VERSION"
+          EXPECTED_TAG: ${{ steps.version.outputs.tag }}
+        run: test "$TAG_NAME" = "$EXPECTED_TAG"
       - run: |
           python -m pip install build twine
           python -m build
@@ -48,7 +103,7 @@ jobs:
           path: dist/
 
   testpypi:
-    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    if: inputs.target == 'testpypi'
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -67,6 +122,7 @@ jobs:
           skip-existing: true
 
   verify-testpypi:
+    if: inputs.target == 'testpypi'
     needs: [build, testpypi]
     runs-on: ${{ matrix.os }}
     strategy:
@@ -75,10 +131,12 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install from TestPyPI (dependencies from PyPI) and smoke-test
+      - name: Install from TestPyPI and smoke-test
         shell: bash
         env:
           VERSION: ${{ needs.build.outputs.version }}
@@ -88,13 +146,14 @@ jobs:
           for attempt in 1 2 3 4 5 6; do
             "$PY" -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ \
               "openreflex==$VERSION" && break
-            echo "index not updated yet; retrying"; sleep 30
+            if [ "$attempt" = "6" ]; then exit 1; fi
+            echo "TestPyPI index not updated yet; retrying"; sleep 30
           done
           cp scripts/smoke_installed.py "$RUNNER_TEMP/smoke.py"
           cd "$RUNNER_TEMP" && "$PY" smoke.py
 
   pypi:
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
+    if: github.event_name == 'release' || inputs.target == 'pypi'
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -109,10 +168,10 @@ jobs:
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # A GitHub Release for a version that is already on PyPI is a no-op instead of a failed run.
           skip-existing: true
 
   verify-pypi:
+    if: github.event_name == 'release' || inputs.target == 'pypi'
     needs: [build, pypi]
     runs-on: ${{ matrix.os }}
     strategy:
@@ -121,6 +180,8 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -140,8 +201,7 @@ jobs:
           cd "$RUNNER_TEMP" && "$PY" smoke.py
 
   mcp-registry:
-    # The official MCP Registry verifies the PyPI package through the mcp-name marker in the README.
-    # Publish only after the released package has installed successfully on Linux, macOS, and Windows.
+    if: github.event_name == 'release' || inputs.target == 'pypi'
     needs: [build, verify-pypi]
     runs-on: ubuntu-latest
     permissions:
@@ -149,6 +209,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
       - name: Check server.json matches the released version
         env:
           VERSION: ${{ needs.build.outputs.version }}
@@ -159,10 +221,55 @@ jobs:
         run: |
           curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
       - name: Publish to the MCP Registry
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
+          SERVER_NAME="$(jq -r .name server.json)"
+          ENCODED_NAME="$(python -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$SERVER_NAME")"
+          VERSION_URL="https://registry.modelcontextprotocol.io/v0.1/servers/$ENCODED_NAME/versions/$VERSION"
+
+          if curl -fsS "$VERSION_URL" >/dev/null 2>&1; then
+            echo "$SERVER_NAME $VERSION is already present in the MCP Registry."
+            exit 0
+          fi
+
           ./mcp-publisher login github-oidc
           for attempt in 1 2 3 4 5; do
             ./mcp-publisher publish && exit 0
-            echo "PyPI may not show the new release yet; retrying"; sleep 30
+            if curl -fsS "$VERSION_URL" >/dev/null 2>&1; then
+              echo "$SERVER_NAME $VERSION became visible in the MCP Registry."
+              exit 0
+            fi
+            echo "Registry or PyPI propagation not ready yet; retrying"; sleep 30
           done
           exit 1
+
+  github-release:
+    if: inputs.create_github_release && inputs.target == 'pypi'
+    needs: [build, mcp-registry]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
+      - name: Create or repair GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_SHA: ${{ inputs.ref || github.sha }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG already has a GitHub Release."
+            exit 0
+          fi
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "OpenReflex $VERSION" --generate-notes
+          else
+            gh release create "$TAG" --target "$RELEASE_SHA" --title "OpenReflex $VERSION" --generate-notes
+          fi
