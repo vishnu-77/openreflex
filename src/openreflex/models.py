@@ -236,6 +236,7 @@ class ProjectReflex(Model):
     """A project-scoped procedure compiled from repeated successful executions."""
 
     name: str
+    family: str = ""
     task_mode: str = one_of(("build", "investigate", "think"), "build")
     task_class: str
     state: str = one_of(("candidate", "learned", "proven", "stale"), "candidate")
@@ -248,6 +249,7 @@ class ProjectReflex(Model):
     confidence: float = unit(0.0)
     embedding: list[float] = field(default_factory=list)
     file_patterns: list[str] = field(default_factory=list)
+    module_patterns: list[str] = field(default_factory=list)
     created_at: float = 0.0
     updated_at: float = 0.0
 
