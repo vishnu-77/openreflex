@@ -228,8 +228,8 @@ def _closure_context(agent: str, name: str, payload: dict, outcome) -> str | Non
         return None
     return (
         "OpenReflex cannot verify this changed task yet. Before finishing, run the most relevant test, lint, or "
-        "build check. If the result is already verified another way, call the OpenReflex `record_outcome` tool with "
-        "a short evidence note. If verification is not possible, explain that limitation and finish."
+        "build check. If verification is not possible, explain that limitation and finish; OpenReflex will retain "
+        "the execution as unverified rather than requiring an MCP call."
     )
 
 
