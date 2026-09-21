@@ -1,29 +1,11 @@
 name: Release
 
 # One publisher workflow for every release path:
-# - workflow_call: automatic releases after green main CI
-# - workflow_dispatch: explicit TestPyPI/PyPI publishing
+# - workflow_dispatch: automatic releases after green main CI, or explicit TestPyPI/PyPI publishing
 # - release: compatibility for manually published GitHub Releases
 #
 # PyPI uses Trusted Publishing (OIDC); no package API token is stored.
 on:
-  workflow_call:
-    inputs:
-      target:
-        description: Package index to publish to
-        required: false
-        type: string
-        default: pypi
-      ref:
-        description: Exact commit/ref to build
-        required: false
-        type: string
-        default: ""
-      create_github_release:
-        description: Create the vX.Y.Z GitHub Release after all registries succeed
-        required: false
-        type: boolean
-        default: false
   workflow_dispatch:
     inputs:
       target:
@@ -31,6 +13,11 @@ on:
         type: choice
         options: [testpypi, pypi]
         default: testpypi
+      release_ref:
+        description: Exact commit/ref to build; automatic releases pass the CI-tested SHA
+        type: string
+        required: false
+        default: ""
       create_github_release:
         description: Create the GitHub Release after successful PyPI + MCP publication
         type: boolean
@@ -50,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.release_ref || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -132,7 +119,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.release_ref || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -181,7 +168,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.release_ref || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -210,7 +197,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.release_ref || github.ref }}
       - name: Check server.json matches the released version
         env:
           VERSION: ${{ needs.build.outputs.version }}
@@ -253,7 +240,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.release_ref || github.ref }}
           fetch-depth: 0
       - name: Create or repair GitHub Release
         shell: bash
@@ -261,7 +248,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.build.outputs.tag }}
           VERSION: ${{ needs.build.outputs.version }}
-          RELEASE_SHA: ${{ inputs.ref || github.sha }}
+          RELEASE_SHA: ${{ inputs.release_ref || github.sha }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "$TAG already has a GitHub Release."
