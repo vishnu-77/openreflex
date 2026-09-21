@@ -519,5 +519,7 @@ def test_contextual_followup_reuses_shared_runner_area_without_mcp(engine, clock
     )
     assert context is not None
     assert "Reflex: Bitbucket runner work" in context
+    assert "Project-area memory:" in context
+    assert "Procedure:" not in context
     assert "test-first" not in context
     assert "inspect-first" not in context
