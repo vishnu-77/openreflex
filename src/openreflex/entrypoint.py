@@ -381,6 +381,32 @@ def _memory(argv: list[str]) -> int:
 
 
 
+
+def _reflexes(argv: list[str]) -> int:
+    from .reflexes import visible_reflexes
+    from .store import Store, database_path
+
+    project = project_root(_project_arg(argv))
+    store = Store(database_path(project))
+    try:
+        reflexes = visible_reflexes(store)
+    finally:
+        store.close()
+    print("OPENREFLEX / PROJECT REFLEXES")
+    print(f"  project     {project}")
+    if not reflexes:
+        print("  state       learning")
+        print("  reflexes    none learned yet")
+        return 0
+    for reflex in reflexes:
+        print("")
+        print(f"  {reflex.name}")
+        print(f"    state     {reflex.state}")
+        print(f"    evidence  {reflex.success_count} successful / {reflex.verified_count} verified")
+        print(f"    steps     {' -> '.join(reflex.procedure)}")
+    return 0
+
+
 def _tokens(argv: list[str]) -> int:
     from .usage import configured, disable, enable, receiver_running, serve
 
@@ -462,6 +488,8 @@ def main(argv: list[str] | None = None) -> int:
         return _tui(argv[1:])
     if argv[0] == "memory":
         return _memory(argv[1:])
+    if argv[0] == "reflexes":
+        return _reflexes(argv[1:])
     if argv[0] == "tokens":
         return _tokens(argv[1:])
     if argv[0] == "mcp":
