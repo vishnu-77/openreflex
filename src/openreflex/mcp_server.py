@@ -1,6 +1,7 @@
 """MCP stdio server. Hooks do the ambient capture; these tools let an agent ask for and report on execution."""
 
 import inspect
+import json
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -22,14 +23,12 @@ from .project import approval, approve, project_root
 from .reflexes import visible_reflexes
 from .routing import Limits
 
-INSTRUCTIONS = """OpenReflex is local execution memory for this project. Hooks capture work automatically.
-Use get_execution_context before a substantial task if no [OpenReflex] context was already provided.
-Follow a learned project Reflex when one is supplied. Call choose_path only when you deliberately depart from the
-internal working approach, and check_progress when unsure
-whether more work is paying off, and record_outcome once the result is confirmed. Research and reasoning tasks are
-first-class: verification can be tests/builds, cross-checked evidence, or explicit user confirmation.
-Use explain_decision or get_execution_trace when the user asks why OpenReflex recommended something.
-Never call approve_project or forget_experience unless the user explicitly asked for it."""
+INSTRUCTIONS = """OpenReflex runs ambiently through lifecycle hooks. Normal coding-agent work does not require
+the model to call OpenReflex tools. This MCP server is an explicit diagnostics/admin surface: use it when the user
+asks what OpenReflex learned, why a decision was made, for a trace, or for an explicit memory/admin operation.
+get_execution_context, check_progress, choose_path and record_outcome remain available for compatibility/manual
+workflows, but do not call them routinely when hooks are active. Never call approve_project or forget_experience
+unless the user explicitly asked for it."""
 
 # Every tool works on local data only. Reads never change the Experience Graph; writes never touch project files.
 READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
@@ -54,15 +53,35 @@ def build_server(project: Path) -> FastMCP:
                                annotations=annotations)(function)
         return register
 
+    def _result_text(value) -> str:
+        if isinstance(value, str):
+            return value
+        if hasattr(value, "model_dump_json"):
+            return value.model_dump_json()
+        try:
+            return json.dumps(value, separators=(",", ":"), default=str)
+        except (TypeError, ValueError):
+            return str(value)
+
+    def _account_diagnostic(instance: Engine, value) -> None:
+        text = _result_text(value)
+        divisor = instance.policy.number("context.chars_per_token")
+        instance.store.increment_meta_int("diagnostic_mcp_calls", 1)
+        instance.store.increment_meta_int("diagnostic_mcp_tokens_estimate", max(0, round(len(text) / divisor)))
+
     def run(operation):
         try:
             instance = engine()
         except PermissionError as error:
             return str(error)
         try:
-            return operation(instance)
+            result = operation(instance)
+            _account_diagnostic(instance, result)
+            return result
         except ValueError as error:
-            return f"OpenReflex: {error}"
+            result = f"OpenReflex: {error}"
+            _account_diagnostic(instance, result)
+            return result
         finally:
             instance.close()
 
@@ -73,7 +92,9 @@ def build_server(project: Path) -> FastMCP:
         except PermissionError as error:
             raise RuntimeError(str(error)) from error
         try:
-            return operation(instance)
+            result = operation(instance)
+            _account_diagnostic(instance, result)
+            return result
         except ValueError as error:
             raise RuntimeError(f"OpenReflex: {error}") from error
         finally:
