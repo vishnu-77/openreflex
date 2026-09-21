@@ -283,8 +283,9 @@ def build_server(project: Path) -> FastMCP:
         the project is approved."""
         def operation(e: Engine):
             outcome = e.record_outcome(status, evidence)
-            path_check = (f"better option: {outcome.best_alternative} (supported by comparable past tasks)"
-                          if outcome.best_alternative else "better option: none proven")
+            path_check = ("another approach may be better (supported by comparable past tasks; "
+                          "use get_candidate_paths for diagnostics)"
+                          if outcome.best_alternative else "no better option proven")
             return f"Outcome recorded: {outcome.status}. Path check: {path_check}."
         return run(operation)
 
