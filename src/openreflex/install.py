@@ -108,38 +108,28 @@ def _remove_json_key(path: Path, container: str, key: str, dry_run: bool, change
     _write(path, data, dry_run, changes)
 
 
-def install(agent: str, project: Path, dry_run: bool = False) -> list[str]:
+def install_diagnostics(agent: str, project: Path, dry_run: bool = False) -> list[str]:
+    """Opt in to the model-facing MCP diagnostics surface for one project."""
     changes: list[str] = []
     _ensure_project_boundary(project, dry_run, changes)
     if agent == "claude-code":
-        settings = project / ".claude" / "settings.json"
-        _write(settings, _merge_hooks(_load(settings), claude_style_hooks("claude-code", CLAUDE_EVENTS)), dry_run, changes)
         mcp = project / ".mcp.json"
         data = _load(mcp)
         data.setdefault("mcpServers", {})["openreflex"] = {"command": "openreflex", "args": ["mcp"]}
         _write(mcp, data, dry_run, changes)
     elif agent == "codex":
-        hooks = project / ".codex" / "hooks.json"
-        _write(hooks, _merge_hooks(_load(hooks), claude_style_hooks("codex", CODEX_EVENTS)), dry_run, changes)
         config = project / ".codex" / "config.toml"
         text = config.read_text(encoding="utf-8") if config.exists() else ""
         if not re.search(r"^\[mcp_servers\.openreflex\]", text, re.MULTILINE):
             block = '[mcp_servers.openreflex]\ncommand = "openreflex"\nargs = ["mcp"]\nenv_vars = ["OPENREFLEX_HOME"]\n'
             _write(config, (text.rstrip() + "\n\n" if text.strip() else "") + block, dry_run, changes)
     elif agent == "cursor":
-        hooks = project / ".cursor" / "hooks.json"
-        existing = _load(hooks)
-        merged = _merge_hooks(existing, cursor_hooks())
-        merged["version"] = existing.get("version", 1)
-        _write(hooks, merged, dry_run, changes)
         mcp = project / ".cursor" / "mcp.json"
         data = _load(mcp)
         data.setdefault("mcpServers", {})["openreflex"] = {
             "type": "stdio", "command": "openreflex", "args": ["mcp", "--project", "${workspaceFolder}"]}
         _write(mcp, data, dry_run, changes)
     elif agent == "opencode":
-        plugin = resources.files("openreflex").joinpath("integrations/opencode.ts").read_text(encoding="utf-8")
-        _write(project / ".opencode" / "plugins" / "openreflex.ts", plugin, dry_run, changes)
         config_path = next((p for p in (project / "opencode.jsonc", project / "opencode.json") if p.exists()),
                            project / "opencode.json")
         if config_path.suffix == ".jsonc":
@@ -147,15 +137,65 @@ def install(agent: str, project: Path, dry_run: bool = False) -> list[str]:
         else:
             data = _load(config_path)
             data.setdefault("$schema", "https://opencode.ai/config.json")
-            data.setdefault("mcp", {})["openreflex"] = {"type": "local", "command": ["openreflex", "mcp"],
-                                                            "enabled": True}
+            data.setdefault("mcp", {})["openreflex"] = {
+                "type": "local", "command": ["openreflex", "mcp"], "enabled": True}
             _write(config_path, data, dry_run, changes)
+    else:
+        raise ValueError(f"Unsupported agent: {agent}")
+    return changes
+
+
+def uninstall_diagnostics(agent: str, project: Path, dry_run: bool = False) -> list[str]:
+    """Remove only the optional MCP diagnostics surface; ambient hooks stay installed."""
+    changes: list[str] = []
+    if agent == "claude-code":
+        _remove_json_key(project / ".mcp.json", "mcpServers", "openreflex", dry_run, changes)
+    elif agent == "codex":
+        config = project / ".codex" / "config.toml"
+        if config.exists():
+            text = config.read_text(encoding="utf-8")
+            cleaned = re.sub(r"(?ms)^\[mcp_servers\.openreflex\]\n.*?(?=^\[|\Z)", "", text).strip()
+            cleaned = cleaned + ("\n" if cleaned else "")
+            if cleaned != text:
+                _write(config, cleaned, dry_run, changes)
+    elif agent == "cursor":
+        _remove_json_key(project / ".cursor" / "mcp.json", "mcpServers", "openreflex", dry_run, changes)
+    elif agent == "opencode":
+        _remove_json_key(project / "opencode.json", "mcp", "openreflex", dry_run, changes)
+    else:
+        raise ValueError(f"Unsupported agent: {agent}")
+    return changes
+
+
+def install(agent: str, project: Path, dry_run: bool = False) -> list[str]:
+    """Install the ambient runtime. Normal operation is hooks-only; MCP diagnostics are opt-in."""
+    changes: list[str] = []
+    _ensure_project_boundary(project, dry_run, changes)
+    if agent == "claude-code":
+        settings = project / ".claude" / "settings.json"
+        _write(settings, _merge_hooks(_load(settings), claude_style_hooks("claude-code", CLAUDE_EVENTS)), dry_run, changes)
+        # Re-running the default installer upgrades pre-0.7 projects to ambient mode.
+        changes += uninstall_diagnostics(agent, project, dry_run)
+    elif agent == "codex":
+        hooks = project / ".codex" / "hooks.json"
+        _write(hooks, _merge_hooks(_load(hooks), claude_style_hooks("codex", CODEX_EVENTS)), dry_run, changes)
+        changes += uninstall_diagnostics(agent, project, dry_run)
+    elif agent == "cursor":
+        hooks = project / ".cursor" / "hooks.json"
+        existing = _load(hooks)
+        merged = _merge_hooks(existing, cursor_hooks())
+        merged["version"] = existing.get("version", 1)
+        _write(hooks, merged, dry_run, changes)
+        changes += uninstall_diagnostics(agent, project, dry_run)
+    elif agent == "opencode":
+        plugin = resources.files("openreflex").joinpath("integrations/opencode.ts").read_text(encoding="utf-8")
+        _write(project / ".opencode" / "plugins" / "openreflex.ts", plugin, dry_run, changes)
+        changes += uninstall_diagnostics(agent, project, dry_run)
     else:
         raise ValueError(f"Unsupported agent: {agent}")
     if not dry_run:
         approve(project, source=f"install:{agent}")
     return changes
-
 
 def uninstall(agent: str, project: Path, dry_run: bool = False) -> list[str]:
     """Remove OpenReflex-owned integration entries without deleting project memory or user config."""

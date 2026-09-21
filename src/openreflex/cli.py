@@ -80,6 +80,33 @@ def cmd_install(args) -> int:
     return 0
 
 
+def cmd_diagnostics(args) -> int:
+    from .install import install_diagnostics, uninstall_diagnostics
+
+    project = _project(args.project)
+    operation = install_diagnostics if args.diagnostics_action == "enable" else uninstall_diagnostics
+    changes = operation(args.agent, project, dry_run=args.dry_run)
+    verb = "would update" if args.dry_run else ("enabled" if args.diagnostics_action == "enable" else "disabled")
+    print("OPENREFLEX / DIAGNOSTICS")
+    print(f"  action      {args.diagnostics_action}")
+    print(f"  agent       {args.agent}")
+    print(f"  project     {project}")
+    if changes:
+        print(f"  config      {verb} {len(changes)} file{'s' if len(changes) != 1 else ''}")
+        for change in changes:
+            print(f"              {change}")
+    else:
+        state = "already enabled" if args.diagnostics_action == "enable" else "already disabled"
+        print(f"  config      {state}")
+    print("  runtime     ambient hooks remain active")
+    if not args.dry_run and args.diagnostics_action == "enable":
+        print("\n  [ok] optional MCP diagnostics enabled")
+        print("  note        normal OpenReflex work does not require MCP calls")
+    elif not args.dry_run:
+        print("\n  [ok] model-facing MCP diagnostics disabled")
+    return 0
+
+
 def cmd_uninstall(args) -> int:
     from .install import uninstall
 
@@ -134,6 +161,13 @@ def cmd_status(args) -> int:
           f"{eff['without_prior_experience']['model_tokens']} (observational)")
     print(f"  path checks: {path_check['comparisons']}   better option found: {path_check['better_option_found']}   "
           f"routing agreement: {routing['agreement']}")
+    overhead = data["openreflex_overhead"]
+    print(f"  OpenReflex context: {overhead['estimated_context_tokens']:,} estimated tokens across "
+          f"{overhead['context_injected_tasks']} task(s); {overhead['zero_injection_tasks']} substantial task(s) at zero")
+    print(f"  diagnostic MCP: {overhead['diagnostic_mcp_calls']} call(s), "
+          f"{overhead['diagnostic_mcp_tokens_estimate']:,} estimated result tokens")
+    if overhead["estimated_context_tax"] is not None:
+        print(f"  estimated context tax: {overhead['estimated_context_tax']:.2%} of observed model-token usage")
     print(f"  live alerts: {data['live_alerts'] or '-'}")
     control = data["execution_control"]
     print(f"  verdicts: {control['verdicts'] or '-'}   tasks within tool-call budget: {control['tasks_within_tool_call_budget']}")
@@ -242,7 +276,8 @@ def cmd_update(args) -> int:
         print(f"  note        expected {status.latest}; executable reports {installed}")
     print("  memory      preserved")
     print("  config      preserved")
-    print("\nRestart active Claude Code, Codex, Cursor, or OpenCode sessions to reload hooks and MCP.")
+    print("\nRestart active Claude Code, Codex, Cursor, or OpenCode sessions to reload hooks"
+          " (and diagnostics MCP if you explicitly enabled it).")
     return 0
 
 
@@ -268,7 +303,8 @@ def cmd_self(args) -> int:
         print("\n  [ok] package reinstalled")
         print("  memory      preserved")
         print("  config      preserved")
-        print("\nRestart active agent sessions to reload hooks and MCP.")
+        print("\nRestart active agent sessions to reload hooks"
+              " (and diagnostics MCP if you explicitly enabled it).")
         return 0
 
     if args.self_action == "uninstall":
@@ -422,13 +458,25 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--project")
         command.set_defaults(func=func)
 
-    for name, func, text in (("install", cmd_install, "Connect OpenReflex hooks + MCP for an agent"),
-                             ("uninstall", cmd_uninstall, "Disconnect OpenReflex hooks + MCP while preserving memory")):
+    for name, func, text in (("install", cmd_install, "Connect the ambient OpenReflex hook runtime for an agent"),
+                             ("uninstall", cmd_uninstall, "Disconnect OpenReflex while preserving memory")):
         command = sub.add_parser(name, help=text)
         command.add_argument("agent", choices=AGENT_CHOICES)
         command.add_argument("--project")
         command.add_argument("--dry-run", action="store_true")
         command.set_defaults(func=func)
+
+    diagnostics = sub.add_parser(
+        "diagnostics",
+        help="Opt in/out of the model-facing MCP diagnostics surface; ambient hooks do not require it",
+    )
+    diagnostics_sub = diagnostics.add_subparsers(dest="diagnostics_action", required=True)
+    for action in ("enable", "disable"):
+        command = diagnostics_sub.add_parser(action, help=f"{action.capitalize()} optional MCP diagnostics")
+        command.add_argument("agent", choices=AGENT_CHOICES)
+        command.add_argument("--project")
+        command.add_argument("--dry-run", action="store_true")
+        command.set_defaults(func=cmd_diagnostics)
 
     update = sub.add_parser("update", help="Check PyPI and safely update the managed OpenReflex installation")
     update_group = update.add_mutually_exclusive_group()

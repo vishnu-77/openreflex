@@ -16,6 +16,7 @@ minimum_similar_evidence = 3
 
 [context]
 max_chars = 1400
+reflex_max_chars = 900
 chars_per_token = 4.0
 max_lessons = 4
 max_likely_files = 6

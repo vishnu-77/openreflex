@@ -22,28 +22,48 @@ def test_claude_code_install_merges_and_is_idempotent(project):
     data = json.loads(settings.read_text())
     assert data["permissions"] == {"allow": ["Bash(ls)"]}
     assert data["hooks"]["Stop"][0] == user_hook and len(data["hooks"]["Stop"]) == 2
-    assert json.loads((project / ".mcp.json").read_text())["mcpServers"]["openreflex"]["args"] == ["mcp"]
+    assert not (project / ".mcp.json").exists(), "ambient install must not expose MCP by default"
     assert install.install("claude-code", project) == [], "second install changes nothing"
     assert approval(project) is not None
 
 
 @pytest.mark.parametrize("agent, expected", [
-    ("codex", [".codex/hooks.json", ".codex/config.toml"]),
-    ("cursor", [".cursor/hooks.json", ".cursor/mcp.json"]),
-    ("opencode", [".opencode/plugins/openreflex.ts", "opencode.json"]),
+    ("codex", [".codex/hooks.json"]),
+    ("cursor", [".cursor/hooks.json"]),
+    ("opencode", [".opencode/plugins/openreflex.ts"]),
 ])
 def test_other_agent_installs(project, agent, expected):
     install.install(agent, project)
     for relative in expected:
         assert (project / relative).exists(), relative
     if agent == "codex":
-        install.install(agent, project)
-        assert (project / ".codex/config.toml").read_text().count("[mcp_servers.openreflex]") == 1
+        assert not (project / ".codex/config.toml").exists()
+    if agent == "cursor":
+        assert not (project / ".cursor/mcp.json").exists()
+    if agent == "opencode":
+        assert not (project / "opencode.json").exists()
 
 
 def test_dry_run_writes_nothing(project):
     assert install.install("cursor", project, dry_run=True)
     assert not (project / ".cursor").exists() and approval(project) is None
+
+
+def test_default_install_removes_legacy_model_facing_mcp_config(project):
+    legacy = project / ".mcp.json"
+    legacy.write_text(json.dumps({
+        "mcpServers": {
+            "openreflex": {"command": "openreflex", "args": ["mcp"]},
+            "user-owned": {"command": "other-server"},
+        }
+    }), encoding="utf-8")
+
+    install.install("claude-code", project)
+
+    data = json.loads(legacy.read_text(encoding="utf-8"))
+    assert "openreflex" not in data["mcpServers"]
+    assert data["mcpServers"]["user-owned"] == {"command": "other-server"}
+    assert "openreflex hook" in (project / ".claude" / "settings.json").read_text(encoding="utf-8")
 
 
 def test_plugin_hook_files_match_installer_definitions():
@@ -57,7 +77,10 @@ def test_plugin_hook_files_match_installer_definitions():
     assert codex["hooks"] == "./hooks/codex-hooks.json", "Codex must not read the Claude Code hooks.json"
     assert cursor["hooks"] == "./hooks/cursor-hooks.json"
     for manifest in (codex, cursor):
-        assert (PLUGIN / manifest["mcpServers"]).exists() and (PLUGIN / manifest["skills"]).is_dir()
+        assert "mcpServers" not in manifest
+        assert "skills" not in manifest
+    assert not (PLUGIN / ".mcp.json").exists()
+    assert not (PLUGIN / "skills").exists()
 
 
 def _run(args, stdin="", env_home=None, cwd=None):
@@ -73,7 +96,9 @@ def test_cli_hook_never_blocks_even_with_bad_arguments(isolated_home, project):
 
 
 def test_cli_end_to_end_capture_via_subprocess(isolated_home, project):
-    assert _run(["approve", "--project", str(project)], env_home=isolated_home).returncode == 0
+    connected = _run(["install", "claude-code", "--project", str(project)], env_home=isolated_home)
+    assert connected.returncode == 0, connected.stderr
+    assert not (project / ".mcp.json").exists(), "normal capture must not require a model-facing MCP server"
     base = {"session_id": "cli", "cwd": str(project)}
     events = [
         ("UserPromptSubmit", {**base, "prompt": "Fix the unicode filename bug in the upload handler"}),
@@ -97,9 +122,31 @@ def test_cli_end_to_end_capture_via_subprocess(isolated_home, project):
     assert not (isolated_home / "logs" / "errors.log").exists()
 
 
-def test_codex_mcp_server_receives_the_data_directory_override(project):
-    install.install("codex", project)
-    assert 'env_vars = ["OPENREFLEX_HOME"]' in (project / ".codex/config.toml").read_text()
+@pytest.mark.parametrize("agent", ["claude-code", "codex", "cursor", "opencode"])
+def test_diagnostics_mcp_is_explicit_opt_in(project, agent):
+    install.install(agent, project)
+    changes = install.install_diagnostics(agent, project)
+    assert changes
+    if agent == "claude-code":
+        assert json.loads((project / ".mcp.json").read_text())["mcpServers"]["openreflex"]["args"] == ["mcp"]
+    elif agent == "codex":
+        text = (project / ".codex/config.toml").read_text()
+        assert text.count("[mcp_servers.openreflex]") == 1
+        assert 'env_vars = ["OPENREFLEX_HOME"]' in text
+    elif agent == "cursor":
+        assert json.loads((project / ".cursor/mcp.json").read_text())["mcpServers"]["openreflex"]["command"] == "openreflex"
+    else:
+        assert json.loads((project / "opencode.json").read_text())["mcp"]["openreflex"]["enabled"] is True
+
+    assert install.uninstall_diagnostics(agent, project)
+    if agent == "claude-code" and (project / ".mcp.json").exists():
+        assert "openreflex" not in json.loads((project / ".mcp.json").read_text()).get("mcpServers", {})
+    elif agent == "codex" and (project / ".codex/config.toml").exists():
+        assert "[mcp_servers.openreflex]" not in (project / ".codex/config.toml").read_text()
+    elif agent == "cursor" and (project / ".cursor/mcp.json").exists():
+        assert "openreflex" not in json.loads((project / ".cursor/mcp.json").read_text()).get("mcpServers", {})
+    elif agent == "opencode" and (project / "opencode.json").exists():
+        assert "openreflex" not in json.loads((project / "opencode.json").read_text()).get("mcp", {})
 
 
 def test_release_versions_agree():

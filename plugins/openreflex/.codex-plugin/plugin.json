@@ -1,7 +1,7 @@
 {
   "name": "openreflex",
-  "version": "0.6.0",
-  "description": "Project muscle memory for AI coding agents: learns reusable execution patterns across a codebase.",
+  "version": "0.7.0",
+  "description": "Ambient project muscle memory for AI coding agents: hooks learn and reuse project Reflexes automatically.",
   "author": {
     "name": "vishnu-77",
     "url": "https://github.com/vishnu-77"
@@ -13,17 +13,14 @@
     "mcp",
     "hooks"
   ],
-  "skills": "./skills/",
   "hooks": "./hooks/codex-hooks.json",
-  "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "OpenReflex",
-    "shortDescription": "Local execution memory and path advice for coding, investigation and reasoning.",
-    "longDescription": "Captures substantial coding, investigation and reasoning work through lifecycle hooks, reuses relevant past experience, tracks execution cost, flags loops and stagnation, and learns from confirmed outcomes. Core memory stays local.",
+    "shortDescription": "Ambient project muscle memory for coding agents.",
+    "longDescription": "Learns reusable project procedures from lifecycle hooks, injects compact relevant Reflex context automatically, and keeps model-facing MCP diagnostics opt-in.",
     "developerName": "vishnu-77",
     "category": "Productivity",
     "capabilities": [],
-    "defaultPrompt": "What has OpenReflex learned about this project?",
     "websiteURL": "https://github.com/vishnu-77/openreflex"
   },
   "homepage": "https://github.com/vishnu-77/openreflex",

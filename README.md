@@ -22,10 +22,10 @@
 
 ## What is OpenReflex
 
-OpenReflex gives AI coding agents project muscle memory across coding, investigation, and reasoning work. It plugs into
-Claude Code, Codex, Cursor, and OpenCode through lifecycle hooks and MCP, quietly records how work actually goes,
-compiles repeated project behaviour into reusable Reflexes, and gives new tasks the relevant procedure even when
-the exact task has never been performed before.
+OpenReflex gives AI coding agents ambient project muscle memory across coding, investigation, and reasoning work.
+Lifecycle hooks quietly record how work actually goes, compile repeated project behaviour into reusable Reflexes,
+and inject only the relevant project procedure into new tasks. The model does not need to remember to call OpenReflex,
+and MCP diagnostics are opt-in rather than loaded into normal agent context.
 
 You install it once and keep working normally. Core memory stays on your machine in a local SQLite database.
 There is no OpenReflex account or hosted service. Optional Claude token accounting uses Claude Code's local
@@ -33,10 +33,10 @@ OpenTelemetry export to a loopback-only OpenReflex receiver and stores counts on
 
 <p align="center">
   <a href="docs/walkthrough.md">
-    <img alt="Recording of a real Claude Code session with OpenReflex: OpenReflex reports one similar past task and adds 162 context tokens, Claude finds and fixes the coupon bug, runs the tests, records the verified outcome through OpenReflex's MCP tool, and OpenReflex shows the completion recap with the path taken and observed cost" src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/docs/screenshots/claude-code-session.gif" width="860">
+    <img alt="Recording of a Claude Code session with OpenReflex: OpenReflex injects compact prior context, Claude fixes the task and runs verification, and lifecycle hooks close the outcome automatically" src="https://raw.githubusercontent.com/vishnu-77/openreflex/main/docs/screenshots/claude-code-session.gif" width="860">
   </a>
   <br>
-  <sub>A real Claude Code session, recorded from the terminal and sped up. OpenReflex had seen one similar task in this repository, so it adds 162 tokens of context before the first tool call; after the fix, Claude records the outcome through OpenReflex's MCP tool. The step-by-step walkthrough is in <a href="docs/walkthrough.md">docs/walkthrough.md</a>.</sub>
+  <sub>A recorded Claude Code session. OpenReflex injects compact relevant context before work; lifecycle hooks capture tools and verification and close the execution automatically. MCP is not required for the normal path. The step-by-step walkthrough is in <a href="docs/walkthrough.md">docs/walkthrough.md</a>.</sub>
 </p>
 
 ## Why OpenReflex
@@ -68,7 +68,7 @@ Requires Python 3.11 or newer.
 ```bash
 pipx install openreflex            # or: uv tool install openreflex
 cd your-project
-openreflex install claude-code     # writes hooks + MCP config and enables this project
+openreflex install claude-code     # hooks-only ambient runtime; enables this project
 ```
 
 ```
@@ -76,8 +76,8 @@ OPENREFLEX / CONNECT
   agent       claude-code
   project     D:\demo\shop
   config      updated 2 files
+              D:\demo\shop\.openreflex.json
               D:\demo\shop\.claude\settings.json
-              D:\demo\shop\.mcp.json
   memory      enabled
   storage     local
 
@@ -104,10 +104,10 @@ OpenReflex installs per project with `openreflex install <agent>`, or as a plugi
 
 | Agent | Connects through | Install | Verified |
 |---|---|---|---|
-| **Claude Code** | Plugin, or hooks + MCP | `claude plugin marketplace add vishnu-77/openreflex` then `claude plugin install openreflex@openreflex`, or `openreflex install claude-code` | Live sessions |
-| **Codex** | Plugin, or hooks + MCP | `codex plugin marketplace add vishnu-77/openreflex`, or `openreflex install codex`, then trust the hooks once in `/hooks` | Live sessions |
-| **Cursor** | Hooks + MCP | `openreflex install cursor` | Protocol and fuzz tests |
-| **OpenCode** | Plugin + MCP | `openreflex install opencode` | Protocol and fuzz tests |
+| **Claude Code** | Plugin hooks, or project hooks | `claude plugin marketplace add vishnu-77/openreflex` then `claude plugin install openreflex@openreflex`, or `openreflex install claude-code` | Live sessions |
+| **Codex** | Plugin hooks, or project hooks | `codex plugin marketplace add vishnu-77/openreflex`, or `openreflex install codex`, then trust the hooks once in `/hooks` | Live sessions |
+| **Cursor** | Lifecycle hooks | `openreflex install cursor` | Protocol and fuzz tests |
+| **OpenCode** | Local lifecycle plugin | `openreflex install opencode` | Protocol and fuzz tests |
 
 With a plugin install, enable each project with `openreflex approve`. Per-agent guides:
 [Claude Code](https://openreflex.cc/claude-code), [Codex](https://openreflex.cc/codex), [Cursor](https://openreflex.cc/cursor),
@@ -136,8 +136,9 @@ Execution -caused-> Outcome -caused-> Experience -caused-> Lesson
   left and with the best untried alternative. The alert ends with a recommendation to **continue**, **pivot**
   to another strategy, or **stop** and ask the user. Each problem, pivot, or stop is raised once, with a cooldown
   between messages.
-- **After a task:** outcome and chosen path come from the agent's `record_outcome` / `choose_path` MCP calls when
-  available, and are otherwise inferred from work-mode-appropriate evidence. The **Path check** says either
+- **After a task:** lifecycle hooks close the execution automatically from work-mode-appropriate evidence; the model
+  does not need to call OpenReflex. Explicit MCP outcome/path operations remain available only for manual or diagnostic
+  workflows. The **Path check** says either
   `better option: <path>` when comparable completed tasks support it or `better option: none proven`.
   Recommendations are never presented as paths that were actually executed.
 
@@ -150,10 +151,13 @@ Set optional limits for every task with `OPENREFLEX_BUDGET`, for example `calls=
 Routing, scoring, budget and recap settings come from a versioned policy: the packaged defaults, overridden by
 `~/.openreflex/config.toml` and then by `.openreflex.toml` in the project.
 
-Agents can also query OpenReflex directly through its MCP server.
+Normal work does **not** load OpenReflex MCP tools. If you explicitly want model-facing introspection for a project,
+enable it with `openreflex diagnostics enable <agent>`. Disable it again with
+`openreflex diagnostics disable <agent>`. The standalone MCP Registry package remains available for users who
+deliberately install OpenReflex as an MCP server.
 
 <details>
-<summary><strong>The 12 MCP tools</strong></summary>
+<summary><strong>The optional MCP diagnostics/admin tools</strong></summary>
 
 | Tool | What it does |
 |---|---|
@@ -176,8 +180,9 @@ Agents can also query OpenReflex directly through its MCP server.
 
 | Command | Purpose |
 |---|---|
-| `install <agent> [--dry-run]` | Write project hooks and MCP config, and enable the project |
-| `uninstall <agent> [--dry-run]` | Remove OpenReflex's project hooks and MCP config; captured memory is kept |
+| `install <agent> [--dry-run]` | Install the hooks-only ambient runtime and enable the project |
+| `diagnostics enable/disable <agent>` | Explicitly opt in/out of model-facing MCP diagnostics |
+| `uninstall <agent> [--dry-run]` | Remove OpenReflex's integration entries; captured memory is kept |
 | `update [--check] [--reinstall]` | Check or update a managed pipx/uv-tool installation; optionally force a reinstall |
 | `self reinstall` | Repair/reinstall the managed OpenReflex package while preserving memory/config |
 | `self uninstall --yes` | Remove only the managed OpenReflex package; memory/config remain on disk |
@@ -189,7 +194,8 @@ Agents can also query OpenReflex directly through its MCP server.
 | `forget --yes` | Delete the project's data |
 | `tokens enable` / `tokens status` / `tokens disable` | Opt in to local Claude Code token accounting, inspect it, or remove OpenReflex-owned telemetry settings |
 | `benchmark` | Run the simulated benchmark |
-| `hook <agent> <event>` / `mcp` | Used by agent configs |
+| `hook <agent> <event>` | Used by ambient agent integrations |
+| `mcp` | Run the optional diagnostics/admin MCP server explicitly |
 
 ## Privacy
 

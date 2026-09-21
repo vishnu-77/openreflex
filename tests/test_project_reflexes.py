@@ -211,6 +211,8 @@ def test_engine_learns_then_reuses_project_reflex(engine, clock):
     assert "Procedure:" in context.text
     assert "inspect-first" not in context.text
     assert "test-first" not in context.text
+    assert len(context.text) <= 900
+    assert execution.context_tokens <= 225
 
     recap = engine.take_notice("mcp", "helm-next")
     assert recap is not None

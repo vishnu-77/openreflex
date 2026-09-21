@@ -698,11 +698,12 @@ def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple
     succeeded = sum(e.status == "success" for e in experiences)
     best = paths[0]
     if reflex is not None:
-        lines = [f"[OpenReflex] Reflex: {reflex.name} · {task.task_mode.upper()} | {reflex.state} · "
-                 f"{reflex.success_count} successful project run(s)."]
+        lines = [f"[OpenReflex] Reflex: {reflex.name} · {reflex.state}."]
         lines.append("Procedure: " + " -> ".join(reflex.procedure))
-        lines.append(f"Evidence: {reflex.support_count} comparable project run(s), "
-                     f"{reflex.verified_count} explicitly verified.")
+        lines.append(f"Evidence: {reflex.success_count} successful / {reflex.verified_count} verified project run(s).")
+        text = "\n".join(lines)
+        max_chars = cfg.integer("context.reflex_max_chars")
+        return text if len(text) <= max_chars else text[: max_chars - 1] + "..."
     else:
         lines = [f"[OpenReflex] {task.task_mode.upper()} · {task.task_class} | "
                  f"{len(experiences)} similar past task(s) here, {succeeded} succeeded."]

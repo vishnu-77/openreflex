@@ -42,7 +42,8 @@ def test_first_stop_after_unverified_edit_requests_one_verification_pass(tmp_pat
     assert first["hookSpecificOutput"]["hookEventName"] == "Stop"
     assert "cannot verify this changed task yet" in closure
     assert "test, lint, or build" in closure
-    assert "record_outcome" in closure
+    assert "record_outcome" not in closure
+    assert "rather than requiring an MCP call" in closure
 
     second_raw = _call(factory, project, "Stop", {"stop_hook_active": True})
     if second_raw:
