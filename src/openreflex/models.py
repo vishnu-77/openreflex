@@ -237,7 +237,7 @@ class ProjectReflex(Model):
 
     name: str
     family: str = ""
-    task_mode: str = one_of(("build", "investigate", "think"), "build")
+    task_mode: str = one_of(("build", "investigate", "think", "project"), "build")
     task_class: str
     state: str = one_of(("candidate", "learned", "proven", "stale"), "candidate")
     seed_strategy: str | None = None
