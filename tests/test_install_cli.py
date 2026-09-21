@@ -49,6 +49,23 @@ def test_dry_run_writes_nothing(project):
     assert not (project / ".cursor").exists() and approval(project) is None
 
 
+def test_default_install_removes_legacy_model_facing_mcp_config(project):
+    legacy = project / ".mcp.json"
+    legacy.write_text(json.dumps({
+        "mcpServers": {
+            "openreflex": {"command": "openreflex", "args": ["mcp"]},
+            "user-owned": {"command": "other-server"},
+        }
+    }), encoding="utf-8")
+
+    install.install("claude-code", project)
+
+    data = json.loads(legacy.read_text(encoding="utf-8"))
+    assert "openreflex" not in data["mcpServers"]
+    assert data["mcpServers"]["user-owned"] == {"command": "other-server"}
+    assert "openreflex hook" in (project / ".claude" / "settings.json").read_text(encoding="utf-8")
+
+
 def test_plugin_hook_files_match_installer_definitions():
     claude = json.loads((PLUGIN / "hooks" / "hooks.json").read_text())
     assert claude["hooks"] == install.claude_style_hooks("claude-code", install.CLAUDE_EVENTS)["hooks"]
