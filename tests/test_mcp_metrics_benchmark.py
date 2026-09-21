@@ -62,6 +62,14 @@ def test_mcp_tools_require_approval_then_work(project, clock):
         tool_text(server, "explain_node", {"node_id": experience_id})
     assert json.loads(tool_text(server, "get_project_insights", {}))["engagement"]["tasks"] == 1
 
+    accounting = Engine(project, clock=clock)
+    try:
+        overhead = metrics.project_metrics(accounting, approval(project), now=clock.now)["openreflex_overhead"]
+    finally:
+        accounting.close()
+    assert overhead["diagnostic_mcp_calls"] >= 10
+    assert overhead["diagnostic_mcp_tokens_estimate"] > 0
+
 
 def test_metrics_report_reuse_and_path_checks(engine, clock, project):
     record = approve(project)
