@@ -28,6 +28,8 @@ def test_release_pipeline_is_reusable_and_finishes_with_github_release():
     assert '"openreflex==$VERSION"' in workflow
     assert "os: [ubuntu-latest, macos-latest, windows-latest]" in workflow
     assert "needs: [build, verify-pypi]" in workflow
+    assert "registry.modelcontextprotocol.io/v0.1/servers/" in workflow
+    assert "is already present in the MCP Registry" in workflow
     assert "github-release:" in workflow
     assert "needs: [build, mcp-registry]" in workflow
     assert 'gh release create "$TAG"' in workflow
