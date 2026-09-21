@@ -1,0 +1,104 @@
+name: Auto Release
+
+# A successful CI run on main is the release gate. If the version in pyproject.toml has
+# no matching vX.Y.Z tag yet, this workflow creates the tag and publishes a GitHub Release.
+# The Release workflow then performs Trusted Publishing to PyPI and MCP Registry publication.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: openreflex-auto-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the exact CI-tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - id: version
+        name: Validate release metadata
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import re
+          import tomllib
+          from pathlib import Path
+
+          root = Path(".")
+          version = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+          runtime = {}
+          exec((root / "src/openreflex/__init__.py").read_text(), runtime)
+          manifests = [
+              root / "plugins/openreflex/.claude-plugin/plugin.json",
+              root / "plugins/openreflex/.codex-plugin/plugin.json",
+              root / "plugins/openreflex/.cursor-plugin/plugin.json",
+          ]
+          server = json.loads((root / "server.json").read_text())
+          changelog = (root / "CHANGELOG.md").read_text()
+
+          assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?", version), version
+          assert runtime["__version__"] == version
+          assert all(json.loads(path.read_text())["version"] == version for path in manifests)
+          assert server["version"] == version
+          assert server["packages"][0]["version"] == version
+          assert f"## {version} " in changelog or f"## {version}\n" in changelog
+
+          print(f"version={version}")
+          print(f"tag=v{version}")
+          PY
+
+      - id: tag
+        name: Check whether this version is already released
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "$TAG already exists; no release required."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create version tag
+        if: steps.tag.outputs.exists != 'true'
+        shell: bash
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" "$SHA" -m "OpenReflex $VERSION"
+          git push origin "$TAG"
+
+      - name: Publish GitHub Release
+        if: steps.tag.outputs.exists != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "$TAG" \
+            --verify-tag \
+            --title "OpenReflex $VERSION" \
+            --generate-notes
