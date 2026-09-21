@@ -421,7 +421,10 @@ def _reflexes(argv: list[str]) -> int:
         print(f"  {reflex.name}")
         print(f"    state     {reflex.state}")
         print(f"    evidence  {reflex.success_count} successful / {reflex.verified_count} verified")
-        print(f"    steps     {' -> '.join(reflex.procedure)}")
+        if reflex.family.startswith("area:"):
+            print("    scope     cross-task project area")
+        else:
+            print(f"    steps     {' -> '.join(reflex.procedure)}")
     return 0
 
 
