@@ -720,7 +720,10 @@ def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple
     best = paths[0]
     if reflex is not None:
         lines = [f"[OpenReflex] Reflex: {reflex.name} · {reflex.state}."]
-        lines.append("Procedure: " + " -> ".join(reflex.procedure))
+        if reflex.family.startswith("area:"):
+            lines.append("Project-area memory: related work in this component has been seen across task types.")
+        elif reflex.procedure:
+            lines.append("Procedure: " + " -> ".join(reflex.procedure))
         lines.append(f"Evidence: {reflex.success_count} successful / {reflex.verified_count} verified project run(s).")
         text = "\n".join(lines)
         max_chars = cfg.integer("context.reflex_max_chars")
