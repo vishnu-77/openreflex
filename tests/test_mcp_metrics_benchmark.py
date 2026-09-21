@@ -23,14 +23,17 @@ def test_mcp_tools_require_approval_then_work(project, clock):
     server = build_server(project)
     names = {tool.name for tool in asyncio.run(server.list_tools())}
     assert {"get_execution_context", "choose_path", "check_progress", "record_outcome", "search_experience",
-            "explain_decision", "get_execution_trace", "get_candidate_paths", "get_reflex_score", "explain_node",
-            "get_project_insights", "approve_project", "forget_experience"} == names
+            "explain_decision", "get_execution_trace", "get_candidate_paths", "get_project_reflexes",
+            "get_reflex_score", "explain_node", "get_project_insights", "approve_project", "forget_experience"} == names
     assert "not enabled" in tool_text(server, "get_execution_context", {"task": "Fix the login redirect loop"})
     assert "Not approved" in tool_text(server, "approve_project", {})
     assert "enabled" in tool_text(server, "approve_project", {"confirm": True})
 
     context = tool_text(server, "get_execution_context", {"task": "Fix the login redirect loop after logout"})
-    assert "Suggested path" in context and "Candidate paths" in context and "Pareto-efficient" in context
+    assert "Working approach:" in context
+    assert "Candidate paths:" not in context
+    assert "test-first" not in context
+    assert "No learned project Reflexes yet" in tool_text(server, "get_project_reflexes", {})
     assert "OPENREFLEX / WHY" in tool_text(server, "explain_decision", {})
     assert "OPENREFLEX / TRACE" in tool_text(server, "get_execution_trace", {})
     assert "OPENREFLEX / PATHS" in tool_text(server, "get_candidate_paths", {})
@@ -94,4 +97,5 @@ def test_every_mcp_tool_is_fully_described(project):
             assert schema.get("description"), f"{tool.name}.{name} has no description"
     read_only = {t.name for t in tools if t.annotations.readOnlyHint}
     assert read_only == {"check_progress", "explain_decision", "get_execution_trace", "get_candidate_paths",
-                         "get_reflex_score", "search_experience", "explain_node", "get_project_insights"}
+                         "get_project_reflexes", "get_reflex_score", "search_experience", "explain_node",
+                         "get_project_insights"}
