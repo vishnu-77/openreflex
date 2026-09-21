@@ -2,18 +2,18 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.vishnu-77/openreflex",
   "title": "OpenReflex",
-  "description": "Local execution memory for AI coding agents: reuses past fixes and flags failure loops.",
+  "description": "Project muscle memory for AI coding agents: learns reusable execution patterns across a codebase.",
   "repository": {
     "url": "https://github.com/vishnu-77/openreflex",
     "source": "github"
   },
   "websiteUrl": "https://openreflex.cc",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "openreflex",
-      "version": "0.5.3",
+      "version": "0.6.0",
       "runtimeHint": "uvx",
       "packageArguments": [
         {
