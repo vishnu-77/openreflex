@@ -298,7 +298,9 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
         task_class=primary_class,
         state=_state(len(group), len(successes), verified, previous_state),
         seed_strategy=seed_strategy,
-        procedure=_procedure(store, successes or group or [experience]),
+        # Project-area Reflexes are cross-mode scope memory, not an execution recipe. Replaying a BUILD
+        # procedure into a THINK/docs task would be actively misleading; mode-specific Reflexes keep procedures.
+        procedure=[] if project_area else _procedure(store, successes or group or [experience]),
         evidence_ids=[item.id for item in group[-20:]],
         support_count=len(group),
         success_count=len(successes),
