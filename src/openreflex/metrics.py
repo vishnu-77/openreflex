@@ -102,9 +102,14 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
     with_prior_profile, without_prior_profile = profile(with_prior), profile(without_prior)
     reuse_rate = round(len(reused) / len(substantial), 3) if substantial else None
 
-    substantial_ids = {task.id for task in substantial}
-    substantial_executions = [execution for execution in executions if execution.task_id in substantial_ids]
-    context_values = [max(0, int(execution.context_tokens or 0)) for execution in substantial_executions]
+    context_by_task = {task.id: 0 for task in substantial}
+    for execution in executions:
+        if execution.task_id in context_by_task:
+            context_by_task[execution.task_id] = max(
+                context_by_task[execution.task_id],
+                max(0, int(execution.context_tokens or 0)),
+            )
+    context_values = list(context_by_task.values())
     context_injected = [value for value in context_values if value > 0]
     observed_model_tokens = sum(experience.model_tokens for experience in experiences if experience.model_tokens > 0)
     diagnostic_mcp_calls = int(store.get_meta("diagnostic_mcp_calls", "0") or 0)
