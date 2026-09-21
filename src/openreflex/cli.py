@@ -122,6 +122,8 @@ def cmd_status(args) -> int:
     print(f"OpenReflex {__version__} - {project}")
     print(f"  enabled: {data['enabled']}   agents: {', '.join(data['engagement']['agents']) or '-'}")
     print(f"  tasks: {data['engagement']['tasks']}   experiences: {data['engagement']['experiences']}   lessons: {data['lessons']}")
+    print(f"  project reflexes: {data['project_reflexes']['visible']} "
+          f"({data['project_reflexes']['learned']} learned / {data['project_reflexes']['proven']} proven)")
     print(f"  first session captured: {data['activation']['first_session_captured']}   "
           f"seconds to first task: {data['activation']['seconds_to_first_task']}")
     print(f"  tasks that used prior experience: {reuse['benefit_rate']}")
