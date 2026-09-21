@@ -44,7 +44,8 @@ def test_similar_task_receives_execution_context_with_lessons_and_files(engine, 
     context = engine.prompt("codex", "s2", "Fix login bug: expired refresh tokens are still accepted")
     assert context is not None
     assert "similar past task" in context and "src/auth.py" in context
-    assert "expired token accepted" in context or "test-first" in context
+    assert "expired token accepted" in context
+    assert "test-first" not in context
     execution = engine.store.latest("codex", "s2")
     stored = engine.store.list("Context", "task_id", execution.task_id)[0]
     assert stored.injected and stored.experience_ids, "cross-agent, cross-session memory was used"
@@ -117,7 +118,7 @@ def test_tool_calls_without_prompt_are_captured_then_described_via_mcp(engine, c
     execution = engine.store.latest("cursor", "c1")
     assert engine.store.get(execution.task_id).description == UNTRACKED
     same, context = engine.context_for("Fix the login redirect loop after logout")
-    assert same.id == execution.id and "Suggested path" in context.text
+    assert same.id == execution.id and "Working approach:" in context.text
     assert engine.store.get(execution.task_id).task_class == "debug"
 
 
