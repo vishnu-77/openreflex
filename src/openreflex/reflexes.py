@@ -308,9 +308,9 @@ def match_reflex(store: Store, description: str, task_mode: str, task_class: str
             continue
 
         score = (
-            0.50 * semantic
+            0.45 * semantic
             + 0.25 * family_score
-            + 0.15 * locality
+            + 0.20 * locality
             + 0.05 * class_score
             + 0.05 * evidence
         )
