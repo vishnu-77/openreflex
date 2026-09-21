@@ -8,7 +8,7 @@
     {
       "name": "openreflex",
       "source": "./plugins/openreflex",
-      "description": "Muscle memory for AI coding agents: learns from every task, advises the next one, and flags failure loops live."
+      "description": "Project muscle memory for AI coding agents: learns reusable execution patterns across a codebase."
     }
   ]
 }
