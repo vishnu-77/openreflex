@@ -1,5 +1,11 @@
-from openreflex.models import ProjectReflex
+import sqlite3
+
+from openreflex.models import Experience, Outcome, ProjectReflex, ToolCall
+from openreflex.reflexes import compile_for_experience, match_reflex
+from openreflex.routing import embed
 from openreflex.store import SCHEMA_VERSION, Store
+
+from .conftest import run_task
 
 
 def test_project_reflex_round_trip_and_schema_migration(tmp_path):
@@ -42,7 +48,6 @@ def test_existing_v2_database_gets_reflex_table_without_rewriting_nodes(tmp_path
     store.close()
 
     # Simulate an existing 0.5.x database that has not yet run the v3 migration.
-    import sqlite3
     db = sqlite3.connect(path)
     db.execute("DROP TABLE project_reflexes")
     db.execute("PRAGMA user_version = 2")
@@ -58,11 +63,6 @@ def test_existing_v2_database_gets_reflex_table_without_rewriting_nodes(tmp_path
         ).fetchone() is not None
     finally:
         upgraded.close()
-
-
-from openreflex.models import Experience, Outcome, ToolCall
-from openreflex.reflexes import compile_for_experience, match_reflex
-from openreflex.routing import embed
 
 
 def _experience(index: int, *, verified: bool = True) -> tuple[Experience, Outcome, list[ToolCall]]:
@@ -176,3 +176,39 @@ def test_matching_reflex_is_project_specific_and_similarity_gated(tmp_path):
         assert match_reflex(store, "Rewrite the authentication token parser", "build", "debug") is None
     finally:
         store.close()
+
+
+def test_engine_learns_then_reuses_project_reflex(engine, clock):
+    script = [
+        ("Read", {"file_path": "charts/app/values.yaml"}, True, None),
+        ("Edit", {"file_path": "charts/app/values.yaml"}, True, None),
+        ("Bash", {"command": "helm lint charts/app"}, True, None),
+    ]
+    for index in range(2):
+        outcome, _ = run_task(
+            engine, clock, f"helm-{index}",
+            f"Update Helm values for the worker deployment variant {index}",
+            script,
+        )
+        assert outcome.status == "success"
+        clock.advance(20)
+
+    learned = engine.store.list_reflexes(states=("learned", "proven"))
+    assert len(learned) == 1
+    assert learned[0].name == "Helm values change"
+
+    execution, context = engine.context_for(
+        "Update Helm values for the worker deployment resources",
+        session="helm-next",
+    )
+    assert execution.reflex_id == learned[0].id
+    assert context.reflex_id == learned[0].id
+    assert "Reflex: Helm values change" in context.text
+    assert "Procedure:" in context.text
+    assert "inspect-first" not in context.text
+    assert "test-first" not in context.text
+
+    recap = engine.take_notice("mcp", "helm-next")
+    assert recap is not None
+    assert "Helm values change" in recap
+    assert "inspect-first" not in recap
