@@ -386,6 +386,10 @@ def _reflexes(argv: list[str]) -> int:
     from .reflexes import visible_reflexes
     from .store import Store, database_path
 
+    if argv and argv[0] in {"-h", "--help"}:
+        print("usage: openreflex reflexes [--project PATH]\n")
+        print("Show learned and proven project-specific Reflex procedures.")
+        return 0
     project = project_root(_project_arg(argv))
     store = Store(database_path(project))
     try:
