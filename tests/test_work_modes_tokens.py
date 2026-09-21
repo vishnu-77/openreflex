@@ -95,7 +95,7 @@ def test_zero_tool_investigation_does_not_fake_recommended_path(project):
         assert "source-first" not in recap
         assert "0.0k tokens" not in recap
         assert "regret" not in recap.lower()
-        assert "Path check · better option: none proven" in recap
+        assert "Path check · no better option proven" in recap
     finally:
         engine.close()
 
