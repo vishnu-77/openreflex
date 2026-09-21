@@ -19,11 +19,13 @@ from .mcp_contracts import (
     SearchExperienceResult,
 )
 from .project import approval, approve, project_root
+from .reflexes import visible_reflexes
 from .routing import Limits
 
 INSTRUCTIONS = """OpenReflex is local execution memory for this project. Hooks capture work automatically.
 Use get_execution_context before a substantial task if no [OpenReflex] context was already provided.
-Call choose_path if you deliberately take a different approach than suggested, check_progress when unsure
+Follow a learned project Reflex when one is supplied. Call choose_path only when you deliberately depart from the
+internal working approach, and check_progress when unsure
 whether more work is paying off, and record_outcome once the result is confirmed. Research and reasoning tasks are
 first-class: verification can be tests/builds, cross-checked evidence, or explicit user confirmation.
 Use explain_decision or get_execution_trace when the user asks why OpenReflex recommended something.
