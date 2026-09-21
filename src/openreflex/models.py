@@ -90,6 +90,7 @@ class Context(Model):
     experience_ids: list[str] = field(default_factory=list)
     lesson_ids: list[str] = field(default_factory=list)
     injected: bool = False
+    reflex_id: str | None = None
     embedding_version: str = "hash-lexical-v1"
 
 
@@ -137,6 +138,7 @@ class Execution(Model):
     decision_history: list[dict] = field(default_factory=list)
     visible_decisions: int = 0
     waiting_for_future_work: bool = False
+    reflex_id: str | None = None
 
 
 @dataclass(kw_only=True)
