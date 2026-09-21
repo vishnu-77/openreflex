@@ -16,6 +16,7 @@ def test_project_reflex_round_trip_and_schema_migration(tmp_path):
         reflex = ProjectReflex(
             id="reflex-helm-values",
             name="Helm values change",
+            family="helm-values",
             task_mode="build",
             task_class="debug",
             state="learned",
@@ -28,6 +29,7 @@ def test_project_reflex_round_trip_and_schema_migration(tmp_path):
             confidence=0.72,
             embedding=[1.0, 0.0],
             file_patterns=["values.yaml"],
+            module_patterns=["charts/app"],
             created_at=1.0,
             updated_at=2.0,
         )
@@ -130,6 +132,8 @@ def test_compiler_promotes_repeated_project_procedure(tmp_path):
         assert latest.verified_count == 4
         assert latest.seed_strategy == "inspect-first"
         assert latest.file_patterns == ["charts/app/values.yaml"]
+        assert latest.module_patterns == ["charts/app"]
+        assert latest.family == "helm-values"
         assert latest.procedure == [
             "Inspect charts/app/values.yaml",
             "Update charts/app/values.yaml",
@@ -242,5 +246,104 @@ def test_contradictory_failures_make_a_learned_reflex_stale(tmp_path):
         assert latest.success_count == 2
         assert latest.support_count == 4
         assert match_reflex(store, "Update Helm values for worker resources", "build", "build") is None
+    finally:
+        store.close()
+
+
+
+def _domain_experience(index: int, description: str, task_class: str, file_path: str):
+    execution = f"domain-exec-{index}"
+    outcome = Outcome(
+        id=f"domain-out-{index}", execution_id=execution, status="success", evidence="verified",
+        verified=True, elapsed_seconds=30, tool_calls=2, failures=0, output_tokens_estimate=100,
+        chosen_strategy="inspect-first",
+    )
+    experience = Experience(
+        id=f"domain-exp-{index}", task_id=f"domain-task-{index}", execution_id=execution,
+        outcome_id=outcome.id, agent="claude-code", description=description, task_class=task_class,
+        strategy="inspect-first", status="success", elapsed_seconds=30, tool_calls=2,
+        output_tokens_estimate=100, files=[file_path], embedding=embed(description),
+        created_at=float(index), task_mode="build",
+    )
+    return experience, outcome, [
+        ToolCall(id=f"domain-read-{index}", execution_id=execution, external_id=f"dr-{index}",
+                 name="Read", category="read", fingerprint=f"dr{index}", files=[file_path],
+                 started_at=float(index), ended_at=float(index) + 1, status="success"),
+        ToolCall(id=f"domain-edit-{index}", execution_id=execution, external_id=f"de-{index}",
+                 name="Edit", category="edit", fingerprint=f"de{index}", files=[file_path],
+                 started_at=float(index) + 2, ended_at=float(index) + 3, status="success"),
+    ]
+
+
+def test_project_family_accumulates_evidence_across_different_task_classes(tmp_path):
+    store = Store(tmp_path / "cross-class.sqlite3")
+    try:
+        cases = [
+            ("Fix login token validation", "debug", "src/auth/token.py"),
+            ("Add OAuth callback support", "build", "src/auth/oauth.py"),
+        ]
+        latest = None
+        for index, (description, task_class, file_path) in enumerate(cases, start=1):
+            experience, outcome, calls = _domain_experience(index, description, task_class, file_path)
+            store.put(outcome)
+            store.put(experience)
+            for call in calls:
+                store.put(call)
+            latest = compile_for_experience(store, experience, now=100 + index)
+
+        assert latest is not None
+        assert latest.family == "authentication"
+        assert latest.state == "learned"
+        assert latest.support_count == 2
+        assert "src/auth" in latest.module_patterns
+        assert len(store.list_reflexes(states=("learned", "proven"))) == 1
+    finally:
+        store.close()
+
+
+def test_novel_task_reuses_project_family_without_repeating_a_previous_task(tmp_path):
+    store = Store(tmp_path / "novel-task.sqlite3")
+    try:
+        cases = [
+            ("Fix login token validation", "debug", "src/auth/token.py"),
+            ("Add OAuth callback support", "build", "src/auth/oauth.py"),
+        ]
+        for index, (description, task_class, file_path) in enumerate(cases, start=1):
+            experience, outcome, calls = _domain_experience(index, description, task_class, file_path)
+            store.put(outcome)
+            store.put(experience)
+            for call in calls:
+                store.put(call)
+            compile_for_experience(store, experience, now=200 + index)
+
+        matched = match_reflex(store, "Rotate sessions after privilege escalation", "build", "refactor")
+        assert matched is not None
+        reflex, score = matched
+        assert reflex.family == "authentication"
+        assert reflex.name == "Authentication change"
+        assert score >= 0.28
+    finally:
+        store.close()
+
+
+def test_module_locality_can_resolve_a_new_task_when_wording_differs(tmp_path):
+    store = Store(tmp_path / "module-locality.sqlite3")
+    try:
+        cases = [
+            ("Correct decimal rounding", "build", "src/payments/card.py"),
+            ("Handle negative settlement values", "build", "src/payments/refund.py"),
+        ]
+        for index, (description, task_class, file_path) in enumerate(cases, start=1):
+            experience, outcome, calls = _domain_experience(index, description, task_class, file_path)
+            store.put(outcome)
+            store.put(experience)
+            for call in calls:
+                store.put(call)
+            compile_for_experience(store, experience, now=300 + index)
+
+        matched = match_reflex(store, "Change src/payments/settlement.py precision handling", "build", "build")
+        assert matched is not None
+        reflex, _ = matched
+        assert "src/payments" in reflex.module_patterns
     finally:
         store.close()
