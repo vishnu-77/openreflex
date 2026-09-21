@@ -81,13 +81,13 @@ def test_new_prompt_resets_previous_task_activity_and_calls(project):
     assert state["task"] == {"active": True, "mode": "build"}
 
 
-def test_prompt_state_captures_project_reflex_without_exposing_backend_paths(project):
+def test_prompt_state_captures_current_project_reflex_format_without_exposing_backend_paths(project):
     output = json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": "[OpenReflex] Reflex: Helm values change · BUILD | learned · 2 successful project run(s).\n"
+            "additionalContext": "[OpenReflex] Reflex: Helm values change · learned.\n"
                                   "Procedure: Inspect values.yaml -> Update values.yaml -> Run validation\n"
-                                  "Evidence: 2 comparable project run(s), 1 explicitly verified.\n",
+                                  "Evidence: 2 successful / 1 verified project run(s).\n",
         }
     })
 
@@ -95,9 +95,11 @@ def test_prompt_state_captures_project_reflex_without_exposing_backend_paths(pro
     state = read_state(project)
 
     assert state["task"]["reflex"] == "Helm values change"
+    assert state["task"]["reflex_state"] == "learned"
     assert state["task"]["mode"] == "build"
     text = dashboard(project, colour=False)
     assert "name             Helm values change" in text
+    assert "state            learned" in text
     assert "suggested path" not in text
     assert "alternatives" not in text
 
