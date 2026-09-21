@@ -1,8 +1,9 @@
 name: Auto Release
 
-# A successful CI run on main is the release gate. If the version in pyproject.toml has
-# no matching vX.Y.Z tag yet, this workflow creates the tag and publishes a GitHub Release.
-# The Release workflow then performs Trusted Publishing to PyPI and MCP Registry publication.
+# A successful CI run on main is the only automatic release trigger.
+# This workflow does not create a tag first: it calls the reusable publisher with the exact
+# CI-tested SHA. The publisher creates the GitHub Release/tag only after PyPI verification
+# and MCP Registry publication succeed.
 on:
   workflow_run:
     workflows: ["CI"]
@@ -10,17 +11,21 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
+  id-token: write
 
 concurrency:
   group: openreflex-auto-release
   cancel-in-progress: false
 
 jobs:
-  release:
-    # Temporarily gated while publication is invoked directly as a reusable workflow.
-    if: false && github.event.workflow_run.conclusion == 'success'
+  prepare:
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.release.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - name: Check out the exact CI-tested commit
         uses: actions/checkout@v4
@@ -65,41 +70,28 @@ jobs:
           print(f"tag=v{version}")
           PY
 
-      - id: tag
-        name: Check whether this version is already released
-        shell: bash
-        env:
-          TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "$TAG already exists; no release required."
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Create version tag
-        if: steps.tag.outputs.exists != 'true'
-        shell: bash
-        env:
-          TAG: ${{ steps.version.outputs.tag }}
-          VERSION: ${{ steps.version.outputs.version }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" "$SHA" -m "OpenReflex $VERSION"
-          git push origin "$TAG"
-
-      - name: Publish GitHub Release
-        if: steps.tag.outputs.exists != 'true'
+      - id: release
+        name: Check whether this version already has a GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
-          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          gh release create "$TAG" \
-            --verify-tag \
-            --title "OpenReflex $VERSION" \
-            --generate-notes
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "$TAG is already released; no publication required."
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      target: pypi
+      ref: ${{ github.event.workflow_run.head_sha }}
+      create_github_release: true
+    permissions:
+      contents: write
+      id-token: write
