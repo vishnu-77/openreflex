@@ -101,6 +101,20 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
                      if e.budget_tool_calls and e.id in outcomes_by_execution]
     with_prior_profile, without_prior_profile = profile(with_prior), profile(without_prior)
     reuse_rate = round(len(reused) / len(substantial), 3) if substantial else None
+
+    substantial_ids = {task.id for task in substantial}
+    substantial_executions = [execution for execution in executions if execution.task_id in substantial_ids]
+    context_values = [max(0, int(execution.context_tokens or 0)) for execution in substantial_executions]
+    context_injected = [value for value in context_values if value > 0]
+    observed_model_tokens = sum(experience.model_tokens for experience in experiences if experience.model_tokens > 0)
+    diagnostic_mcp_calls = int(store.get_meta("diagnostic_mcp_calls", "0") or 0)
+    diagnostic_mcp_tokens = int(store.get_meta("diagnostic_mcp_tokens_estimate", "0") or 0)
+    estimated_context_tokens = sum(context_values)
+    estimated_context_tax = (
+        round(estimated_context_tokens / observed_model_tokens, 4)
+        if observed_model_tokens > 0 else None
+    )
+
     return {
         "project": str(engine.project),
         "activation": {
@@ -115,6 +129,19 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
         "experience_reuse": {"reuse_rate": reuse_rate,
                              "benefit_rate": reuse_rate,
                              "tasks_with_prior_experience": len(reused)},
+        "openreflex_overhead": {
+            "estimated_context_tokens": estimated_context_tokens,
+            "context_injected_tasks": len(context_injected),
+            "zero_injection_tasks": max(0, len(substantial) - len(context_injected)),
+            "average_injected_context_tokens": _avg(context_injected),
+            "max_injected_context_tokens": max(context_injected, default=0),
+            "diagnostic_mcp_calls": diagnostic_mcp_calls,
+            "diagnostic_mcp_tokens_estimate": diagnostic_mcp_tokens,
+            "observed_model_tokens": observed_model_tokens,
+            "estimated_context_tax": estimated_context_tax,
+            "context_token_method": "estimated from injected characters / configured chars_per_token",
+            "diagnostic_token_method": "estimated from MCP result characters / configured chars_per_token",
+        },
         "outcomes": {"known": len(known), "verified": sum(1 for o in store.list("Outcome", limit=100_000) if o.verified),
                      "success_rate": _avg(x.status == "success" for x in known)},
         "efficiency_observational": {
