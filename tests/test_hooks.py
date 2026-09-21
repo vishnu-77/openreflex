@@ -217,9 +217,11 @@ def test_claude_hooks_reuse_runner_project_area_across_implementation_plan_and_f
     _hook_success(
         "claude-code", base, "tf-edit", "Edit", {"file_path": "terraform/config/runner.tf"}, factory
     )
+    clock.advance(2)
     _hook_success(
         "claude-code", base, "helm-edit", "Edit", {"file_path": "helm/bitbucket-runner/Chart.yaml"}, factory
     )
+    clock.advance(2)
     _hook_success(
         "claude-code", base, "helm-lint", "Bash", {"command": "helm lint helm/bitbucket-runner"}, factory
     )
