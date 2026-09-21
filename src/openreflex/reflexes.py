@@ -145,11 +145,14 @@ def _procedure(store: Store, group: list[Experience]) -> list[str]:
     return steps[:8]
 
 
-def _state(successes: int, verified: int) -> str:
-    if successes >= 4 and verified >= 2:
+def _state(known: int, successes: int, verified: int, previous: str | None = None) -> str:
+    rate = successes / known if known else 0.0
+    if successes >= 4 and verified >= 2 and rate >= 0.80:
         return "proven"
-    if successes >= 2:
+    if successes >= 2 and rate >= 0.67:
         return "learned"
+    if previous in {"learned", "proven"} and known >= 3:
+        return "stale"
     return "candidate"
 
 
@@ -182,9 +185,12 @@ def compile_for_experience(store: Store, experience: Experience, now: float) -> 
     key = f"{experience.task_mode}|{experience.task_class}|{family}"
     reflex_id = "reflex-" + hashlib.sha1(key.encode()).hexdigest()[:16]
     try:
-        created_at = store.get_reflex(reflex_id).created_at
+        previous = store.get_reflex(reflex_id)
+        created_at = previous.created_at
+        previous_state = previous.state
     except ValueError:
         created_at = now
+        previous_state = None
 
     seed_counts = Counter(item.strategy for item in successes if item.strategy)
     seed_strategy = seed_counts.most_common(1)[0][0] if seed_counts else None
@@ -194,7 +200,7 @@ def compile_for_experience(store: Store, experience: Experience, now: float) -> 
         name=_name(family, experience),
         task_mode=experience.task_mode,
         task_class=experience.task_class,
-        state=_state(len(successes), verified),
+        state=_state(len(group), len(successes), verified, previous_state),
         seed_strategy=seed_strategy,
         procedure=_procedure(store, successes or group or [experience]),
         evidence_ids=[item.id for item in group[-20:]],
