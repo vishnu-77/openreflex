@@ -198,15 +198,16 @@ def test_engine_learns_then_reuses_project_reflex(engine, clock):
         clock.advance(20)
 
     learned = engine.store.list_reflexes(states=("learned", "proven"))
-    assert len(learned) == 1
-    assert learned[0].name == "Helm values change"
+    helm = next(reflex for reflex in learned if reflex.family == "helm-values")
+    assert helm.name == "Helm values change"
+    assert {reflex.family for reflex in learned} >= {"helm-values", "deployment"}
 
     execution, context = engine.context_for(
         "Update Helm values for the worker deployment resources",
         session="helm-next",
     )
-    assert execution.reflex_id == learned[0].id
-    assert context.reflex_id == learned[0].id
+    assert execution.reflex_id == helm.id
+    assert context.reflex_id == helm.id
     assert "Reflex: Helm values change" in context.text
     assert "Procedure:" in context.text
     assert "inspect-first" not in context.text
