@@ -153,6 +153,7 @@ def _merge_notice(output: str, notice: str) -> str:
 def _prompt_state(project: Path, output: str, project_context: str | None) -> None:
     experiences = 0
     route = None
+    reflex_name = None
     previous_task = read_state(project).get("task") or {}
     mode = str(previous_task.get("mode") or "build")
     data = _output_dict(output)
@@ -161,6 +162,10 @@ def _prompt_state(project: Path, output: str, project_context: str | None) -> No
     match = re.search(r"(\d+) similar past task", text)
     if match:
         experiences = int(match.group(1))
+    match = re.search(r"\[OpenReflex\]\s+Reflex:\s*([^·|\n]+)\s*·\s*(BUILD|INVESTIGATE|THINK)", text, re.I)
+    if match:
+        reflex_name = match.group(1).strip()
+        mode = match.group(2).lower()
     match = re.search(r"Suggested path:\s*([a-z0-9_-]+)", text, re.I)
     if match:
         route = match.group(1)
@@ -172,12 +177,14 @@ def _prompt_state(project: Path, output: str, project_context: str | None) -> No
     if match:
         mode = match.group(1).lower()
     task = {"active": True, "mode": mode}
+    if reflex_name:
+        task["reflex"] = reflex_name
     if route:
         task["route"] = route
     if alternatives:
         task["alternatives"] = alternatives
     # A new prompt is a new task surface. Do not carry the previous task's call count/activity into it.
-    phase = "recall" if experiences or project_context else ("investigate" if mode == "investigate" else
+    phase = "recall" if experiences or reflex_name or project_context else ("investigate" if mode == "investigate" else
                                                               "think" if mode == "think" else "watch")
     update_state(project, phase, recall={"experiences": experiences}, task=task,
                  execution={"calls": 0}, activity={})
