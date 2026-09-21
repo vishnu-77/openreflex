@@ -4,6 +4,24 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.8.0 (2026-09-21)
+
+- Let one execution reinforce multiple project scopes instead of forcing it into a single family. A runner change can
+  now contribute separately to Terraform, Helm chart/template and a shared project-area Reflex.
+- Add stable project-area scopes derived from meaningful compound paths, so
+  `helm/bitbucket-runner/...` and `docs/bitbucket-runner-plan.md` reinforce the same
+  `Bitbucket runner work` memory without merging their underlying procedures.
+- Make project-area Reflexes work-mode agnostic: BUILD implementation, THINK/planning, INVESTIGATE and documentation
+  work can reinforce the same project area while technology/procedure Reflexes remain mode-specific.
+- Carry project-area scope hints across explicit contextual follow-ups in the same agent session, allowing prompts
+  such as "Where is the implementation plan committed?" to reuse the project area learned by the immediately
+  preceding task without requiring the user to repeat the component name.
+- Fix the TUI/state parser for the current `Reflex: <name> · learned/proven.` context format and display Reflex
+  maturity in CURRENT REFLEX.
+- Add regression coverage using the real GCP Bitbucket runner → implementation plan → follow-up lifecycle, including
+  an assertion that no backend strategy name such as `test-first` or `inspect-first` leaks into learned Reflex context.
+
+
 ## 0.7.0 (2026-09-21)
 
 - Make OpenReflex ambient by default: normal operation is lifecycle hooks only, with no model-invocable OpenReflex
