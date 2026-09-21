@@ -1,6 +1,6 @@
 {
   "name": "openreflex",
-  "description": "OpenReflex: local execution memory for AI coding agents.",
+  "description": "OpenReflex: ambient project muscle memory for AI coding agents.",
   "owner": {
     "name": "vishnu-77"
   },
@@ -8,7 +8,7 @@
     {
       "name": "openreflex",
       "source": "./plugins/openreflex",
-      "description": "Project muscle memory for AI coding agents: learns reusable execution patterns across a codebase."
+      "description": "Ambient project muscle memory: lifecycle hooks learn and reuse project Reflexes automatically."
     }
   ]
 }
