@@ -397,7 +397,7 @@ def cmd_benchmark(args) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="openreflex", description="Ambient execution intelligence for coding agents.",
-        epilog="Also available: tui, memory, tokens, statusline (run `openreflex <name> --help` for details).",
+        epilog="Also available: tui, memory, reflexes, tokens, statusline (run `openreflex <name> --help` for details).",
     )
     parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)
