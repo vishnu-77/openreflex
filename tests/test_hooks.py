@@ -194,3 +194,75 @@ def test_why_and_trace_survive_later_activity_without_a_prompt(project, factory,
     engine = factory(project)
     assert "No decision snapshot" not in engine.why() and "Recommendation" in engine.why()
     assert "START" in engine.trace()
+
+
+
+def _hook_success(agent, base, tool_id, tool, arguments, factory, response=None):
+    payload = {**base, "tool_name": tool, "tool_input": arguments, "tool_use_id": tool_id}
+    call(agent, "PreToolUse", payload, factory)
+    return call(agent, "PostToolUse", {**payload, "tool_response": response or {"stdout": "ok"}}, factory)
+
+
+def test_claude_hooks_reuse_runner_project_area_across_implementation_plan_and_followup(project, factory, clock):
+    """Regression for the real runner transcript: hooks alone must learn and surface the project area."""
+    approve(project)
+    base = {"session_id": "runner", "cwd": str(project)}
+
+    call(
+        "claude-code",
+        "UserPromptSubmit",
+        {**base, "prompt": "Add GCP-native Bitbucket Kubernetes runner for quest-dev"},
+        factory,
+    )
+    _hook_success(
+        "claude-code", base, "tf-edit", "Edit", {"file_path": "terraform/config/runner.tf"}, factory
+    )
+    clock.advance(2)
+    _hook_success(
+        "claude-code", base, "helm-edit", "Edit", {"file_path": "helm/bitbucket-runner/Chart.yaml"}, factory
+    )
+    clock.advance(2)
+    _hook_success(
+        "claude-code", base, "helm-lint", "Bash", {"command": "helm lint helm/bitbucket-runner"}, factory
+    )
+    first_stop = json.loads(call("claude-code", "Stop", base, factory))
+    assert "COMPLETE" in first_stop["systemMessage"]
+
+    clock.advance(20)
+    call(
+        "claude-code",
+        "UserPromptSubmit",
+        {
+            **base,
+            "prompt": "No I want the complete implementation plan in very simple bullet points to be created and committed in a branch",
+        },
+        factory,
+    )
+    _hook_success(
+        "claude-code",
+        base,
+        "plan-edit",
+        "Write",
+        {"file_path": "docs/bitbucket-runner-plan.md"},
+        factory,
+    )
+    second_stop = json.loads(call(
+        "claude-code",
+        "Stop",
+        {**base, "last_assistant_message": "Created the complete implementation plan and committed it on the branch."},
+        factory,
+    ))
+    assert "COMPLETE" in second_stop["systemMessage"]
+
+    clock.advance(20)
+    third = json.loads(call(
+        "claude-code",
+        "UserPromptSubmit",
+        {**base, "prompt": "Where is the implementation plan committed?"},
+        factory,
+    ))
+    context = third["hookSpecificOutput"]["additionalContext"]
+    assert "Reflex: Bitbucket runner work" in context
+    assert "Project-area memory:" in context
+    assert "inspect-first" not in context
+    assert "test-first" not in context

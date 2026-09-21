@@ -1,7 +1,7 @@
 import sqlite3
 
 from openreflex.models import Experience, Outcome, ProjectReflex, ToolCall
-from openreflex.reflexes import compile_for_experience, match_reflex
+from openreflex.reflexes import compile_for_experience, families_for_experience, match_reflex
 from openreflex.routing import embed
 from openreflex.store import SCHEMA_VERSION, Store
 
@@ -198,15 +198,16 @@ def test_engine_learns_then_reuses_project_reflex(engine, clock):
         clock.advance(20)
 
     learned = engine.store.list_reflexes(states=("learned", "proven"))
-    assert len(learned) == 1
-    assert learned[0].name == "Helm values change"
+    helm = next(reflex for reflex in learned if reflex.family == "helm-values")
+    assert helm.name == "Helm values change"
+    assert {reflex.family for reflex in learned} >= {"helm-values", "deployment"}
 
     execution, context = engine.context_for(
         "Update Helm values for the worker deployment resources",
         session="helm-next",
     )
-    assert execution.reflex_id == learned[0].id
-    assert context.reflex_id == learned[0].id
+    assert execution.reflex_id == helm.id
+    assert context.reflex_id == helm.id
     assert "Reflex: Helm values change" in context.text
     assert "Procedure:" in context.text
     assert "inspect-first" not in context.text
@@ -349,3 +350,177 @@ def test_module_locality_can_resolve_a_new_task_when_wording_differs(tmp_path):
         assert "src/payments" in reflex.module_patterns
     finally:
         store.close()
+
+
+
+def _runner_experience(index: int, description: str, files: list[str], *, task_mode: str = "build",
+                       task_class: str = "build"):
+    execution = f"runner-exec-{index}"
+    outcome = Outcome(
+        id=f"runner-out-{index}", execution_id=execution, status="success", evidence="verified",
+        verified=True, elapsed_seconds=45, tool_calls=2, failures=0, output_tokens_estimate=120,
+        chosen_strategy="inspect-first" if task_mode == "build" else "reason-first",
+    )
+    experience = Experience(
+        id=f"runner-exp-{index}", task_id=f"runner-task-{index}", execution_id=execution,
+        outcome_id=outcome.id, agent="claude-code", description=description, task_class=task_class,
+        strategy=outcome.chosen_strategy, status="success", elapsed_seconds=45, tool_calls=2,
+        output_tokens_estimate=120, files=files, embedding=embed(description), created_at=float(index),
+        task_mode=task_mode,
+    )
+    calls = [
+        ToolCall(id=f"runner-read-{index}", execution_id=execution, external_id=f"rr-{index}",
+                 name="Read", category="read", fingerprint=f"rr{index}", files=files[:1],
+                 started_at=float(index), ended_at=float(index) + 1, status="success"),
+        ToolCall(id=f"runner-edit-{index}", execution_id=execution, external_id=f"re-{index}",
+                 name="Edit", category="edit", fingerprint=f"re{index}", files=files[-1:],
+                 started_at=float(index) + 2, ended_at=float(index) + 3, status="success"),
+    ]
+    return experience, outcome, calls
+
+
+def test_one_execution_reinforces_terraform_helm_and_project_area_scopes(tmp_path):
+    store = Store(tmp_path / "runner-scopes.sqlite3")
+    try:
+        experience, outcome, calls = _runner_experience(
+            1,
+            "Add GCP-native Bitbucket Kubernetes runner for quest-dev",
+            [
+                "terraform/config/runner.tf",
+                "terraform/config/variables.tf",
+                "helm/bitbucket-runner/Chart.yaml",
+                "helm/bitbucket-runner/templates/deployment.yaml",
+            ],
+        )
+        store.put(outcome)
+        store.put(experience)
+        for call in calls:
+            store.put(call)
+
+        compile_for_experience(store, experience, now=100)
+        families = {reflex.family for reflex in store.list_reflexes(limit=100)}
+
+        assert {"terraform", "helm-chart", "helm-template", "area:bitbucket-runner"} <= families
+        assert "area:bitbucket-runner" in families_for_experience(experience)
+    finally:
+        store.close()
+
+
+def test_runner_implementation_and_plan_promote_shared_project_area_across_modes(tmp_path):
+    store = Store(tmp_path / "runner-area.sqlite3")
+    try:
+        implementation, outcome1, calls1 = _runner_experience(
+            1,
+            "Add GCP-native Bitbucket Kubernetes runner for quest-dev",
+            [
+                "terraform/config/runner.tf",
+                "terraform/config/variables.tf",
+                "helm/bitbucket-runner/Chart.yaml",
+                "helm/bitbucket-runner/templates/deployment.yaml",
+            ],
+            task_mode="build",
+            task_class="build",
+        )
+        plan, outcome2, calls2 = _runner_experience(
+            2,
+            "Create the complete implementation plan in simple bullet points and commit it in the branch",
+            ["docs/bitbucket-runner-plan.md"],
+            task_mode="think",
+            task_class="think",
+        )
+        for experience, outcome, calls in (
+            (implementation, outcome1, calls1),
+            (plan, outcome2, calls2),
+        ):
+            store.put(outcome)
+            store.put(experience)
+            for call in calls:
+                store.put(call)
+            compile_for_experience(store, experience, now=100 + experience.created_at)
+
+        area = next(
+            reflex for reflex in store.list_reflexes(states=("learned", "proven"), limit=100)
+            if reflex.family == "area:bitbucket-runner"
+        )
+        assert area.name == "Bitbucket runner work"
+        assert area.task_mode == "project"
+        assert area.support_count == 2
+        assert area.success_count == 2
+
+        matched = match_reflex(
+            store,
+            "Where is the implementation plan committed?",
+            "build",
+            "build",
+            family_hints={"area:bitbucket-runner"},
+        )
+        assert matched is not None
+        assert matched[0].id == area.id
+    finally:
+        store.close()
+
+
+def test_contextual_followup_reuses_shared_runner_area_without_mcp(engine, clock):
+    first_session = "runner-session"
+    implementation_script = [
+        ("Read", {"file_path": "terraform/config/runner.tf"}, True, None),
+        ("Edit", {"file_path": "terraform/config/runner.tf"}, True, None),
+        ("Edit", {"file_path": "helm/bitbucket-runner/Chart.yaml"}, True, None),
+        ("Bash", {"command": "helm lint helm/bitbucket-runner"}, True, None),
+    ]
+    outcome, _ = run_task(
+        engine,
+        clock,
+        first_session,
+        "Add GCP-native Bitbucket Kubernetes runner for quest-dev",
+        implementation_script,
+    )
+    assert outcome.status == "success"
+
+    clock.advance(20)
+    engine.prompt(
+        "claude-code",
+        first_session,
+        "No I want the complete implementation plan in very simple bullet points to be created and committed in a branch",
+    )
+    clock.advance(5)
+    engine.tool_start(
+        "claude-code",
+        first_session,
+        "plan-edit",
+        "Write",
+        {"file_path": "docs/bitbucket-runner-plan.md"},
+    )
+    clock.advance(2)
+    engine.tool_end(
+        "claude-code",
+        first_session,
+        "plan-edit",
+        "Write",
+        {"file_path": "docs/bitbucket-runner-plan.md"},
+        True,
+        None,
+        400,
+    )
+    clock.advance(2)
+    plan_outcome = engine.stop("claude-code", first_session, assistant_completed=True)
+    assert plan_outcome is not None and plan_outcome.status == "success"
+
+    learned = [
+        reflex for reflex in engine.store.list_reflexes(states=("learned", "proven"), limit=100)
+        if reflex.family == "area:bitbucket-runner"
+    ]
+    assert len(learned) == 1
+
+    clock.advance(20)
+    context = engine.prompt(
+        "claude-code",
+        first_session,
+        "Where is the implementation plan committed?",
+    )
+    assert context is not None
+    assert "Reflex: Bitbucket runner work" in context
+    assert "Project-area memory:" in context
+    assert "Procedure:" not in context
+    assert "test-first" not in context
+    assert "inspect-first" not in context

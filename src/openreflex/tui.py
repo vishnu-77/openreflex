@@ -101,7 +101,10 @@ def statusline(project: Path, *, force_colour: bool = True) -> str:
         recall = state.get("recall") or {}
         task = state.get("task") or {}
         if task.get("reflex"):
-            details.append(str(task["reflex"]))
+            label = str(task["reflex"])
+            if task.get("reflex_state"):
+                label += f" ({task['reflex_state']})"
+            details.append(label)
         if recall.get("experiences") is not None:
             details.append(f"{recall.get('experiences', 0)} related")
     elif phase in {"watch", "investigate", "think"}:
@@ -220,6 +223,7 @@ def dashboard(project: Path, *, colour: bool | None = None) -> str:
               f"  lessons          {state.get('lessons', 0)}",
               "", "CURRENT REFLEX",
               f"  name             {task.get('reflex') or 'learning project procedure'}",
+              f"  state            {task.get('reflex_state') or '-'}",
               f"  phase            {phase.upper()}",
               f"  mode             {str(task.get('mode') or 'build').upper()}",
               f"  recall           {recall.get('experiences', 0)} related",

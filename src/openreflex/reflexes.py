@@ -45,37 +45,112 @@ def _family_hints(text: str) -> set[str]:
     return {family for family, terms in families.items() if words & terms}
 
 
-def _family(experience: Experience) -> str:
+def _query_hints(text: str) -> set[str]:
+    """Families explicitly named by a task description, including technology-specific phrases."""
+    words = _words(text)
+    hints = _family_hints(text)
+    if "terraform" in words:
+        hints.add("terraform")
+    if "helm" in words:
+        if words & {"value", "values"}:
+            hints.add("helm-values")
+        if words & {"chart", "charts"}:
+            hints.add("helm-chart")
+        if words & {"template", "templates"}:
+            hints.add("helm-template")
+    return hints
+
+
+def _scope_specificity(family: str) -> int:
+    """Deterministic tie-break: concrete technology/file scopes beat broad semantic scopes."""
+    if family in {"helm-values", "helm-chart", "helm-template", "terraform", "ci", "database", "dependencies", "tests"}:
+        return 3
+    if family.startswith("area:"):
+        return 2
+    return 1
+
+
+_GENERIC_AREA_TOKENS = {
+    "src", "source", "docs", "doc", "helm", "terraform", "config", "configuration", "template", "templates",
+    "chart", "charts", "values", "variable", "variables", "deployment", "deploy", "implementation", "plan",
+    "plans", "test", "tests", "spec", "specs", "module", "modules", "file", "files",
+}
+
+
+def _area_scopes(paths: list[str]) -> set[str]:
+    """Infer stable project-area scopes from meaningful compound path segments.
+
+    This intentionally avoids single generic words. A path such as
+    helm/bitbucket-runner/Chart.yaml and docs/bitbucket-runner-plan.md both
+    reinforce area:bitbucket-runner, while generic paths such as src/config.py do not.
+    """
+    scopes: set[str] = set()
+    for raw in paths:
+        for part in PurePosixPath(raw).parts:
+            stem = PurePosixPath(part).stem.lower()
+            tokens = [
+                token for token in re.findall(r"[a-z0-9]+", stem)
+                if len(token) > 2 and token not in _GENERIC_AREA_TOKENS
+            ]
+            if len(tokens) >= 2:
+                scopes.add("area:" + "-".join(tokens[:3]))
+    return scopes
+
+
+def families_for_experience(experience: Experience) -> tuple[str, ...]:
+    """Return every project scope reinforced by an execution, in stable priority order."""
     paths = [path.lower() for path in experience.files]
     names = {PurePosixPath(path).name for path in paths}
+    families: list[str] = []
+
+    def add(value: str) -> None:
+        if value not in families:
+            families.append(value)
 
     if "values.yaml" in names or "values.yml" in names:
-        return "helm-values"
+        add("helm-values")
     if "chart.yaml" in names:
-        return "helm-chart"
+        add("helm-chart")
     if any("/templates/" in f"/{path}" for path in paths):
-        return "helm-template"
+        add("helm-template")
     if any(path.endswith(".tf") or path.endswith(".tfvars") for path in paths):
-        return "terraform"
+        add("terraform")
     if any(path.startswith(".github/workflows/") or "/.github/workflows/" in f"/{path}" for path in paths):
-        return "ci"
+        add("ci")
     if any("/migrations/" in f"/{path}" or "/migration/" in f"/{path}" for path in paths):
-        return "database"
+        add("database")
     if names & {"package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "uv.lock", "poetry.lock"}:
-        return "dependencies"
+        add("dependencies")
     if any(part in path for path in paths for part in ("/test", "/tests/", "_test.", ".spec.", ".test.")):
-        return "tests"
+        add("tests")
+    if any(path.startswith("docs/") or path.endswith((".md", ".rst")) for path in paths):
+        add("documentation")
 
-    hinted = _family_hints(experience.description)
     for family in (
         "authentication", "database", "ci", "deployment", "cache", "configuration", "api",
         "dependencies", "tests", "documentation", "architecture-review",
     ):
-        if family in hinted:
-            return family
-    return f"{experience.task_mode}-{experience.task_class}"
+        if family in _query_hints(experience.description):
+            add(family)
+
+    for scope in sorted(_area_scopes(experience.files)):
+        add(scope)
+
+    if not families:
+        add(f"{experience.task_mode}-{experience.task_class}")
+    return tuple(families)
+
+
+def _family(experience: Experience) -> str:
+    """Compatibility helper: return the primary scope while compilation reinforces all scopes."""
+    return families_for_experience(experience)[0]
+
 
 def _name(family: str, experience: Experience) -> str:
+    if family.startswith("area:"):
+        words = family.removeprefix("area:").replace("-", " ")
+        return f"{words.capitalize()} work"
+
     fixed = {
         "helm-values": "Helm values change",
         "helm-chart": "Helm chart update",
@@ -206,12 +281,13 @@ def _confidence(known: int, successes: int, verified: int) -> float:
     ), 3)
 
 
-def compile_for_experience(store: Store, experience: Experience, now: float) -> ProjectReflex:
-    """Compile or refresh the project family represented by one experience."""
-    family = _family(experience)
+def _compile_family(store: Store, experience: Experience, family: str, now: float) -> ProjectReflex:
+    project_area = family.startswith("area:")
     group = [
         item for item in store.list("Experience", limit=5000)
-        if item.task_mode == experience.task_mode and _family(item) == family and item.status != "unknown"
+        if (project_area or item.task_mode == experience.task_mode)
+        and family in families_for_experience(item)
+        and item.status != "unknown"
     ]
     group.sort(key=lambda item: item.created_at)
     successes = [item for item in group if item.status == "success"]
@@ -223,7 +299,8 @@ def compile_for_experience(store: Store, experience: Experience, now: float) -> 
             continue
         verified += int(bool(getattr(outcome, "verified", False)))
 
-    key = f"{experience.task_mode}|{family}"
+    reflex_mode = "project" if project_area else experience.task_mode
+    key = f"{reflex_mode}|{family}"
     reflex_id = "reflex-" + hashlib.sha1(key.encode()).hexdigest()[:16]
     try:
         previous = store.get_reflex(reflex_id)
@@ -242,11 +319,13 @@ def compile_for_experience(store: Store, experience: Experience, now: float) -> 
         id=reflex_id,
         name=_name(family, experience),
         family=family,
-        task_mode=experience.task_mode,
+        task_mode=reflex_mode,
         task_class=primary_class,
         state=_state(len(group), len(successes), verified, previous_state),
         seed_strategy=seed_strategy,
-        procedure=_procedure(store, successes or group or [experience]),
+        # Project-area Reflexes are cross-mode scope memory, not an execution recipe. Replaying a BUILD
+        # procedure into a THINK/docs task would be actively misleading; mode-specific Reflexes keep procedures.
+        procedure=[] if project_area else _procedure(store, successes or group or [experience]),
         evidence_ids=[item.id for item in group[-20:]],
         support_count=len(group),
         success_count=len(successes),
@@ -260,6 +339,14 @@ def compile_for_experience(store: Store, experience: Experience, now: float) -> 
     )
     store.put_reflex(reflex)
     return reflex
+
+
+def compile_for_experience(store: Store, experience: Experience, now: float) -> ProjectReflex:
+    """Compile every project scope represented by one execution and return its primary Reflex."""
+    families = families_for_experience(experience)
+    compiled = [_compile_family(store, experience, family, now) for family in families]
+    return compiled[0]
+
 
 def _reflex_family(reflex: ProjectReflex) -> str:
     if reflex.family:
@@ -290,13 +377,15 @@ def _locality(description: str, reflex: ProjectReflex) -> float:
 
 
 def match_reflex(store: Store, description: str, task_mode: str, task_class: str,
-                 threshold: float = 0.28) -> tuple[ProjectReflex, float] | None:
+                 threshold: float = 0.28, family_hints: set[str] | None = None) -> tuple[ProjectReflex, float] | None:
     """Resolve the strongest project Reflex using intent, family, locality and execution evidence."""
     query = embed(description)
-    hints = _family_hints(description)
+    hints = _query_hints(description) | set(family_hints or ())
     scored: list[tuple[ProjectReflex, float]] = []
 
-    for reflex in store.list_reflexes(task_mode=task_mode, states=_VISIBLE_STATES, limit=500):
+    for reflex in store.list_reflexes(states=_VISIBLE_STATES, limit=500):
+        if reflex.task_mode not in {task_mode, "project"}:
+            continue
         semantic = max(0.0, similarity(query, reflex.embedding))
         family = _reflex_family(reflex)
         family_score = 1.0 if family in hints else 0.0
@@ -320,7 +409,16 @@ def match_reflex(store: Store, description: str, task_mode: str, task_class: str
             continue
         scored.append((reflex, round(score, 4)))
 
-    return max(scored, key=lambda item: (item[1], item[0].confidence, item[0].success_count), default=None)
+    return max(
+        scored,
+        key=lambda item: (
+            item[1],
+            _scope_specificity(_reflex_family(item[0])),
+            item[0].confidence,
+            item[0].success_count,
+        ),
+        default=None,
+    )
 
 def visible_reflexes(store: Store) -> list[ProjectReflex]:
     return store.list_reflexes(states=_VISIBLE_STATES, limit=500)
