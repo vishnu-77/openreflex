@@ -154,6 +154,7 @@ def _prompt_state(project: Path, output: str, project_context: str | None) -> No
     experiences = 0
     route = None
     reflex_name = None
+    reflex_state = None
     previous_task = read_state(project).get("task") or {}
     mode = str(previous_task.get("mode") or "build")
     data = _output_dict(output)
@@ -162,10 +163,21 @@ def _prompt_state(project: Path, output: str, project_context: str | None) -> No
     match = re.search(r"(\d+) similar past task", text)
     if match:
         experiences = int(match.group(1))
-    match = re.search(r"\[OpenReflex\]\s+Reflex:\s*([^·|\n]+)\s*·\s*(BUILD|INVESTIGATE|THINK)", text, re.I)
+    # 0.7+ Reflex context is "Reflex: <name> · learned/proven."; keep the old mode-bearing
+    # parser as a compatibility fallback for sessions that have not yet restarted after an upgrade.
+    match = re.search(
+        r"\[OpenReflex\]\s+Reflex:\s*([^·\n]+)\s*·\s*(candidate|learned|proven|stale)\.?",
+        text,
+        re.I,
+    )
     if match:
         reflex_name = match.group(1).strip()
-        mode = match.group(2).lower()
+        reflex_state = match.group(2).lower()
+    else:
+        match = re.search(r"\[OpenReflex\]\s+Reflex:\s*([^·|\n]+)\s*·\s*(BUILD|INVESTIGATE|THINK)", text, re.I)
+        if match:
+            reflex_name = match.group(1).strip()
+            mode = match.group(2).lower()
     match = re.search(r"Suggested path:\s*([a-z0-9_-]+)", text, re.I)
     if match:
         route = match.group(1)
@@ -179,6 +191,8 @@ def _prompt_state(project: Path, output: str, project_context: str | None) -> No
     task = {"active": True, "mode": mode}
     if reflex_name:
         task["reflex"] = reflex_name
+    if reflex_state:
+        task["reflex_state"] = reflex_state
     if route:
         task["route"] = route
     if alternatives:
