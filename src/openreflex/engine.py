@@ -8,10 +8,11 @@ from pathlib import Path
 
 from . import control, detect, learning
 from .decision import DecisionSnapshot, make_snapshot, render_paths, render_recap, render_trace, render_why
-from .models import CandidatePath, Context, Execution, Experience, Lesson, Outcome, Status, Task, ToolCall, uid
+from .models import CandidatePath, Context, Execution, Experience, Lesson, Outcome, ProjectReflex, Status, Task, ToolCall, uid
 from .policy import load_policy
 from .privacy import PROGRESS, categorize, error_signature, file_paths, fingerprint, redact
 from .routing import Budget, Limits, budget_for, candidates, classify, embed, limits_from_env, similarity, task_mode
+from .reflexes import compile_for_experience, match_reflex
 from .store import Store, database_path
 
 FOLLOW_UP = re.compile(r"^\s*(yes|no|ok(ay)?|thanks|thank you|continue|go on|go ahead|proceed|sure|lgtm|do it|"
@@ -390,10 +391,12 @@ class Engine:
         task = Task(description=redact(description, 1000), task_class=task_class, session_id=session,
                     agent=agent, started_at=now, substantial=substantial, task_mode=task_mode(task_class))
         limits = limits or limits_from_env()
+        matched = match_reflex(self.store, task.description, task.task_mode, task.task_class)
+        reflex = matched[0] if matched else None
         paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits,
                            self.policy, task_mode_name=task.task_mode)
         execution = Execution(task_id=task.id, agent=agent, session_id=session, recommended_path_id=paths[0].id,
-                              started_at=now, last_progress_at=now)
+                              started_at=now, last_progress_at=now, reflex_id=reflex.id if reflex else None)
         self._set_budget(execution, budget_for(paths[0], limits, self.policy))
         self.store.put(task)
         for path in paths:
@@ -401,7 +404,7 @@ class Engine:
             self.store.link(path.id, "recommended_for", task.id)
         self.store.put(execution)
         self.store.link(task.id, "caused", execution.id)
-        context = self._write_context(task, paths, self._budget(execution))
+        context = self._write_context(task, paths, self._budget(execution), reflex)
         self.store.link(execution.id, "used", context.id)
         execution.context_tokens = self._injected_context_tokens(context)
         if substantial:
@@ -420,6 +423,8 @@ class Engine:
         for node in self.store.list("CandidatePath", "task_id", task.id) + self.store.list("Context", "task_id", task.id):
             self.store.delete(node.id)
         limits = limits or limits_from_env()
+        matched = match_reflex(self.store, task.description, task.task_mode, task.task_class)
+        reflex = matched[0] if matched else None
         paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits,
                            self.policy, task_mode_name=task.task_mode)
         for path in paths:
@@ -427,8 +432,9 @@ class Engine:
             self.store.link(path.id, "recommended_for", task.id)
         execution.recommended_path_id = paths[0].id
         execution.chosen_path_id, execution.chosen_inferred = None, False
+        execution.reflex_id = reflex.id if reflex else None
         self._set_budget(execution, budget_for(paths[0], limits, self.policy))
-        context = self._write_context(task, paths, self._budget(execution))
+        context = self._write_context(task, paths, self._budget(execution), reflex)
         execution.context_tokens = self._injected_context_tokens(context)
         if task.substantial:
             self._record_decision(execution, "start", "recommend", paths[0], paths, now,
@@ -437,14 +443,16 @@ class Engine:
         self.store.link(execution.id, "used", context.id)
         return context
 
-    def _write_context(self, task: Task, paths: list[CandidatePath], budget: Budget | None = None) -> Context:
+    def _write_context(self, task: Task, paths: list[CandidatePath], budget: Budget | None = None,
+                       reflex: ProjectReflex | None = None) -> Context:
         retrieved = self.retrieve(task.description, task.task_class) if task.substantial else []
         experiences = [e for e, _ in retrieved]
         lessons = self.lessons(experiences)
-        text = render_context(task, paths, retrieved, lessons, budget, self.policy)
+        text = render_context(task, paths, retrieved, lessons, budget, self.policy, reflex)
         context = Context(task_id=task.id, text=text, experience_ids=[e.id for e in experiences],
                           lesson_ids=[lesson.id for lesson, _, _ in lessons],
-                          injected=task.substantial and bool(experiences))
+                          reflex_id=reflex.id if reflex else None,
+                          injected=task.substantial and bool(experiences or reflex))
         self.store.put(context)
         for experience in experiences:
             self.store.link(context.id, "used", experience.id)
@@ -654,7 +662,8 @@ class Engine:
             agent=execution.agent, description=task.description, task_class=task.task_class,
             strategy=outcome.chosen_strategy, status=status, elapsed_seconds=outcome.elapsed_seconds,
             tool_calls=outcome.tool_calls, output_tokens_estimate=outcome.output_tokens_estimate, files=files[:20],
-            benefited=bool(context and context.experience_ids), estimated_regret=outcome.estimated_regret,
+            benefited=bool(context and (context.experience_ids or context.reflex_id)),
+            estimated_regret=outcome.estimated_regret,
             alerts=[a for a in execution.alerts if not a.startswith("retry:")], verdicts=list(execution.verdicts),
             embedding=embed(task.description), created_at=now, task_mode=task.task_mode,
             input_tokens=outcome.input_tokens, output_tokens=outcome.output_tokens,
@@ -670,26 +679,28 @@ class Engine:
         for lesson in learning.extract_lessons(experience, calls, pairs, execution.alerts):
             self.store.put(lesson)
             self.store.link(experience.id, "caused", lesson.id)
+        compile_for_experience(self.store, experience, now)
         return outcome
 
 
 def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple[Experience, float]],
-                   lessons: list[tuple[Lesson, float, int]], budget: Budget | None = None, policy=None) -> str:
+                   lessons: list[tuple[Lesson, float, int]], budget: Budget | None = None, policy=None,
+                   reflex: ProjectReflex | None = None) -> str:
     cfg = policy or load_policy()
     experiences = [e for e, _ in retrieved]
     succeeded = sum(e.status == "success" for e in experiences)
     best, rest = paths[0], paths[1:]
-    lines = [f"[OpenReflex] {task.task_mode.upper()} · {task.task_class} | "
-             f"{len(experiences)} similar past task(s) here, {succeeded} succeeded."]
+    if reflex is not None:
+        lines = [f"[OpenReflex] Reflex: {reflex.name} | {reflex.state} · "
+                 f"{reflex.success_count} successful project run(s)."]
+        lines.append("Procedure: " + " -> ".join(reflex.procedure))
+        lines.append(f"Evidence: {reflex.support_count} comparable project run(s), "
+                     f"{reflex.verified_count} explicitly verified.")
+    else:
+        lines = [f"[OpenReflex] {task.task_mode.upper()} · {task.task_class} | "
+                 f"{len(experiences)} similar past task(s) here, {succeeded} succeeded."]
+        lines.append("Working approach: " + " -> ".join(best.steps))
     basis = f"from {best.evidence_count} past run(s)" if best.evidence_count else "default prior"
-    lines.append(f"Suggested path: {best.strategy} - {' -> '.join(best.steps)} "
-                 f"(success~{best.success_probability:.0%}, ~{best.tool_calls:.0f} tool calls, {basis}).")
-    if rest:
-        def label(p: CandidatePath) -> str:
-            if p.dominated_by:
-                return f"{p.strategy} (dominated by {p.dominated_by})"
-            return f"{p.strategy} ({'over your limit' if not p.within_limits else f'{p.score:+.2f} vs {best.score:+.2f}'})"
-        lines.append("Alternatives: " + ", ".join(label(p) for p in rest))
     if budget is not None:
         lines.append(f"Budget: ~{budget.tool_calls:.0f} tool calls, ~{budget.seconds / 60:.0f} min, "
                      f"~{budget.context_tokens / 1000:.0f}k tokens of tool output"
