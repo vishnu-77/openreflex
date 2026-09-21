@@ -12,11 +12,16 @@ from .models import CandidatePath, Context, Execution, Experience, Lesson, Outco
 from .policy import load_policy
 from .privacy import PROGRESS, categorize, error_signature, file_paths, fingerprint, redact
 from .routing import Budget, Limits, budget_for, candidates, classify, embed, limits_from_env, similarity, task_mode
-from .reflexes import compile_for_experience, match_reflex
+from .reflexes import compile_for_experience, families_for_experience, match_reflex
 from .store import Store, database_path
 
 FOLLOW_UP = re.compile(r"^\s*(yes|no|ok(ay)?|thanks|thank you|continue|go on|go ahead|proceed|sure|lgtm|do it|"
                        r"looks good|try again|retry|again|next|y|n)\b", re.IGNORECASE)
+CONTEXTUAL_CONTINUATION = re.compile(
+    r"\b(implementation plan|the plan|this plan|that plan|where is|where's|same branch|same task|"
+    r"this change|that change|the change|above|previous task|previous change|what we just|what was just)\b",
+    re.IGNORECASE,
+)
 UNTRACKED = "(task started without a captured prompt)"
 
 
@@ -28,6 +33,11 @@ def is_substantial(prompt: str) -> bool:
     if len(words) < 5:
         return False
     return not (len(words) < 10 and FOLLOW_UP.match(text))
+
+
+def is_contextual_continuation(prompt: str) -> bool:
+    """True when a substantial prompt explicitly depends on the immediately preceding task."""
+    return bool(CONTEXTUAL_CONTINUATION.search(prompt))
 
 
 class Engine:
@@ -61,9 +71,17 @@ class Engine:
                 context = self._describe(current, prompt, now)
                 execution = current
             else:
-                if current is not None and current.ended_at is None:
-                    self._finalize(current)
-                execution, context = self._start(agent, session, prompt, now, substantial=is_substantial(prompt))
+                family_hints: set[str] | None = None
+                if current is not None:
+                    if current.ended_at is None:
+                        self._finalize(current)
+                    if is_contextual_continuation(prompt):
+                        previous = next(iter(self.store.find("Experience", execution_id=current.id, limit=1)), None)
+                        if previous is not None:
+                            family_hints = set(families_for_experience(previous))
+                execution, context = self._start(
+                    agent, session, prompt, now, substantial=is_substantial(prompt), family_hints=family_hints
+                )
             execution.pending_context = context.injected and not can_inject
             self.store.put(execution)
         return context.text if context.injected and can_inject else None
@@ -386,12 +404,15 @@ class Engine:
         return similar if len(similar) >= minimum else same
 
     def _start(self, agent: str, session: str, description: str, now: float,
-               substantial: bool, limits: Limits | None = None) -> tuple[Execution, Context]:
+               substantial: bool, limits: Limits | None = None,
+               family_hints: set[str] | None = None) -> tuple[Execution, Context]:
         task_class = classify(description)
         task = Task(description=redact(description, 1000), task_class=task_class, session_id=session,
                     agent=agent, started_at=now, substantial=substantial, task_mode=task_mode(task_class))
         limits = limits or limits_from_env()
-        matched = match_reflex(self.store, task.description, task.task_mode, task.task_class)
+        matched = match_reflex(
+            self.store, task.description, task.task_mode, task.task_class, family_hints=family_hints
+        )
         reflex = matched[0] if matched else None
         paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits,
                            self.policy, task_mode_name=task.task_mode)
