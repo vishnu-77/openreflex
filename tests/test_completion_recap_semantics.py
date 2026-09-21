@@ -28,13 +28,14 @@ def _snapshot(*, outcome: str, expected_regret: float | None = 0.0) -> DecisionS
         actual_tokens=0,
         elapsed_seconds=18.0,
         outcome=outcome,
+        reflex_name="Helm values change",
     )
 
 
 def test_unknown_completion_is_unverified_and_hides_legacy_regret():
     recap = render_recap(_snapshot(outcome="unknown", expected_regret=0.0))
     assert recap.startswith("↺ OpenReflex · UNVERIFIED")
-    assert "unknown · incremental" in recap
+    assert "unknown · Helm values change" in recap
     assert "regret" not in recap
     assert "vs test-first" not in recap
 
@@ -42,16 +43,16 @@ def test_unknown_completion_is_unverified_and_hides_legacy_regret():
 def test_success_completion_remains_complete_and_can_show_path_check():
     recap = render_recap(_snapshot(outcome="success", expected_regret=0.25))
     assert recap.startswith("↺ OpenReflex · COMPLETE")
-    assert "success · incremental" in recap
-    assert "Path check · better option: test-first" in recap
+    assert "success · Helm values change" in recap
+    assert "Path check · another approach may be better" in recap
     assert "regret" not in recap.lower()
 
 
 def test_failure_completion_is_labelled_failed():
     recap = render_recap(_snapshot(outcome="failure", expected_regret=0.4))
     assert recap.startswith("↺ OpenReflex · FAILED")
-    assert "failure · incremental" in recap
-    assert "Path check · better option: test-first" in recap
+    assert "failure · Helm values change" in recap
+    assert "Path check · another approach may be better" in recap
     assert "regret" not in recap.lower()
 
 
