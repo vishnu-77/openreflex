@@ -124,7 +124,7 @@ def _family(experience: Experience) -> str:
 def _name(family: str, experience: Experience) -> str:
     if family.startswith("area:"):
         words = family.removeprefix("area:").replace("-", " ")
-        return f"{words.title()} work"
+        return f"{words.capitalize()} work"
 
     fixed = {
         "helm-values": "Helm values change",
@@ -257,9 +257,10 @@ def _confidence(known: int, successes: int, verified: int) -> float:
 
 
 def _compile_family(store: Store, experience: Experience, family: str, now: float) -> ProjectReflex:
+    project_area = family.startswith("area:")
     group = [
         item for item in store.list("Experience", limit=5000)
-        if item.task_mode == experience.task_mode
+        if (project_area or item.task_mode == experience.task_mode)
         and family in families_for_experience(item)
         and item.status != "unknown"
     ]
@@ -273,7 +274,8 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
             continue
         verified += int(bool(getattr(outcome, "verified", False)))
 
-    key = f"{experience.task_mode}|{family}"
+    reflex_mode = "project" if project_area else experience.task_mode
+    key = f"{reflex_mode}|{family}"
     reflex_id = "reflex-" + hashlib.sha1(key.encode()).hexdigest()[:16]
     try:
         previous = store.get_reflex(reflex_id)
@@ -292,7 +294,7 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
         id=reflex_id,
         name=_name(family, experience),
         family=family,
-        task_mode=experience.task_mode,
+        task_mode=reflex_mode,
         task_class=primary_class,
         state=_state(len(group), len(successes), verified, previous_state),
         seed_strategy=seed_strategy,
@@ -354,7 +356,9 @@ def match_reflex(store: Store, description: str, task_mode: str, task_class: str
     hints = _family_hints(description) | set(family_hints or ())
     scored: list[tuple[ProjectReflex, float]] = []
 
-    for reflex in store.list_reflexes(task_mode=task_mode, states=_VISIBLE_STATES, limit=500):
+    for reflex in store.list_reflexes(states=_VISIBLE_STATES, limit=500):
+        if reflex.task_mode not in {task_mode, "project"}:
+            continue
         semantic = max(0.0, similarity(query, reflex.embedding))
         family = _reflex_family(reflex)
         family_score = 1.0 if family in hints else 0.0
