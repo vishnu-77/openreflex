@@ -46,6 +46,7 @@ class DecisionSnapshot:
     outcome: str | None = None
     model_tokens: int | None = None
     token_usage: dict[str, int | float] = field(default_factory=dict)
+    reflex_name: str | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -102,7 +103,8 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
                   actual_tool_calls: int | None = None, actual_tokens: int | None = None,
                   elapsed_seconds: float | None = None, outcome: str | None = None,
                   expected_regret: float | None = None, model_tokens: int | None = None,
-                  token_usage: dict[str, int | float] | None = None) -> DecisionSnapshot:
+                  token_usage: dict[str, int | float] | None = None,
+                  reflex_name: str | None = None) -> DecisionSnapshot:
     if best is None:
         components = {name: 0.0 for name in policy.table("score.weights")}
         score = reflex_score(components, policy)
@@ -116,7 +118,7 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
             reason_codes=[], visibility=_visibility(phase, event, policy), event=event,
             actual_tool_calls=actual_tool_calls, actual_tokens=actual_tokens,
             elapsed_seconds=elapsed_seconds, outcome=outcome, model_tokens=model_tokens,
-            token_usage=token_usage or {},
+            token_usage=token_usage or {}, reflex_name=reflex_name,
         )
 
     components = score_components(best, paths, experiences, policy)
@@ -139,7 +141,7 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
         score_components=components, reason_codes=reason_codes, visibility=_visibility(phase, event, policy),
         event=event, actual_tool_calls=actual_tool_calls, actual_tokens=actual_tokens,
         elapsed_seconds=elapsed_seconds, outcome=outcome, model_tokens=model_tokens,
-        token_usage=token_usage or {},
+        token_usage=token_usage or {}, reflex_name=reflex_name,
     )
 
 
@@ -148,8 +150,8 @@ def render_recap(snapshot: DecisionSnapshot, previous: DecisionSnapshot | None =
         summary = []
         if snapshot.outcome:
             summary.append(snapshot.outcome)
-        if snapshot.strategy:
-            summary.append(snapshot.strategy)
+        if snapshot.reflex_name:
+            summary.append(snapshot.reflex_name)
 
         cost = []
         if snapshot.actual_tool_calls is not None:
@@ -164,9 +166,9 @@ def render_recap(snapshot: DecisionSnapshot, previous: DecisionSnapshot | None =
         comparison = None
         if snapshot.outcome != "unknown":
             if snapshot.expected_regret is not None and snapshot.next_best_strategy:
-                comparison = f"Path check · better option: {snapshot.next_best_strategy}"
+                comparison = "Path check · another approach may be better"
             else:
-                comparison = "Path check · better option: none proven"
+                comparison = "Path check · no better option proven"
 
         state = {
             "success": "COMPLETE",
@@ -191,11 +193,13 @@ def render_recap(snapshot: DecisionSnapshot, previous: DecisionSnapshot | None =
         success = "?" if snapshot.success_probability is None else f"{snapshot.success_probability:.0%}"
         calls = "?" if snapshot.estimated_tool_calls is None else f"~{snapshot.estimated_tool_calls:.0f} calls"
         tokens = "?" if snapshot.estimated_tokens is None else f"~{snapshot.estimated_tokens / 1000:.0f}k tokens"
-        return (f"{first}\n{snapshot.evidence_count} experiences · {snapshot.strategy or 'unplanned'} {success} · "
+        label = snapshot.reflex_name or "working approach"
+        return (f"{first}\n{snapshot.evidence_count} experiences · {label} · {success} · "
                 f"{calls} · {tokens} · +{snapshot.context_tokens} context tokens")
 
     success = "?" if snapshot.success_probability is None else f"{snapshot.success_probability:.0%}"
-    message = (f"{first}\n{snapshot.action} · {snapshot.strategy or 'unplanned'} {success} · "
+    label = snapshot.reflex_name or "working approach"
+    message = (f"{first}\n{snapshot.action} · {label} · {success} · "
                f"budget {snapshot.budget_used:.0%}")
     if snapshot.next_best_strategy and snapshot.action in {"pivot", "stop"}:
         message += f" · next {snapshot.next_best_strategy}"

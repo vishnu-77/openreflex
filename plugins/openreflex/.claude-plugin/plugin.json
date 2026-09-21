@@ -1,8 +1,8 @@
 {
   "name": "openreflex",
   "displayName": "OpenReflex",
-  "version": "0.5.3",
-  "description": "Muscle memory for AI coding agents: learns from every task, advises the next one, and flags failure loops live.",
+  "version": "0.6.0",
+  "description": "Project muscle memory for AI coding agents: learns reusable execution patterns across a codebase.",
   "author": {
     "name": "vishnu-77",
     "url": "https://github.com/vishnu-77"

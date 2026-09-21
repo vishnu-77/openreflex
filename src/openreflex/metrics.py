@@ -47,6 +47,8 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
     executions = store.list("Execution", limit=100_000)
     experiences = sorted(store.list("Experience", limit=100_000), key=lambda x: x.created_at)
     contexts = {c.task_id: c for c in store.list("Context", limit=100_000)}
+    reflexes = store.list_reflexes(states=("learned", "proven"), limit=100_000)
+    reflex_states = Counter(item.state for item in reflexes)
     task_by_id = {t.id: t for t in tasks}
     approved_at = (approval_record or {}).get("approved_at")
 
@@ -60,7 +62,10 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
     weeks = {int((e.started_at - (approved_at or first_task or now)) // WEEK) for e in executions}
     weeks_elapsed = int((now - (approved_at or first_task or now)) // WEEK) + 1
     substantial = [t for t in tasks if t.substantial]
-    reused = [t for t in substantial if contexts.get(t.id) and contexts[t.id].experience_ids]
+    reused = [
+        t for t in substantial
+        if contexts.get(t.id) and (contexts[t.id].experience_ids or contexts[t.id].reflex_id)
+    ]
 
     known = [x for x in experiences if x.status != "unknown"]
     with_prior = [x for x in experiences if x.benefited]
@@ -127,5 +132,7 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
         "execution_control": {"verdicts": dict(verdicts),
                               "success_after_pivot_or_stop": _avg(x.status == "success" for x in advised),
                               "tasks_within_tool_call_budget": _avg(within_budget)},
+        "project_reflexes": {"visible": len(reflexes), "learned": reflex_states["learned"],
+                             "proven": reflex_states["proven"]},
         "lessons": len(store.list("Lesson", limit=100_000)),
     }

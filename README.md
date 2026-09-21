@@ -22,9 +22,10 @@
 
 ## What is OpenReflex
 
-OpenReflex gives AI coding agents muscle memory across coding, investigation, and reasoning work. It plugs into
-Claude Code, Codex, Cursor, and OpenCode through lifecycle hooks and MCP, quietly records how each task actually
-went, and hands the next similar task the useful parts of that experience.
+OpenReflex gives AI coding agents project muscle memory across coding, investigation, and reasoning work. It plugs into
+Claude Code, Codex, Cursor, and OpenCode through lifecycle hooks and MCP, quietly records how work actually goes,
+compiles repeated project behaviour into reusable Reflexes, and gives new tasks the relevant procedure even when
+the exact task has never been performed before.
 
 You install it once and keep working normally. Core memory stays on your machine in a local SQLite database.
 There is no OpenReflex account or hosted service. Optional Claude token accounting uses Claude Code's local
@@ -40,9 +41,10 @@ OpenTelemetry export to a loopback-only OpenReflex receiver and stores counts on
 
 ## Why OpenReflex
 
-- **It remembers what worked.** Before a substantial task, OpenReflex retrieves similar past tasks and injects a
-  compact Execution Context: a suggested approach with alternatives, the files that were changed, and lessons
-  such as which edit resolved a recurring error.
+- **It learns how the project behaves.** OpenReflex compiles successful work into project-scoped Reflexes such as
+  authentication changes, Helm configuration, database migrations or CI work. Resolution combines semantic intent,
+  task family and module/file locality, so a novel task can reuse a project procedure without repeating an
+  earlier task.
 - **It catches loops while they happen.** Repeated failing commands, identical retries, stalled progress, and
   runaway context growth raise one alert that says whether to continue, pivot to another approach, or stop and
   check in with you, never a stream of nags.

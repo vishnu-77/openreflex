@@ -81,24 +81,25 @@ def test_new_prompt_resets_previous_task_activity_and_calls(project):
     assert state["task"] == {"active": True, "mode": "build"}
 
 
-def test_prompt_state_captures_suggested_path_and_alternatives(project):
+def test_prompt_state_captures_project_reflex_without_exposing_backend_paths(project):
     output = json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": "[OpenReflex] BUILD · debug | 1 similar past task(s) here, 1 succeeded.\n"
-                                  "Suggested path: test-first - Reproduce -> Fix -> Verify "
-                                  "(success~85%, ~18 tool calls, default prior).\n"
-                                  "Alternatives: incremental (+0.29 vs +0.30), inspect-first (dominated by test-first)\n",
+            "additionalContext": "[OpenReflex] Reflex: Helm values change · BUILD | learned · 2 successful project run(s).\n"
+                                  "Procedure: Inspect values.yaml -> Update values.yaml -> Run validation\n"
+                                  "Evidence: 2 comparable project run(s), 1 explicitly verified.\n",
         }
     })
 
     _prompt_state(project, output, None)
     state = read_state(project)
 
-    assert state["task"]["route"] == "test-first"
-    assert state["task"]["alternatives"] == "incremental (+0.29 vs +0.30), inspect-first (dominated by test-first)"
-    assert "test-first" in dashboard(project, colour=False)
-    assert "incremental (+0.29 vs +0.30)" in dashboard(project, colour=False)
+    assert state["task"]["reflex"] == "Helm values change"
+    assert state["task"]["mode"] == "build"
+    text = dashboard(project, colour=False)
+    assert "name             Helm values change" in text
+    assert "suggested path" not in text
+    assert "alternatives" not in text
 
 
 def test_verification_continuation_stays_in_verify_instead_of_remember(project):
@@ -125,8 +126,8 @@ def test_final_stop_marks_task_inactive(project):
     assert state["phase"] == "remember"
     assert state["task"]["active"] is False
     assert state["outcome"] == "success"
-    assert state["task"]["followed"] == "inspect-first"
-    assert "inspect-first" in dashboard(project, colour=False)
+    assert "followed" not in state["task"]
+    assert "inspect-first" not in dashboard(project, colour=False)
 
 
 def test_hook_runtime_records_plugin_manifest_version_without_cache_path(project, tmp_path):
@@ -181,7 +182,8 @@ def test_version_mismatch_is_visible_in_statusline(project, tmp_path):
 def test_dashboard_is_readable_without_colour(project):
     (project / "Chart.yaml").write_text("apiVersion: v2\nname: demo\n", encoding="utf-8")
     build_snapshot(project)
-    update_state(project, "recall", recall={"experiences": 2}, task={"route": "inspect-first", "active": True},
+    update_state(project, "recall", recall={"experiences": 2},
+                 task={"reflex": "Repository architecture review", "active": True, "mode": "investigate"},
                  activity={"label": "SEARCH", "status": "running"})
 
     text = dashboard(project, colour=False)
@@ -191,7 +193,7 @@ def test_dashboard_is_readable_without_colour(project):
     assert "RUNTIME" in text
     assert "PROJECT MEMORY" in text
     assert "EXECUTION MEMORY" in text
-    assert "inspect-first" in text
+    assert "Repository architecture review" in text
     assert "2 related" in text
     assert "activity         SEARCH" in text
     assert "\x1b[" not in text

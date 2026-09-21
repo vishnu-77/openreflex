@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
-from .models import Model, NODE_MODELS, Relation, UsageSample
+from .models import Model, NODE_MODELS, ProjectReflex, Relation, UsageSample
 from .project import home
 
 SCHEMA = """
@@ -52,9 +52,20 @@ CREATE INDEX IF NOT EXISTS usage_execution ON usage_samples(execution_id);
 PRAGMA user_version = 2;
 """
 
+REFLEX_SCHEMA = """
+CREATE TABLE IF NOT EXISTS project_reflexes (
+    id TEXT PRIMARY KEY,
+    data TEXT NOT NULL CHECK(json_valid(data))
+);
+CREATE INDEX IF NOT EXISTS reflex_mode ON project_reflexes(json_extract(data, '$.task_mode'));
+CREATE INDEX IF NOT EXISTS reflex_class ON project_reflexes(json_extract(data, '$.task_class'));
+CREATE INDEX IF NOT EXISTS reflex_state ON project_reflexes(json_extract(data, '$.state'));
+PRAGMA user_version = 3;
+"""
+
 
 BUSY_TIMEOUT_SECONDS = 8
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _field(name: str) -> str:
@@ -98,6 +109,13 @@ class Store:
                         for statement in USAGE_SCHEMA.split(";"):
                             if statement.strip():
                                 self.db.execute(statement)
+                version = 2
+            if version < 3:
+                with self.transaction():
+                    if self.db.execute("PRAGMA user_version").fetchone()[0] < 3:
+                        for statement in REFLEX_SCHEMA.split(";"):
+                            if statement.strip():
+                                self.db.execute(statement)
 
     def close(self):
         self.db.close()
@@ -117,6 +135,41 @@ class Store:
             "INSERT INTO nodes VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
             (node.id, type(node).__name__, node.model_dump_json()),
         )
+
+    def put_reflex(self, reflex: ProjectReflex):
+        self.db.execute(
+            "INSERT INTO project_reflexes VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data",
+            (reflex.id, reflex.model_dump_json()),
+        )
+
+    def get_reflex(self, reflex_id: str) -> ProjectReflex:
+        row = self.db.execute("SELECT data FROM project_reflexes WHERE id=?", (reflex_id,)).fetchone()
+        if row is None:
+            raise ValueError("Unknown project reflex")
+        return ProjectReflex.model_validate_json(row[0])
+
+    def list_reflexes(self, task_mode: str | None = None, task_class: str | None = None,
+                      states: tuple[str, ...] | None = None, limit: int = 1000) -> list[ProjectReflex]:
+        clauses, args = [], []
+        if task_mode is not None:
+            clauses.append("json_extract(data,'$.task_mode')=?")
+            args.append(task_mode)
+        if task_class is not None:
+            clauses.append("json_extract(data,'$.task_class')=?")
+            args.append(task_class)
+        if states:
+            placeholders = ",".join("?" for _ in states)
+            clauses.append(f"json_extract(data,'$.state') IN ({placeholders})")
+            args.extend(states)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        rows = self.db.execute(
+            "SELECT data FROM project_reflexes" + where + " ORDER BY json_extract(data,'$.updated_at') DESC LIMIT ?",
+            [*args, limit],
+        )
+        return [ProjectReflex.model_validate_json(row[0]) for row in rows]
+
+    def delete_reflex(self, reflex_id: str) -> None:
+        self.db.execute("DELETE FROM project_reflexes WHERE id=?", (reflex_id,))
 
     def put_usage(self, sample: UsageSample):
         self.db.execute(

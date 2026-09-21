@@ -90,6 +90,7 @@ class Context(Model):
     experience_ids: list[str] = field(default_factory=list)
     lesson_ids: list[str] = field(default_factory=list)
     injected: bool = False
+    reflex_id: str | None = None
     embedding_version: str = "hash-lexical-v1"
 
 
@@ -137,6 +138,7 @@ class Execution(Model):
     decision_history: list[dict] = field(default_factory=list)
     visible_decisions: int = 0
     waiting_for_future_work: bool = False
+    reflex_id: str | None = None
 
 
 @dataclass(kw_only=True)
@@ -227,6 +229,29 @@ class UsageSample(Model):
     cache_creation_tokens: int = 0
     estimated_cost_usd: float = 0.0
     observed_at: float = 0.0
+
+
+@dataclass(kw_only=True)
+class ProjectReflex(Model):
+    """A project-scoped procedure compiled from repeated successful executions."""
+
+    name: str
+    family: str = ""
+    task_mode: str = one_of(("build", "investigate", "think"), "build")
+    task_class: str
+    state: str = one_of(("candidate", "learned", "proven", "stale"), "candidate")
+    seed_strategy: str | None = None
+    procedure: list[str] = field(default_factory=list)
+    evidence_ids: list[str] = field(default_factory=list)
+    support_count: int = 0
+    success_count: int = 0
+    verified_count: int = 0
+    confidence: float = unit(0.0)
+    embedding: list[float] = field(default_factory=list)
+    file_patterns: list[str] = field(default_factory=list)
+    module_patterns: list[str] = field(default_factory=list)
+    created_at: float = 0.0
+    updated_at: float = 0.0
 
 
 @dataclass(kw_only=True)

@@ -143,6 +143,12 @@ class ExecutionControlMetrics(BaseModel):
     tasks_within_tool_call_budget: float | None = Field(description="Share of measured tasks finishing within the tool-call budget.")
 
 
+class ProjectReflexMetrics(BaseModel):
+    visible: int = Field(ge=0, description="Learned and proven project-specific Reflex procedures currently available.")
+    learned: int = Field(ge=0, description="Reflexes promoted after repeated successful project executions.")
+    proven: int = Field(ge=0, description="Reflexes backed by stronger repeated and explicitly verified evidence.")
+
+
 class ProjectInsightsResult(BaseModel):
     project: str = Field(description="Local project path represented by this Experience Graph.")
     activation: ActivationMetrics = Field(description="Activation and first-use metrics.")
@@ -155,4 +161,5 @@ class ProjectInsightsResult(BaseModel):
     routing: RoutingMetrics = Field(description="Recommendation agreement with retrospective realised performance.")
     live_alerts: dict[str, int] = Field(description="Counts of loop, repetition, stagnation, context and budget alerts.")
     execution_control: ExecutionControlMetrics = Field(description="Runtime verdict and budget-adherence metrics.")
+    project_reflexes: ProjectReflexMetrics = Field(description="Project-specific reusable procedures learned from execution evidence.")
     lessons: int = Field(ge=0, description="Number of extracted lessons retained in this project.")

@@ -122,6 +122,8 @@ def cmd_status(args) -> int:
     print(f"OpenReflex {__version__} - {project}")
     print(f"  enabled: {data['enabled']}   agents: {', '.join(data['engagement']['agents']) or '-'}")
     print(f"  tasks: {data['engagement']['tasks']}   experiences: {data['engagement']['experiences']}   lessons: {data['lessons']}")
+    print(f"  project reflexes: {data['project_reflexes']['visible']} "
+          f"({data['project_reflexes']['learned']} learned / {data['project_reflexes']['proven']} proven)")
     print(f"  first session captured: {data['activation']['first_session_captured']}   "
           f"seconds to first task: {data['activation']['seconds_to_first_task']}")
     print(f"  tasks that used prior experience: {reuse['benefit_rate']}")
@@ -397,7 +399,7 @@ def cmd_benchmark(args) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="openreflex", description="Ambient execution intelligence for coding agents.",
-        epilog="Also available: tui, memory, tokens, statusline (run `openreflex <name> --help` for details).",
+        epilog="Also available: tui, memory, reflexes, tokens, statusline (run `openreflex <name> --help` for details).",
     )
     parser.add_argument("--version", action="version", version=__version__)
     sub = parser.add_subparsers(dest="command", required=True)

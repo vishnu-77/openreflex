@@ -90,9 +90,10 @@ def test_completion_recap_shows_realised_path_cost_and_comparison(engine, clock)
     snapshot = engine.decision_snapshots(outcome.execution_id)[-1]
     recap = render_recap(snapshot)
     assert recap.startswith("↺ OpenReflex · COMPLETE")
-    assert "success · test-first" in recap
+    assert "success" in recap
+    assert "test-first" not in recap
     assert "5 calls" in recap
-    assert "Path check · better option: none proven" in recap
+    assert "Path check · no better option proven" in recap
     assert "regret" not in recap.lower()
 
 

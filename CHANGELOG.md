@@ -4,6 +4,22 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.6.0 (2026-09-21)
+
+- Make Project Reflexes reusable across heterogeneous work rather than requiring the same task to recur. Domain
+  families such as authentication, database, CI, deployment, API, cache and configuration accumulate evidence
+  across bug fixes, features and refactors within the same project.
+- Replace task-class-gated Reflex matching with a multi-signal project resolver combining semantic intent,
+  project-family compatibility, file/module locality, task-class compatibility and accumulated execution evidence.
+- Learn common module scopes (for example `src/auth`) in addition to exact common files, allowing a new task in
+  the same subsystem to reuse project procedure even when it touches a file OpenReflex has never seen before.
+- Keep unrelated mature Reflexes out of context with a minimum relationship gate; project evidence alone is never
+  enough to inject a Reflex.
+- Count tasks that reused a Project Reflex as memory reuse even when no individual historical episode was injected.
+- Align the Python package, runtime, Claude/Codex/Cursor plugin manifests and MCP Registry package metadata on
+  version 0.6.0.
+
+
 ## 0.5.3 (2026-09-21)
 
 - Improve cold-start retrieval ranking: broaden the query stopword list beyond bug-fixing jargon, and stem

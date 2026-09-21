@@ -153,6 +153,7 @@ def _merge_notice(output: str, notice: str) -> str:
 def _prompt_state(project: Path, output: str, project_context: str | None) -> None:
     experiences = 0
     route = None
+    reflex_name = None
     previous_task = read_state(project).get("task") or {}
     mode = str(previous_task.get("mode") or "build")
     data = _output_dict(output)
@@ -161,6 +162,10 @@ def _prompt_state(project: Path, output: str, project_context: str | None) -> No
     match = re.search(r"(\d+) similar past task", text)
     if match:
         experiences = int(match.group(1))
+    match = re.search(r"\[OpenReflex\]\s+Reflex:\s*([^·|\n]+)\s*·\s*(BUILD|INVESTIGATE|THINK)", text, re.I)
+    if match:
+        reflex_name = match.group(1).strip()
+        mode = match.group(2).lower()
     match = re.search(r"Suggested path:\s*([a-z0-9_-]+)", text, re.I)
     if match:
         route = match.group(1)
@@ -172,12 +177,14 @@ def _prompt_state(project: Path, output: str, project_context: str | None) -> No
     if match:
         mode = match.group(1).lower()
     task = {"active": True, "mode": mode}
+    if reflex_name:
+        task["reflex"] = reflex_name
     if route:
         task["route"] = route
     if alternatives:
         task["alternatives"] = alternatives
     # A new prompt is a new task surface. Do not carry the previous task's call count/activity into it.
-    phase = "recall" if experiences or project_context else ("investigate" if mode == "investigate" else
+    phase = "recall" if experiences or reflex_name or project_context else ("investigate" if mode == "investigate" else
                                                               "think" if mode == "think" else "watch")
     update_state(project, phase, recall={"experiences": experiences}, task=task,
                  execution={"calls": 0}, activity={})
@@ -251,11 +258,9 @@ def _stop_state(project: Path, agent: str, session: str, output: str, payload: d
     outcome = "execution captured"
     data = _output_dict(output)
     notice = str(data.get("systemMessage") or "") if isinstance(data, dict) else ""
-    match = re.search(r"(?:COMPLETE|FAILED|UNVERIFIED|FINISHED)\s*\n\s*([^\s·]+)(?:\s*·\s*([a-z0-9_-]+))?", notice)
+    match = re.search(r"(?:COMPLETE|FAILED|UNVERIFIED|FINISHED)\s*\n\s*([^\s·]+)", notice)
     if match:
         outcome = match.group(1)
-        if match.group(2):
-            task["followed"] = match.group(2)
     reinforce_latest_execution(project, agent, session)
     task["active"] = False
     update_state(project, "remember", outcome=outcome, execution={}, task=task, activity={})
@@ -376,6 +381,36 @@ def _memory(argv: list[str]) -> int:
 
 
 
+
+def _reflexes(argv: list[str]) -> int:
+    from .reflexes import visible_reflexes
+    from .store import Store, database_path
+
+    if argv and argv[0] in {"-h", "--help"}:
+        print("usage: openreflex reflexes [--project PATH]\n")
+        print("Show learned and proven project-specific Reflex procedures.")
+        return 0
+    project = project_root(_project_arg(argv))
+    store = Store(database_path(project))
+    try:
+        reflexes = visible_reflexes(store)
+    finally:
+        store.close()
+    print("OPENREFLEX / PROJECT REFLEXES")
+    print(f"  project     {project}")
+    if not reflexes:
+        print("  state       learning")
+        print("  reflexes    none learned yet")
+        return 0
+    for reflex in reflexes:
+        print("")
+        print(f"  {reflex.name}")
+        print(f"    state     {reflex.state}")
+        print(f"    evidence  {reflex.success_count} successful / {reflex.verified_count} verified")
+        print(f"    steps     {' -> '.join(reflex.procedure)}")
+    return 0
+
+
 def _tokens(argv: list[str]) -> int:
     from .usage import configured, disable, enable, receiver_running, serve
 
@@ -457,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
         return _tui(argv[1:])
     if argv[0] == "memory":
         return _memory(argv[1:])
+    if argv[0] == "reflexes":
+        return _reflexes(argv[1:])
     if argv[0] == "tokens":
         return _tokens(argv[1:])
     if argv[0] == "mcp":

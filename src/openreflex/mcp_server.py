@@ -19,11 +19,13 @@ from .mcp_contracts import (
     SearchExperienceResult,
 )
 from .project import approval, approve, project_root
+from .reflexes import visible_reflexes
 from .routing import Limits
 
 INSTRUCTIONS = """OpenReflex is local execution memory for this project. Hooks capture work automatically.
 Use get_execution_context before a substantial task if no [OpenReflex] context was already provided.
-Call choose_path if you deliberately take a different approach than suggested, check_progress when unsure
+Follow a learned project Reflex when one is supplied. Call choose_path only when you deliberately depart from the
+internal working approach, and check_progress when unsure
 whether more work is paying off, and record_outcome once the result is confirmed. Research and reasoning tasks are
 first-class: verification can be tests/builds, cross-checked evidence, or explicit user confirmation.
 Use explain_decision or get_execution_trace when the user asks why OpenReflex recommended something.
@@ -92,9 +94,9 @@ def build_server(project: Path) -> FastMCP:
                                                                         "Default: no cap.")] = None,
     ) -> str:
         """Plan a task from this project's past experience.
-        Returns: plain text: the [OpenReflex] context block (similar past tasks, the suggested path with alternatives,
-        an execution budget where relevant, likely files/sources, and lessons), then each candidate path's estimates
-        and how much comparable past evidence exists.
+        Returns: plain text with the learned project Reflex procedure when one applies; otherwise a neutral working
+        approach, relevant past experience, budget, likely files/sources and lessons. Internal strategy names and
+        candidate scores are deliberately omitted from this normal surface; use get_candidate_paths for diagnostics.
         Use when: starting any substantial coding, investigation, research, analysis, review, planning or reasoning task
         and no [OpenReflex] block was injected.
         Not for: looking up history (use search_experience) or checking progress mid-task (use check_progress).
@@ -107,19 +109,7 @@ def build_server(project: Path) -> FastMCP:
             given = [value for value in (max_tool_calls, max_minutes, max_context_tokens) if value is not None]
             limits = Limits(max_minutes * 60 if max_minutes else None, max_tool_calls, max_context_tokens) if given else None
             execution, context = e.context_for(task, limits=limits)
-            paths = e.store.list("CandidatePath", "task_id", execution.task_id)
-            order = [execution.recommended_path_id] + [p.id for p in sorted(paths, key=lambda p: -p.score)]
-            paths = sorted(paths, key=lambda p: order.index(p.id))
-
-            def status(p) -> str:
-                return (f"dominated by {p.dominated_by}" if p.dominated_by else
-                        "over the limits" if not p.within_limits else "Pareto-efficient")
-            scored = "\n".join(
-                f"- {p.strategy}: score {p.score:+.3f} ({status(p)}), success~{p.success_probability:.0%}, "
-                f"~{p.tool_calls:.0f} calls, ~{p.time_seconds / 60:.0f} min, ~{p.context_tokens / 1000:.1f}k tokens, "
-                f"risk {p.risk:.2f}, uncertainty {p.uncertainty:.2f}, reversibility {p.reversibility:.2f}, "
-                f"past evidence n={p.evidence_count}" for p in paths)
-            return f"{context.text}\n\nCandidate paths:\n{scored}\n(execution {execution.id})"
+            return f"{context.text}\n(execution {execution.id})"
         return run(operation)
 
     @tool("Check progress", READ)
@@ -194,6 +184,31 @@ def build_server(project: Path) -> FastMCP:
         Errors: 'No execution recorded yet' before any task was planned; a 'not enabled' message until the
         project is approved."""
         return run(lambda e: e.paths())
+
+    @tool("Get project Reflexes", READ)
+    def get_project_reflexes() -> str:
+        """Show the project-specific procedures OpenReflex has learned from repeated successful work.
+        Returns: a compact list of learned/proven Reflex names, lifecycle state, support/verification counts and
+        procedure steps. Candidate procedures from a single run are intentionally hidden until repeated evidence
+        promotes them.
+        Use when: the user asks what OpenReflex has learned specifically about this project, which reusable procedures
+        exist, or how a named Reflex works.
+        Not for: backend routing internals or generic strategies (use get_candidate_paths for those diagnostics).
+        Side effects: none; read-only. It never recompiles memory or touches project files.
+        Errors: a 'not enabled' message is returned until the project is approved."""
+        def operation(e: Engine):
+            reflexes = visible_reflexes(e.store)
+            if not reflexes:
+                return "OPENREFLEX / PROJECT REFLEXES\n\nNo learned project Reflexes yet."
+            lines = ["OPENREFLEX / PROJECT REFLEXES", ""]
+            for reflex in reflexes:
+                lines.append(
+                    f"{reflex.name} · {reflex.state} · {reflex.success_count} successful · "
+                    f"{reflex.verified_count} verified"
+                )
+                lines.append("  " + " -> ".join(reflex.procedure))
+            return "\n".join(lines)
+        return run(operation)
 
     @tool("Get Reflex Score", READ)
     def get_reflex_score() -> ReflexScoreResult:
@@ -270,8 +285,9 @@ def build_server(project: Path) -> FastMCP:
         the project is approved."""
         def operation(e: Engine):
             outcome = e.record_outcome(status, evidence)
-            path_check = (f"better option: {outcome.best_alternative} (supported by comparable past tasks)"
-                          if outcome.best_alternative else "better option: none proven")
+            path_check = ("another approach may be better (supported by comparable past tasks; "
+                          "use get_candidate_paths for diagnostics)"
+                          if outcome.best_alternative else "no better option proven")
             return f"Outcome recorded: {outcome.status}. Path check: {path_check}."
         return run(operation)
 

@@ -62,9 +62,11 @@ def test_regret_and_detours_feed_back_into_routing():
     assert costly["test-first"].score < clean["test-first"].score
 
 
-def test_context_shows_budget_and_dominated_alternatives(engine):
+def test_normal_context_shows_budget_without_backend_alternatives(engine):
     text = engine.preview("Fix the flaky payment webhook signature verification")
-    assert "Budget: ~45 tool calls" in text and "incremental (dominated by test-first)" in text
+    assert "Budget: ~45 tool calls" in text
+    assert "Working approach:" in text
+    assert "test-first" not in text and "incremental" not in text
 
 
 def read(i):
@@ -156,8 +158,11 @@ def test_mcp_limits_and_progress_check(project):
     server = build_server(project)
     context = tool_text(server, "get_execution_context", {"task": "Fix the login redirect loop after logout",
                                                           "max_tool_calls": 15})
-    assert "Budget: ~15 tool calls" in context and "(your limit)" in context and "over the limits" in context
-    assert "Suggested path: inspect-first" in context
+    assert "Budget: ~15 tool calls" in context and "(your limit)" in context
+    assert "Working approach:" in context
+    assert "inspect-first" not in context
+    paths = tool_text(server, "get_candidate_paths", {})
+    assert "inspect-first" in paths and "over your limit" in paths
     with pytest.raises(ToolError, match="greater than 0"):
         tool_text(server, "get_execution_context", {"task": "x y z w v", "max_minutes": 0})
     progress = tool_text(server, "check_progress", {})
