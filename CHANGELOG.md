@@ -4,6 +4,24 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.7.0 (2026-09-21)
+
+- Make OpenReflex ambient by default: normal operation is lifecycle hooks only, with no model-invocable OpenReflex
+  skill and no automatically loaded MCP server.
+- Remove the packaged `SKILL.md` and plugin `.mcp.json`; Codex and Cursor plugin manifests no longer advertise
+  skills or MCP servers. The agent never has to remember to invoke OpenReflex for capture, retrieval or learning.
+- Change project installers for Claude Code, Codex, Cursor and OpenCode to install hooks only. Re-running the default
+  installer also removes legacy OpenReflex MCP entries from pre-0.7 project configuration.
+- Add `openreflex diagnostics enable|disable <agent>` for explicit, project-scoped MCP introspection/admin access.
+  The standalone MCP server and Registry listing remain available for deliberate MCP users.
+- Keep learned Project Reflex injection under 900 characters (about 225 tokens at the default estimator) and remove
+  routine Stop-hook instructions to call `record_outcome`.
+- Add first-class overhead accounting: estimated injected context tokens, zero-injection substantial tasks,
+  optional diagnostic MCP calls/result tokens, observed model tokens and estimated context tax.
+- Count diagnostic MCP response overhead locally without storing prompts, tool arguments or response content.
+- Align Python, runtime, Claude/Codex/Cursor plugin and MCP Registry metadata on version 0.7.0.
+
+
 ## 0.6.0 (2026-09-21)
 
 - Make Project Reflexes reusable across heterogeneous work rather than requiring the same task to recur. Domain
