@@ -475,11 +475,18 @@ class Engine:
                          token_usage: dict[str, int | float] | None = None) -> DecisionSnapshot:
         task = self._task(execution)
         experiences = self.retrieve(task.description, task.task_class) if task.substantial else []
+        reflex_name = None
+        if execution.reflex_id:
+            try:
+                reflex_name = self.store.get_reflex(execution.reflex_id).name
+            except ValueError:
+                pass
         snapshot = make_snapshot(now=now, phase=phase, action=action, best=best, paths=paths,
                                  experiences=experiences, policy=self.policy, context_tokens=context_tokens,
                                  budget_used=budget_used, event=event, actual_tool_calls=actual_tool_calls,
                                  actual_tokens=actual_tokens, elapsed_seconds=elapsed_seconds, outcome=outcome,
-                                 expected_regret=expected_regret, model_tokens=model_tokens, token_usage=token_usage)
+                                 expected_regret=expected_regret, model_tokens=model_tokens, token_usage=token_usage,
+                                 reflex_name=reflex_name)
         if not task.substantial:
             # A greeting or a follow-up that only triggered a tool call is not a task; keep its snapshot quiet.
             snapshot = DecisionSnapshot.from_dict({**snapshot.as_dict(), "visibility": "ambient"})
@@ -689,7 +696,7 @@ def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple
     cfg = policy or load_policy()
     experiences = [e for e, _ in retrieved]
     succeeded = sum(e.status == "success" for e in experiences)
-    best, rest = paths[0], paths[1:]
+    best = paths[0]
     if reflex is not None:
         lines = [f"[OpenReflex] Reflex: {reflex.name} | {reflex.state} · "
                  f"{reflex.success_count} successful project run(s)."]
@@ -700,7 +707,6 @@ def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple
         lines = [f"[OpenReflex] {task.task_mode.upper()} · {task.task_class} | "
                  f"{len(experiences)} similar past task(s) here, {succeeded} succeeded."]
         lines.append("Working approach: " + " -> ".join(best.steps))
-    basis = f"from {best.evidence_count} past run(s)" if best.evidence_count else "default prior"
     if budget is not None:
         lines.append(f"Budget: ~{budget.tool_calls:.0f} tool calls, ~{budget.seconds / 60:.0f} min, "
                      f"~{budget.context_tokens / 1000:.0f}k tokens of tool output"
