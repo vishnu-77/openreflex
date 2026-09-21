@@ -230,6 +230,27 @@ class UsageSample(Model):
 
 
 @dataclass(kw_only=True)
+class ProjectReflex(Model):
+    """A project-scoped procedure compiled from repeated successful executions."""
+
+    name: str
+    task_mode: str = one_of(("build", "investigate", "think"), "build")
+    task_class: str
+    state: str = one_of(("candidate", "learned", "proven", "stale"), "candidate")
+    seed_strategy: str | None = None
+    procedure: list[str] = field(default_factory=list)
+    evidence_ids: list[str] = field(default_factory=list)
+    support_count: int = 0
+    success_count: int = 0
+    verified_count: int = 0
+    confidence: float = unit(0.0)
+    embedding: list[float] = field(default_factory=list)
+    file_patterns: list[str] = field(default_factory=list)
+    created_at: float = 0.0
+    updated_at: float = 0.0
+
+
+@dataclass(kw_only=True)
 class Lesson(Model):
     experience_id: str
     key: str
