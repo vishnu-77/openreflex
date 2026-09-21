@@ -1,9 +1,8 @@
 name: Auto Release
 
 # A successful CI run on main is the only automatic release trigger.
-# This workflow does not create a tag first: it calls the reusable publisher with the exact
-# CI-tested SHA. The publisher creates the GitHub Release/tag only after PyPI verification
-# and MCP Registry publication succeed.
+# This workflow validates the CI-tested version and dispatches release.yml with that exact SHA.
+# Publishing happens in release.yml so PyPI Trusted Publishing sees the expected workflow identity.
 on:
   workflow_run:
     workflows: ["CI"]
@@ -12,7 +11,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write
+  actions: write
 
 concurrency:
   group: openreflex-auto-release
@@ -84,14 +83,23 @@ jobs:
             echo "should_release=true" >> "$GITHUB_OUTPUT"
           fi
 
-  publish:
+  dispatch:
     needs: prepare
     if: needs.prepare.outputs.should_release == 'true'
-    uses: ./.github/workflows/release.yml
-    with:
-      target: pypi
-      ref: ${{ github.event.workflow_run.head_sha }}
-      create_github_release: true
+    runs-on: ubuntu-latest
     permissions:
-      contents: write
-      id-token: write
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch the trusted release workflow
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh workflow run release.yml \
+            --repo "${{ github.repository }}" \
+            --ref main \
+            -f target=pypi \
+            -f create_github_release=true \
+            -f release_ref="$RELEASE_SHA"
