@@ -79,7 +79,9 @@ def test_cli_hook_never_blocks_even_with_bad_arguments(isolated_home, project):
 
 
 def test_cli_end_to_end_capture_via_subprocess(isolated_home, project):
-    assert _run(["approve", "--project", str(project)], env_home=isolated_home).returncode == 0
+    connected = _run(["install", "claude-code", "--project", str(project)], env_home=isolated_home)
+    assert connected.returncode == 0, connected.stderr
+    assert not (project / ".mcp.json").exists(), "normal capture must not require a model-facing MCP server"
     base = {"session_id": "cli", "cwd": str(project)}
     events = [
         ("UserPromptSubmit", {**base, "prompt": "Fix the unicode filename bug in the upload handler"}),
