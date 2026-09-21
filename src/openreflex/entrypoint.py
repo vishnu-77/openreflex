@@ -258,11 +258,9 @@ def _stop_state(project: Path, agent: str, session: str, output: str, payload: d
     outcome = "execution captured"
     data = _output_dict(output)
     notice = str(data.get("systemMessage") or "") if isinstance(data, dict) else ""
-    match = re.search(r"(?:COMPLETE|FAILED|UNVERIFIED|FINISHED)\s*\n\s*([^\s·]+)(?:\s*·\s*([a-z0-9_-]+))?", notice)
+    match = re.search(r"(?:COMPLETE|FAILED|UNVERIFIED|FINISHED)\s*\n\s*([^\s·]+)", notice)
     if match:
         outcome = match.group(1)
-        if match.group(2):
-            task["followed"] = match.group(2)
     reinforce_latest_execution(project, agent, session)
     task["active"] = False
     update_state(project, "remember", outcome=outcome, execution={}, task=task, activity={})
