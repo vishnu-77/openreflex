@@ -45,6 +45,31 @@ def _family_hints(text: str) -> set[str]:
     return {family for family, terms in families.items() if words & terms}
 
 
+def _query_hints(text: str) -> set[str]:
+    """Families explicitly named by a task description, including technology-specific phrases."""
+    words = _words(text)
+    hints = _family_hints(text)
+    if "terraform" in words:
+        hints.add("terraform")
+    if "helm" in words:
+        if words & {"value", "values"}:
+            hints.add("helm-values")
+        if words & {"chart", "charts"}:
+            hints.add("helm-chart")
+        if words & {"template", "templates"}:
+            hints.add("helm-template")
+    return hints
+
+
+def _scope_specificity(family: str) -> int:
+    """Deterministic tie-break: concrete technology/file scopes beat broad semantic scopes."""
+    if family in {"helm-values", "helm-chart", "helm-template", "terraform", "ci", "database", "dependencies", "tests"}:
+        return 3
+    if family.startswith("area:"):
+        return 2
+    return 1
+
+
 _GENERIC_AREA_TOKENS = {
     "src", "source", "docs", "doc", "helm", "terraform", "config", "configuration", "template", "templates",
     "chart", "charts", "values", "variable", "variables", "deployment", "deploy", "implementation", "plan",
@@ -105,7 +130,7 @@ def families_for_experience(experience: Experience) -> tuple[str, ...]:
         "authentication", "database", "ci", "deployment", "cache", "configuration", "api",
         "dependencies", "tests", "documentation", "architecture-review",
     ):
-        if family in _family_hints(experience.description):
+        if family in _query_hints(experience.description):
             add(family)
 
     for scope in sorted(_area_scopes(experience.files)):
@@ -355,7 +380,7 @@ def match_reflex(store: Store, description: str, task_mode: str, task_class: str
                  threshold: float = 0.28, family_hints: set[str] | None = None) -> tuple[ProjectReflex, float] | None:
     """Resolve the strongest project Reflex using intent, family, locality and execution evidence."""
     query = embed(description)
-    hints = _family_hints(description) | set(family_hints or ())
+    hints = _query_hints(description) | set(family_hints or ())
     scored: list[tuple[ProjectReflex, float]] = []
 
     for reflex in store.list_reflexes(states=_VISIBLE_STATES, limit=500):
@@ -384,7 +409,16 @@ def match_reflex(store: Store, description: str, task_mode: str, task_class: str
             continue
         scored.append((reflex, round(score, 4)))
 
-    return max(scored, key=lambda item: (item[1], item[0].confidence, item[0].success_count), default=None)
+    return max(
+        scored,
+        key=lambda item: (
+            item[1],
+            _scope_specificity(_reflex_family(item[0])),
+            item[0].confidence,
+            item[0].success_count,
+        ),
+        default=None,
+    )
 
 def visible_reflexes(store: Store) -> list[ProjectReflex]:
     return store.list_reflexes(states=_VISIBLE_STATES, limit=500)
