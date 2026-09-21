@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_auto_release_waits_for_successful_main_ci_and_calls_transactional_publisher():
+def test_auto_release_waits_for_successful_main_ci_and_dispatches_trusted_publisher():
     workflow = (ROOT / ".github/workflows/auto-release.yml").read_text(encoding="utf-8")
 
     assert 'workflows: ["CI"]' in workflow
@@ -12,17 +12,22 @@ def test_auto_release_waits_for_successful_main_ci_and_calls_transactional_publi
     assert "github.event.workflow_run.conclusion == 'success'" in workflow
     assert 'ref: ${{ github.event.workflow_run.head_sha }}' in workflow
     assert "gh release view" in workflow
-    assert "uses: ./.github/workflows/release.yml" in workflow
-    assert "target: pypi" in workflow
-    assert "create_github_release: true" in workflow
-    assert "git tag -a" not in workflow
+    assert "gh workflow run release.yml" in workflow
+    assert "--ref main" in workflow
+    assert "-f target=pypi" in workflow
+    assert "-f create_github_release=true" in workflow
+    assert '-f release_ref="$RELEASE_SHA"' in workflow
+    assert "uses: ./.github/workflows/release.yml" not in workflow
 
 
-def test_release_pipeline_is_reusable_and_finishes_with_github_release():
+def test_release_pipeline_preserves_release_workflow_oidc_identity_and_finishes_with_github_release():
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
 
-    assert "workflow_call:" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "workflow_call:" not in workflow
+    assert "release_ref:" in workflow
     assert "create_github_release:" in workflow
+    assert 'ref: ${{ inputs.release_ref || github.ref }}' in workflow
     assert 'test "$TAG_NAME" = "$EXPECTED_TAG"' in workflow
     assert "verify-pypi:" in workflow
     assert '"openreflex==$VERSION"' in workflow
