@@ -221,10 +221,25 @@ jobs:
         run: |
           curl -sL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
       - name: Publish to the MCP Registry
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
+          SERVER_NAME="$(jq -r .name server.json)"
+          ENCODED_NAME="$(python -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$SERVER_NAME")"
+          VERSION_URL="https://registry.modelcontextprotocol.io/v0.1/servers/$ENCODED_NAME/versions/$VERSION"
+
+          if curl -fsS "$VERSION_URL" >/dev/null 2>&1; then
+            echo "$SERVER_NAME $VERSION is already present in the MCP Registry."
+            exit 0
+          fi
+
           ./mcp-publisher login github-oidc
           for attempt in 1 2 3 4 5; do
             ./mcp-publisher publish && exit 0
+            if curl -fsS "$VERSION_URL" >/dev/null 2>&1; then
+              echo "$SERVER_NAME $VERSION became visible in the MCP Registry."
+              exit 0
+            fi
             echo "Registry or PyPI propagation not ready yet; retrying"; sleep 30
           done
           exit 1
