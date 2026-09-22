@@ -1,17 +1,17 @@
-"""Live cold-start A/B pilot: does OpenReflex's Project Map actually reduce exploration cost
-on a real, unfamiliar repository's first task, compared to a plain Claude Code session?
+"""Paired real-Claude A/B evaluation for OpenReflex cold-start project memory.
 
-Each task is investigation-only (Read/Grep/Glob, no edits) with one known-correct target file,
-mirroring scripts/benchmark_cold_start.py's scenario shape but run against a real repo with a
-real model instead of the deterministic retrieval contract alone. "Primed" means the Project Map
-snapshot is built (as the background primer would do) before the session starts; "baseline" is a
-plain claude session with no OpenReflex plugin/hooks at all. Both conditions get a fresh repo copy
-and a fresh, empty OPENREFLEX_HOME so neither run carries over prior Experience.
+The corpus is versioned under ``evals/cold_start``. Each task is read-only and has one reviewed
+target file. For every task and repetition, the harness runs fresh copies of the exact same pinned
+repository commit in two conditions: plain Claude Code (baseline), and Claude Code with a freshly
+primed OpenReflex Project Map but no prior Experience (primed).
 
-Requires: `claude` (Claude Code, signed in) and openreflex installed in this Python environment.
-Uses real model calls - a full pilot run costs a small amount.
+Arm order is deterministically shuffled within each pair to reduce temporal/provider-order bias.
+The harness records real model usage, cost, tool calls, wall time, correctness, and whether the
+OpenReflex context actually reached Claude. CI gates experiment validity, not a desired positive
+result: a treatment that uses more tokens is still valid data.
 
-    python scripts/live_cold_start_eval.py --seed /path/to/cloned/target/repo [--model haiku] [--out results.json]
+Example:
+    python scripts/live_cold_start_eval.py --seed /path/to/pinned/repo --reps 3
 """
 
 import argparse
@@ -272,6 +272,7 @@ def _paired_summary(results: list[dict], manifest: dict, model: str) -> dict:
         },
         "missing_treatment_context": missing_context,
     }
+
 
 def _summarize(results: list[dict], tasks: list[dict]) -> None:
     print("\n--- summary (mean over reps) ---")
