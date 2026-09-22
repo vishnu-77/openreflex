@@ -89,7 +89,7 @@ def test_completion_recap_is_compact_and_verified(engine, clock):
     )
     snapshot = engine.decision_snapshots(outcome.execution_id)[-1]
     recap = render_recap(snapshot)
-    assert recap.startswith("↺ OpenReflex · VERIFIED")
+    assert recap.startswith("↺ OpenReflex · COMPLETE")
     assert "test-first" not in recap
     assert "calls" not in recap
     assert "tokens" not in recap
