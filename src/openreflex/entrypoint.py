@@ -565,7 +565,7 @@ def _onboard(argv: list[str]) -> int:
     if status == "preserved-existing":
         print("  statusline  existing user status line preserved")
     else:
-        print("  statusline  managed OpenReflex runtime")
+        print("  statusline  managed OpenReflex runtime · user scope")
     print("")
     print(dashboard(project))
     return 0
@@ -694,13 +694,15 @@ def _augment_install(argv: list[str], result: int) -> None:
         print(f"  statusline  OpenReflex v{__version__} enabled")
     elif status == "preserved-existing":
         print("  statusline  existing user status line preserved")
+    elif status == "preserved-invalid":
+        print("  statusline  user settings unreadable; preserved unchanged")
 
 
 def _augment_uninstall(argv: list[str], result: int) -> None:
     if result != 0 or len(argv) < 2 or argv[1] != "claude-code" or "--dry-run" in argv:
         return
     project = project_root(_project_arg(argv))
-    if remove_statusline(project):
+    if remove_project_statusline(project):
         print("  statusline  OpenReflex status line removed")
 
 
