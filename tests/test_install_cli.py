@@ -80,7 +80,15 @@ def test_plugin_hook_files_match_installer_definitions():
         assert "mcpServers" not in manifest
         assert "skills" not in manifest
     assert not (PLUGIN / ".mcp.json").exists()
-    assert not (PLUGIN / "skills").exists()
+
+    # Claude exposes one explicit user-only /openreflex dashboard command. It must not
+    # become model-invocable or reintroduce the removed default MCP surface.
+    skill = (PLUGIN / "skills" / "openreflex" / "SKILL.md").read_text(encoding="utf-8")
+    assert "name: openreflex" in skill
+    assert "user-invocable: true" in skill
+    assert "disable-model-invocation: true" in skill
+    assert "openreflex tui" in skill
+    assert "diagnostics" in skill and "Do not enable MCP diagnostics" in skill
 
 
 def _run(args, stdin="", env_home=None, cwd=None):
