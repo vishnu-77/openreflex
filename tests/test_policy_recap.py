@@ -117,6 +117,44 @@ def test_claude_hook_surfaces_recap_as_system_message(project, tmp_path, clock):
     assert complete == ""
 
 
+def test_claude_unverified_edit_stop_is_silent(project, tmp_path, clock):
+    approve(project)
+    database = tmp_path / "quiet-unverified.sqlite3"
+
+    def factory(root):
+        return Engine(root, Store(database), clock=clock)
+
+    start_payload = {
+        "session_id": "quiet",
+        "cwd": str(project),
+        "prompt": "Fix the Helm deployment values validation failure please",
+    }
+    hooks.handle("claude-code", "UserPromptSubmit", start_payload, engine_factory=factory)
+
+    edit_payload = {
+        "session_id": "quiet",
+        "cwd": str(project),
+        "tool_name": "Edit",
+        "tool_use_id": "e1",
+        "tool_input": {"file_path": str(project / "charts/app/values.yaml")},
+    }
+    hooks.handle("claude-code", "PreToolUse", edit_payload, engine_factory=factory)
+    hooks.handle(
+        "claude-code",
+        "PostToolUse",
+        {**edit_payload, "tool_response": {"success": True}},
+        engine_factory=factory,
+    )
+
+    result = hooks.handle(
+        "claude-code",
+        "Stop",
+        {"session_id": "quiet", "cwd": str(project), "last_assistant_message": "Implemented the requested change."},
+        engine_factory=factory,
+    )
+    assert result == ""
+
+
 def test_codex_remains_non_chatty_on_stop(project, tmp_path, clock):
     approve(project)
     database = tmp_path / "codex-recap.sqlite3"
