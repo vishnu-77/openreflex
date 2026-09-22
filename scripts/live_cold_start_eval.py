@@ -160,11 +160,10 @@ def _target_rank(delivered: list[str], target: str) -> int | None:
 def run_condition(harness: Harness, seed: Path, task: dict, condition: str, work: Path, rep: int) -> dict:
     repo = work / f"{task['name']}-{condition}-{rep}-repo"
     home = work / f"{task['name']}-{condition}-{rep}-home"
-    shutil.copytree(seed, repo, ignore=shutil.ignore_patterns(".git"))
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
-    subprocess.run(["git", "-c", "user.email=eval@test", "-c", "user.name=eval", "commit", "-qm", "seed"],
-                   cwd=repo, check=True)
+    # Preserve the pinned repository's real Git history because Project Map uses Git
+    # structure as one prior. Both arms get independent local clones of the same SHA.
+    subprocess.run(["git", "clone", "--quiet", "--local", str(seed), str(repo)], check=True)
+    subprocess.run(["git", "checkout", "--quiet", "--detach", _git_sha(seed)], cwd=repo, check=True)
     env = harness.env_for(home)
 
     primed = condition == "primed"
