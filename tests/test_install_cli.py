@@ -68,7 +68,7 @@ def test_default_install_removes_legacy_model_facing_mcp_config(project):
 
 def test_plugin_hook_files_match_installer_definitions():
     claude = json.loads((PLUGIN / "hooks" / "hooks.json").read_text())
-    assert claude["hooks"] == install.claude_style_hooks("claude-code", install.CLAUDE_EVENTS)["hooks"]
+    assert claude["hooks"] == install.claude_plugin_hooks()["hooks"]
     assert json.loads((PLUGIN / "hooks" / "codex-hooks.json").read_text()) == \
         install.claude_style_hooks("codex", install.CODEX_EVENTS)
     assert json.loads((PLUGIN / "hooks" / "cursor-hooks.json").read_text()) == install.cursor_hooks()
@@ -87,8 +87,16 @@ def test_plugin_hook_files_match_installer_definitions():
     assert "name: openreflex" in skill
     assert "user-invocable: true" in skill
     assert "disable-model-invocation: true" in skill
-    assert "openreflex tui" in skill
+    assert "launcher.cjs" in skill and "onboard" in skill
+    assert "global `openreflex` executable" in skill
     assert "diagnostics" in skill and "Do not enable MCP diagnostics" in skill
+
+    launcher = (PLUGIN / "runtime" / "launcher.cjs").read_text(encoding="utf-8")
+    assert "openreflex==" in launcher
+    assert "OPENREFLEX_RUNTIME_ROOT" in launcher
+    assert "shutil.which" not in launcher
+    assert "runtime/launcher.cjs" in json.dumps(claude)
+    assert "openreflex hook claude-code" not in json.dumps(claude)
 
 
 def _run(args, stdin="", env_home=None, cwd=None):

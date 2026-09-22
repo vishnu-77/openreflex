@@ -10,6 +10,7 @@ must never block the coding agent.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
@@ -18,7 +19,7 @@ from typing import Callable, TypeVar
 
 from . import __version__, cli
 from .claude_ui import configure_statusline, remove_statusline
-from .project import approval, log_error, project_root
+from .project import approval, approve, log_error, project_root
 from .project_map import enrich_snapshot
 from .project_memory import ensure_background_refresh, load_snapshot, read_state, run_worker, update_state
 from .privacy import categorize, file_paths
@@ -91,8 +92,14 @@ def _plugin_manifest_version(root: str | None) -> str | None:
 def _record_hook_runtime(project: Path, argv: list[str]) -> None:
     """Record the versions Claude actually invoked, without persisting plugin cache paths."""
     state = read_state(project)
-    plugin_version = _plugin_manifest_version(_plugin_root_arg(argv))
+    plugin_version = _plugin_manifest_version(_plugin_root_arg(argv)) or os.environ.get("OPENREFLEX_PLUGIN_VERSION")
+    enabled = approval(project) is not None
+    runtime_source = "plugin-managed" if plugin_version else "system"
     fields: dict[str, object] = {}
+    if state.get("project_enabled") != enabled:
+        fields["project_enabled"] = enabled
+    if state.get("runtime_source") != runtime_source:
+        fields["runtime_source"] = runtime_source
     if state.get("hook_runtime_version") != __version__:
         fields["hook_runtime_version"] = __version__
         fields["hook_loaded_at"] = round(time.time(), 3)
@@ -358,6 +365,36 @@ def _tui(argv: list[str]) -> int:
     return 0
 
 
+def _onboard(argv: list[str]) -> int:
+    """Explicit Claude-plugin onboarding: enable one project, pin UI, then show the dashboard."""
+    project = project_root(_project_arg(argv))
+    plugin_version = _plugin_manifest_version(_plugin_root_arg(argv)) or os.environ.get("OPENREFLEX_PLUGIN_VERSION") or __version__
+    approve(project, source="claude-plugin:onboard")
+    _record_hook_runtime(project, ["onboard", "--plugin-root", _plugin_root_arg(argv) or ""])
+    status = configure_statusline(project)
+    _best_effort("onboarding primer", lambda: ensure_background_refresh(project), "cold")
+    _best_effort("onboarding counts", lambda: sync_counts(project), {})
+    update_state(
+        project,
+        onboarding="ready",
+        project_enabled=True,
+        plugin_version=plugin_version or __version__,
+        hook_runtime_version=__version__,
+    )
+    print("OPENREFLEX / READY")
+    print(f"  project     {project}")
+    print(f"  runtime     v{__version__}")
+    print(f"  plugin      v{plugin_version or __version__}")
+    print("  memory      enabled · local")
+    if status == "preserved-existing":
+        print("  statusline  existing user status line preserved")
+    else:
+        print("  statusline  managed OpenReflex runtime")
+    print("")
+    print(dashboard(project))
+    return 0
+
+
 def _refresh_memory(project: Path, rebuild: bool = False) -> dict:
     if rebuild:
         from .project_memory import snapshot_path
@@ -505,6 +542,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if argv[0] == "statusline":
         return _statusline()
+    if argv[0] == "onboard":
+        return _onboard(argv[1:])
     if argv[0] == "tui":
         return _tui(argv[1:])
     if argv[0] == "memory":

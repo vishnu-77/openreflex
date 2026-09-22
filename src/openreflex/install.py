@@ -13,6 +13,7 @@ from .project import approve
 
 HOOK_COMMAND = "openreflex hook {agent} {event}"
 CLAUDE_PLUGIN_ROOT = ' --plugin-root "${CLAUDE_PLUGIN_ROOT}"'
+CLAUDE_PLUGIN_LAUNCHER = 'node "${{CLAUDE_PLUGIN_ROOT}}/runtime/launcher.cjs" hook claude-code {event} --plugin-root "${{CLAUDE_PLUGIN_ROOT}}"'
 CLAUDE_EVENTS = {"SessionStart": 10, "UserPromptSubmit": 10, "PreToolUse": 10, "PostToolUse": 10,
                  "PostToolUseFailure": 10, "PreCompact": 10, "Stop": 15, "SessionEnd": 5}
 CODEX_EVENTS = {"SessionStart": 10, "UserPromptSubmit": 10, "PreToolUse": 10, "PostToolUse": 10,
@@ -28,6 +29,19 @@ def claude_style_hooks(agent: str, events: dict[str, int]) -> dict:
 
     return {"hooks": {event: [{"hooks": [{"type": "command", "command": command(event),
                                           "timeout": timeout}]}] for event, timeout in events.items()}}
+
+
+def claude_plugin_hooks() -> dict:
+    """Claude plugin hooks use the plugin-owned launcher, never an arbitrary PATH runtime."""
+    timeouts = {**CLAUDE_EVENTS, "SessionStart": 120}
+    return {"hooks": {
+        event: [{"hooks": [{
+            "type": "command",
+            "command": CLAUDE_PLUGIN_LAUNCHER.format(event=event),
+            "timeout": timeout,
+        }]}]
+        for event, timeout in timeouts.items()
+    }}
 
 
 def cursor_hooks() -> dict:

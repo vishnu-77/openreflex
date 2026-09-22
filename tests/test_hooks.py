@@ -40,6 +40,7 @@ def test_unapproved_project_is_not_captured_and_notifies_once(project, factory):
     payload = {"session_id": "s", "cwd": str(project), "hook_event_name": "SessionStart", "source": "startup"}
     first = json.loads(call("claude-code", "SessionStart", payload, factory))
     assert "not enabled" in first["systemMessage"]
+    assert "/openreflex" in first["systemMessage"]
     assert call("claude-code", "SessionStart", payload, factory) == ""
     call("claude-code", "UserPromptSubmit", {**payload, "prompt": "Fix the login bug with expired tokens"}, factory)
     engine = factory(project)

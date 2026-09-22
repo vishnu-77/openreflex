@@ -214,6 +214,46 @@ def test_claude_statusline_is_added_only_when_user_has_none(project):
     assert "statusLine" not in json.loads(settings.read_text(encoding="utf-8"))
 
 
+def test_managed_statusline_replaces_only_openreflex_owned_runtime(monkeypatch, project):
+    settings = project / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": "openreflex statusline", "refreshInterval": 2}
+    }), encoding="utf-8")
+
+    managed = '"C:\\Users\\dev\\.openreflex\\runtime\\v0.9.0\\Scripts\\openreflex.exe"'
+    monkeypatch.setenv("OPENREFLEX_RUNTIME_COMMAND", managed)
+
+    assert configure_statusline(project) == "updated-runtime"
+    current = json.loads(settings.read_text(encoding="utf-8"))["statusLine"]["command"]
+    assert current == managed + " statusline"
+    assert remove_statusline(project) is True
+
+
+def test_onboard_enables_project_and_uses_plugin_managed_runtime(monkeypatch, project, tmp_path, capsys):
+    plugin = tmp_path / "plugin" / "openreflex"
+    manifest = plugin / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"name": "openreflex", "version": __version__}), encoding="utf-8")
+    managed = f'"{tmp_path / "managed" / "openreflex"}"'
+    monkeypatch.setenv("OPENREFLEX_RUNTIME_COMMAND", managed)
+    monkeypatch.chdir(project)
+
+    assert entrypoint.main(["onboard", "--plugin-root", str(plugin), "--project", str(project)]) == 0
+
+    state = read_state(project)
+    assert state["project_enabled"] is True
+    assert state["runtime_source"] == "plugin-managed"
+    assert state["hook_runtime_version"] == __version__
+    assert state["plugin_version"] == __version__
+    settings = json.loads((project / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert settings["statusLine"]["command"] == managed + " statusline"
+    output = capsys.readouterr().out
+    assert "OPENREFLEX / READY" in output
+    assert "project memory   enabled" in output
+    assert "runtime source   plugin-managed" in output
+
+
 def test_existing_user_statusline_is_never_replaced_or_removed(project):
     settings = project / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)

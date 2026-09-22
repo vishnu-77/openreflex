@@ -142,6 +142,8 @@ def statusline(project: Path, *, force_colour: bool = True) -> str:
         if total_tokens:
             details.append(f"{total_tokens / 1000:.1f}k tokens")
     else:
+        if state.get("project_enabled") is False:
+            details.append("project memory off · run /openreflex")
         facts = state.get("facts", sum(f.get("state") == "active" for f in snapshot.get("facts", [])))
         experiences = state.get("experiences")
         verified = state.get("verified")
@@ -197,6 +199,8 @@ def dashboard(project: Path, *, colour: bool | None = None) -> str:
     lines = [header, "", project.name, "─" * 58, "", "RUNTIME",
              f"  package          v{runtime}",
              f"  Claude plugin    {'v' + plugin if plugin else '-'}",
+             f"  runtime source   {state.get('runtime_source', 'system')}",
+             f"  project memory   {'enabled' if state.get('project_enabled') else 'off'}",
              f"  MCP runtime      {'v' + mcp if mcp else '-'}",
              f"  version state    {version_status}",
              "", "PROJECT MEMORY",

@@ -4,11 +4,29 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.9.0 (2026-09-22)
+
+- Make the Claude plugin own an exact-version OpenReflex runtime under `~/.openreflex/runtime/vX.Y.Z` instead of
+  executing whichever global `openreflex` happens to appear first on PATH.
+- Add a cross-platform Node runtime supervisor that finds Python 3.11+, creates the managed environment on first
+  SessionStart or explicit onboarding, installs the package version declared by the plugin manifest, and dispatches
+  all Claude hooks through that runtime.
+- Turn the user-invoked OpenReflex command into idempotent onboarding: enable only the current project, preserve any
+  user-owned Claude status line, prime local project memory, and show the dashboard in one action.
+- Pin the Claude status line to the plugin-managed runtime and automatically replace only older OpenReflex-owned
+  status-line commands; custom user status lines are never replaced.
+- Show runtime source and project-memory enablement in the dashboard, and give unapproved Claude projects one clear
+  `/openreflex` onboarding instruction.
+- Add a release-gating fresh-user smoke test on Linux, macOS and Windows. It puts a fake OpenReflex 0.3.2 first on
+  PATH, onboards through the plugin launcher, runs a full prompt/edit/test/Stop lifecycle, and verifies that the
+  stale global executable is never invoked.
+
+
 ## 0.8.1 (2026-09-22)
 
-- Add a bare `/openreflex` command to the Claude Code plugin for displaying the current OpenReflex dashboard.
+- Add a user-only OpenReflex Claude Code plugin command for displaying the current dashboard; Claude may expose the canonical namespaced form `/openreflex:openreflex`.
 - Keep the command user-only with `disable-model-invocation: true`; normal ambient learning still uses lifecycle hooks and does not add MCP tools or automatic skill invocation.
-- `/openreflex` delegates only to `openreflex tui` and does not inspect or modify repository files.
+- The command delegates to the installed OpenReflex runtime and does not inspect or modify repository files.
 
 
 ## 0.8.0 (2026-09-21)
