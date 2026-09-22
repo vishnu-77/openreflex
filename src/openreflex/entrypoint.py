@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Callable, TypeVar
 
 from . import __version__, cli
-from .claude_ui import configure_statusline, remove_statusline
+from .claude_ui import configure_statusline, remove_project_statusline
 from .project import approval, approve, log_error, project_root
 from .project_map import enrich_snapshot
 from .project_memory import ensure_background_refresh, load_snapshot, read_state, run_worker, update_state
