@@ -147,41 +147,15 @@ def make_snapshot(*, now: float, phase: str, action: str, best: CandidatePath | 
 
 def render_recap(snapshot: DecisionSnapshot, previous: DecisionSnapshot | None = None) -> str:
     if snapshot.phase == "complete":
-        summary = []
-        if snapshot.outcome:
-            summary.append(snapshot.outcome)
-        if snapshot.reflex_name:
-            summary.append(snapshot.reflex_name)
+        # Missing completion evidence is an internal epistemic state, not a user-facing failure.
+        # Keep it available in status/trace, but stay silent in the ambient Stop surface.
+        if snapshot.outcome == "unknown":
+            return ""
 
-        cost = []
-        if snapshot.actual_tool_calls is not None:
-            cost.append(f"{snapshot.actual_tool_calls} calls")
-        if snapshot.model_tokens is not None and snapshot.model_tokens > 0:
-            cost.append(f"{snapshot.model_tokens / 1000:.1f}k model tokens")
-        elif snapshot.actual_tokens is not None and snapshot.actual_tokens > 0:
-            cost.append(f"{snapshot.actual_tokens / 1000:.1f}k tool-output est.")
-        if snapshot.elapsed_seconds is not None:
-            cost.append(f"{snapshot.elapsed_seconds / 60:.1f}m")
-
-        comparison = None
-        if snapshot.outcome != "unknown":
-            if snapshot.expected_regret is not None and snapshot.next_best_strategy:
-                comparison = "Path check · another approach may be better"
-            else:
-                comparison = "Path check · no better option proven"
-
-        state = {
-            "success": "COMPLETE",
-            "failure": "FAILED",
-            "unknown": "UNVERIFIED",
-        }.get(snapshot.outcome, "FINISHED")
+        state = "VERIFIED" if snapshot.outcome == "success" else "CHECK FAILED"
         lines = [f"↺ OpenReflex · {state}"]
-        if summary:
-            lines.append(" · ".join(summary))
-        if cost:
-            lines.append(" · ".join(cost))
-        if comparison:
-            lines.append(comparison)
+        if snapshot.reflex_name:
+            lines.append(snapshot.reflex_name)
         return "\n".join(lines)
 
     delta = ""
