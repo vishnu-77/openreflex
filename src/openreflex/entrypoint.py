@@ -93,10 +93,13 @@ def _record_hook_runtime(project: Path, argv: list[str]) -> None:
     """Record the versions Claude actually invoked, without persisting plugin cache paths."""
     state = read_state(project)
     plugin_version = _plugin_manifest_version(_plugin_root_arg(argv)) or os.environ.get("OPENREFLEX_PLUGIN_VERSION")
-    fields: dict[str, object] = {
-        "project_enabled": approval(project) is not None,
-        "runtime_source": "plugin-managed" if plugin_version else "system",
-    }
+    enabled = approval(project) is not None
+    runtime_source = "plugin-managed" if plugin_version else "system"
+    fields: dict[str, object] = {}
+    if state.get("project_enabled") != enabled:
+        fields["project_enabled"] = enabled
+    if state.get("runtime_source") != runtime_source:
+        fields["runtime_source"] = runtime_source
     if state.get("hook_runtime_version") != __version__:
         fields["hook_runtime_version"] = __version__
         fields["hook_loaded_at"] = round(time.time(), 3)
