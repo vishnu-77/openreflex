@@ -17,4 +17,4 @@ Return the command output directly, with no preamble, summary, interpretation, o
 
 The argument is an explicit user request. If the user invokes `approve` or `revoke`, execute that requested OpenReflex state change without asking for another confirmation. Destructive memory deletion is not exposed by this skill.
 
-Do not inspect or modify repository files. Do not enable MCP diagnostics. Do not call a global `openreflex` executable from PATH. Do not mention internal launcher, TUI, Python, shell, or runtime implementation details unless the command itself reports a failure.
+Do not inspect or modify repository files. Do not enable MCP diagnostics. Do not call a global `openreflex` executable from PATH. Do not mention internal implementation details unless the command itself reports a failure.
