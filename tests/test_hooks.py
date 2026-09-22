@@ -227,7 +227,7 @@ def test_claude_hooks_reuse_runner_project_area_across_implementation_plan_and_f
         "claude-code", base, "helm-lint", "Bash", {"command": "helm lint helm/bitbucket-runner"}, factory
     )
     first_stop = json.loads(call("claude-code", "Stop", base, factory))
-    assert "COMPLETE" in first_stop["systemMessage"]
+    assert "VERIFIED" in first_stop["systemMessage"]
 
     clock.advance(20)
     call(
@@ -253,7 +253,7 @@ def test_claude_hooks_reuse_runner_project_area_across_implementation_plan_and_f
         {**base, "last_assistant_message": "Created the complete implementation plan and committed it on the branch."},
         factory,
     ))
-    assert "COMPLETE" in second_stop["systemMessage"]
+    assert "VERIFIED" in second_stop["systemMessage"]
 
     clock.advance(20)
     third = json.loads(call(
