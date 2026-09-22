@@ -91,7 +91,7 @@ def test_zero_tool_investigation_does_not_fake_recommended_path(project):
         assert experience.task_mode == "investigate"
         assert experience.strategy is None
         recap = render_recap(snapshots[-1])
-        assert "VERIFIED" in recap
+        assert "COMPLETE" in recap
         assert "source-first" not in recap
         assert "tokens" not in recap
         assert "regret" not in recap.lower()
