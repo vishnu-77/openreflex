@@ -2,7 +2,7 @@ import io
 import json
 
 from openreflex import __version__, entrypoint
-from openreflex.claude_ui import configure_statusline, remove_statusline
+from openreflex.claude_ui import claude_settings_path, configure_statusline, remove_statusline
 from openreflex.entrypoint import (
     _prompt_state,
     _record_hook_runtime,
@@ -202,20 +202,19 @@ def test_dashboard_is_readable_without_colour(project):
 
 
 def test_claude_statusline_is_added_only_when_user_has_none(project):
-    settings = project / ".claude" / "settings.json"
-    settings.parent.mkdir(parents=True)
-    settings.write_text('{"hooks": {}}\n', encoding="utf-8")
+    settings = claude_settings_path()
 
     assert configure_statusline(project) == "configured"
     data = json.loads(settings.read_text(encoding="utf-8"))
     assert data["statusLine"]["command"] == "openreflex statusline"
     assert data["statusLine"]["refreshInterval"] == 2
-    assert remove_statusline(project) is True
+    assert not (project / ".claude" / "settings.json").exists()
+    assert remove_statusline() is True
     assert "statusLine" not in json.loads(settings.read_text(encoding="utf-8"))
 
 
 def test_managed_statusline_replaces_only_openreflex_owned_runtime(monkeypatch, project):
-    settings = project / ".claude" / "settings.json"
+    settings = claude_settings_path()
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({
         "statusLine": {"type": "command", "command": "openreflex statusline", "refreshInterval": 2}
@@ -227,7 +226,8 @@ def test_managed_statusline_replaces_only_openreflex_owned_runtime(monkeypatch, 
     assert configure_statusline(project) == "updated-runtime"
     current = json.loads(settings.read_text(encoding="utf-8"))["statusLine"]["command"]
     assert current == managed + " statusline"
-    assert remove_statusline(project) is True
+    assert not (project / ".claude" / "settings.json").exists()
+    assert remove_statusline() is True
 
 
 def test_onboard_enables_project_and_uses_plugin_managed_runtime(monkeypatch, project, tmp_path, capsys):
@@ -246,8 +246,9 @@ def test_onboard_enables_project_and_uses_plugin_managed_runtime(monkeypatch, pr
     assert state["runtime_source"] == "plugin-managed"
     assert state["hook_runtime_version"] == __version__
     assert state["plugin_version"] == __version__
-    settings = json.loads((project / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    settings = json.loads(claude_settings_path().read_text(encoding="utf-8"))
     assert settings["statusLine"]["command"] == managed + " statusline"
+    assert not (project / ".claude" / "settings.json").exists()
     output = capsys.readouterr().out
     assert "OPENREFLEX / READY" in output
     assert "project memory   enabled" in output
@@ -255,15 +256,14 @@ def test_onboard_enables_project_and_uses_plugin_managed_runtime(monkeypatch, pr
 
 
 def test_existing_user_statusline_is_never_replaced_or_removed(project):
-    settings = project / ".claude" / "settings.json"
+    settings = claude_settings_path()
     settings.parent.mkdir(parents=True)
     original = {"statusLine": {"type": "command", "command": "~/my-status.sh"}, "hooks": {}}
     settings.write_text(json.dumps(original), encoding="utf-8")
 
     assert configure_statusline(project) == "preserved-existing"
     assert json.loads(settings.read_text(encoding="utf-8"))["statusLine"] == original["statusLine"]
-    assert remove_statusline(project) is False
-
+    assert remove_statusline() is False
 
 def test_tui_survives_a_non_utf8_console(monkeypatch, project):
     """The dashboard's OpenReflex glyph (U+21BA) must not crash on a legacy Windows console codepage."""
