@@ -189,6 +189,7 @@ def run_condition(harness: Harness, seed: Path, task: dict, condition: str, work
     report = {
         "condition": condition,
         "code": run["code"],
+        "observed_model_tokens": _usage_tokens(run["result"].get("usage")),
         "seconds": run["seconds"],
         "num_turns": run["result"].get("num_turns"),
         "total_cost_usd": run["result"].get("total_cost_usd"),
@@ -213,9 +214,68 @@ def _mean(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 2) if values else None
 
 
-def _summarize(results: list[dict]) -> None:
+def _paired_summary(results: list[dict], manifest: dict, model: str) -> dict:
+    pairs: dict[tuple[str, int], dict[str, dict]] = {}
+    for row in results:
+        pairs.setdefault((row["task"], int(row["rep"])), {})[row["condition"]] = row
+
+    valid_pairs = []
+    for key, arms in sorted(pairs.items()):
+        baseline, primed = arms.get("baseline"), arms.get("primed")
+        if baseline and primed and baseline["code"] == 0 and primed["code"] == 0:
+            valid_pairs.append((key, baseline, primed))
+
+    def profile(condition: str) -> dict:
+        rows = [row for row in results if row["condition"] == condition and row["code"] == 0]
+        token_values = [row["observed_model_tokens"] for row in rows if row["observed_model_tokens"] is not None]
+        return {
+            "runs": len(rows),
+            "success_rate": _mean([1.0 if row["found_correct_file"] and row["answer_mentions_target"] else 0.0 for row in rows]),
+            "observed_model_tokens": _mean(token_values),
+            "exploration_calls": _mean([row["exploration_calls"] for row in rows]),
+            "total_tool_calls": _mean([row["total_tool_calls"] for row in rows]),
+            "seconds": _mean([row["seconds"] for row in rows]),
+            "cost_usd": _mean([row["total_cost_usd"] for row in rows]),
+        }
+
+    def paired_change(field: str) -> float | None:
+        changes = []
+        for _, baseline, primed in valid_pairs:
+            before, after = baseline.get(field), primed.get(field)
+            if isinstance(before, (int, float)) and before > 0 and isinstance(after, (int, float)):
+                changes.append((after - before) / before)
+        return round(sum(changes) / len(changes), 4) if changes else None
+
+    missing_context = [
+        {"task": row["task"], "rep": row["rep"]}
+        for row in results
+        if row["condition"] == "primed" and row["code"] == 0 and not row["openreflex_context_delivered"]
+    ]
+    return {
+        "kind": "real-agent-paired-pilot",
+        "claim_scope": "pilot only; do not generalize causal token savings beyond this pinned corpus",
+        "corpus": manifest["name"],
+        "repository": manifest["repository"],
+        "model": model,
+        "claude_code_version": manifest.get("claude_code_version"),
+        "tasks": len(manifest["tasks"]),
+        "pairs_total": len(pairs),
+        "pairs_valid": len(valid_pairs),
+        "baseline": profile("baseline"),
+        "primed": profile("primed"),
+        "paired_relative_change": {
+            "observed_model_tokens": paired_change("observed_model_tokens"),
+            "exploration_calls": paired_change("exploration_calls"),
+            "total_tool_calls": paired_change("total_tool_calls"),
+            "seconds": paired_change("seconds"),
+            "cost_usd": paired_change("total_cost_usd"),
+        },
+        "missing_treatment_context": missing_context,
+    }
+
+def _summarize(results: list[dict], tasks: list[dict]) -> None:
     print("\n--- summary (mean over reps) ---")
-    for task in TASKS:
+    for task in tasks:
         row = [r for r in results if r["task"] == task["name"]]
         for condition in ("baseline", "primed"):
             subset = [r for r in row if r["condition"] == condition]
