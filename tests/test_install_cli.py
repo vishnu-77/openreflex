@@ -82,6 +82,10 @@ def test_plugin_hook_files_match_installer_definitions():
     assert not (PLUGIN / ".mcp.json").exists()
     assert not (PLUGIN / "skills").exists()
 
+    command = (PLUGIN / "commands" / "openref.md").read_text(encoding="utf-8")
+    assert "disable-model-invocation: true" in command
+    assert "!\`openreflex tui\`" in command
+
 
 def _run(args, stdin="", env_home=None, cwd=None):
     env = {**os.environ, "PYTHONPATH": str(ROOT / "src"), "OPENREFLEX_HOME": str(env_home)}
