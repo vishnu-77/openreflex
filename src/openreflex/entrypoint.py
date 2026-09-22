@@ -49,6 +49,67 @@ ACTIVITY_LABELS = {
     "other": "TOOL",
 }
 
+CONTROL_SESSION_TTL_SECONDS = 600
+CONTROL_PROMPT = re.compile(r"^\s*/openreflex(?::openreflex)?(?:\s|$)", re.I)
+CONTROL_NATURAL = re.compile(
+    r"^\s*(?:please\s+)?(?:enable|disable)\s+openreflex(?:\s+for)?\s+(?:this|the|current)\s+project[.!]?\s*$"
+    r"|^\s*(?:please\s+)?(?:run\s+)?openreflex\s+(?:approve|revoke|status|doctor|why|trace|reflexes|memory)[.!]?\s*$",
+    re.I,
+)
+
+
+def _is_openreflex_control_prompt(prompt: str) -> bool:
+    text = prompt.strip()
+    return bool(
+        text
+        and (
+            CONTROL_PROMPT.search(text)
+            or CONTROL_NATURAL.fullmatch(text)
+            or "OPENREFLEX_CONTROL_REQUEST:" in text
+        )
+    )
+
+
+def _is_openreflex_control_tool(payload: dict) -> bool:
+    if str(payload.get("tool_name") or "").lower() not in {"bash", "shell", "run"}:
+        return False
+    arguments = payload.get("tool_input")
+    if not isinstance(arguments, dict):
+        return False
+    command = str(arguments.get("command") or "")
+    if not command:
+        return False
+    return bool(
+        re.search(r"runtime[/\\]launcher\.cjs[^\n]*\bcontrol\b", command, re.I)
+        or re.search(r"(^|[;&|]\s*)openreflex\s+(?:approve|revoke|status|doctor|why|trace|reflexes|memory)\b", command, re.I)
+    )
+
+
+def _control_sessions(project: Path) -> dict[str, float]:
+    now = time.time()
+    raw = read_state(project).get("control_sessions")
+    sessions = raw if isinstance(raw, dict) else {}
+    return {
+        str(key): float(value)
+        for key, value in sessions.items()
+        if isinstance(value, (int, float)) and now - float(value) < CONTROL_SESSION_TTL_SECONDS
+    }
+
+
+def _set_control_session(project: Path, session: str, active: bool) -> None:
+    if not session:
+        return
+    sessions = _control_sessions(project)
+    if active:
+        sessions[session] = round(time.time(), 3)
+    else:
+        sessions.pop(session, None)
+    update_state(project, control_sessions=sessions)
+
+
+def _control_session_active(project: Path, session: str) -> bool:
+    return bool(session and session in _control_sessions(project))
+
 
 def _best_effort(label: str, call: Callable[[], T], default: T) -> T:
     try:
@@ -298,6 +359,23 @@ def _hook(argv: list[str]) -> int:
     cwd = payload.get("cwd") if isinstance(payload.get("cwd"), str) else None
     session = str(payload.get("session_id") or payload.get("conversation_id") or "")
     project = project_root(cwd, hook_session=session)
+
+    # OpenReflex's own control surface is operational metadata, not project work.
+    # Never learn it as an experience, count its shell call, or ask it for code verification.
+    if event in PROMPT_EVENTS:
+        prompt = payload.get("prompt") if isinstance(payload.get("prompt"), str) else ""
+        if _is_openreflex_control_prompt(prompt):
+            _best_effort("mark control turn", lambda: _set_control_session(project, session, True), None)
+            return 0
+        _best_effort("clear control turn", lambda: _set_control_session(project, session, False), None)
+    elif _control_session_active(project, session):
+        if event in STOP_EVENTS:
+            _best_effort("clear control turn", lambda: _set_control_session(project, session, False), None)
+        return 0
+    elif event in TOOL_START_EVENTS | TOOL_END_EVENTS and _is_openreflex_control_tool(payload):
+        _best_effort("mark control turn", lambda: _set_control_session(project, session, True), None)
+        return 0
+
     enabled = approval(project) is not None
     phase = None
 
@@ -363,6 +441,104 @@ def _tui(argv: list[str]) -> int:
         _best_effort("TUI counts", lambda: sync_counts(project), {})
     print(dashboard(project))
     return 0
+
+
+def _control_request(argv: list[str]) -> str:
+    for index, item in enumerate(argv):
+        if item == "--request" and index + 1 < len(argv):
+            return argv[index + 1].strip()
+        if item.startswith("--request="):
+            return item.partition("=")[2].strip()
+    return ""
+
+
+def _compact_overview(project: Path, plugin_root: str | None = None) -> int:
+    enabled = approval(project) is not None
+    if enabled:
+        _best_effort("control counts", lambda: sync_counts(project), {})
+    state = read_state(project)
+    plugin_version = (
+        _plugin_manifest_version(plugin_root)
+        or str(state.get("plugin_version") or "").strip()
+        or os.environ.get("OPENREFLEX_PLUGIN_VERSION")
+        or __version__
+    )
+    runtime_version = str(state.get("hook_runtime_version") or __version__)
+    aligned = plugin_version == runtime_version == __version__
+    task = state.get("task") if isinstance(state.get("task"), dict) else {}
+    reflex_name = str(task.get("reflex") or "").strip()
+
+    reflex_count = 0
+    if enabled:
+        try:
+            from .reflexes import visible_reflexes
+            from .store import Store, database_path
+            store = Store(database_path(project))
+            try:
+                reflex_count = len(visible_reflexes(store))
+            finally:
+                store.close()
+        except Exception:  # noqa: BLE001 - overview must remain available if optional detail fails
+            reflex_count = 0
+
+    state_label = "READY" if enabled and aligned else "SETUP" if not enabled else "ATTENTION"
+    print(f"OPENREFLEX {__version__}                              {state_label}")
+    print("")
+    print(f"Project      {project.name}")
+    if enabled:
+        experiences = int(state.get("experiences", 0) or 0)
+        print(f"Memory       {experiences} experiences · {reflex_count} Reflexes")
+        print(f"Current      {reflex_name or ('learning' if experiences else 'learning project')}")
+    else:
+        print("Memory       not enabled")
+    print(f"Runtime      {'aligned' if aligned else f'plugin {plugin_version} / runtime {runtime_version}'}")
+    if not enabled:
+        print("")
+        print("Run /openreflex:openreflex approve to start learning.")
+    return 0
+
+
+def _control(argv: list[str]) -> int:
+    project = project_root(_project_arg(argv))
+    plugin_root = _plugin_root_arg(argv)
+    request = _control_request(argv).strip().lower()
+
+    if request in {"", "show", "dashboard"}:
+        return _compact_overview(project, plugin_root)
+
+    if request == "approve":
+        approve(project, source="claude-plugin:control")
+        _record_hook_runtime(project, ["control", "--plugin-root", plugin_root or ""])
+        configure_statusline(project)
+        _best_effort("control primer", lambda: ensure_background_refresh(project), "cold")
+        _best_effort("control counts", lambda: sync_counts(project), {})
+        update_state(project, onboarding="ready", project_enabled=True)
+        print("OPENREFLEX                              READY")
+        print("")
+        print(f"Project      {project.name}")
+        print("Memory       enabled · local")
+        print("Runtime      aligned")
+        return 0
+
+    if request == "revoke":
+        return cli.main(["revoke", "--project", str(project)])
+    if request == "status":
+        return cli.main(["status", "--project", str(project)])
+    if request == "doctor":
+        return cli.main(["doctor", "--project", str(project)])
+    if request == "why":
+        return cli.main(["why", "--project", str(project)])
+    if request == "trace":
+        return cli.main(["trace", "--project", str(project)])
+    if request == "reflexes":
+        return _reflexes(["--project", str(project)])
+    if request == "memory":
+        return _memory(["--project", str(project)])
+
+    print("OPENREFLEX / COMMAND")
+    print(f"  unknown     {request or '-'}")
+    print("  available   approve · status · reflexes · memory · doctor · why · trace · revoke")
+    return 2
 
 
 def _onboard(argv: list[str]) -> int:
@@ -542,6 +718,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if argv[0] == "statusline":
         return _statusline()
+    if argv[0] == "control":
+        return _control(argv[1:])
     if argv[0] == "onboard":
         return _onboard(argv[1:])
     if argv[0] == "tui":
