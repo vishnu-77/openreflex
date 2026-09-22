@@ -79,7 +79,7 @@ def test_recap_reports_retrieved_experience_and_context_cost(engine, clock):
     assert "1 experiences" in notice and f"+{snapshot.context_tokens} context tokens" in notice
 
 
-def test_completion_recap_shows_realised_path_cost_and_comparison(engine, clock):
+def test_completion_recap_is_compact_and_verified(engine, clock):
     outcome, _ = run_task(
         engine,
         clock,
@@ -89,12 +89,11 @@ def test_completion_recap_shows_realised_path_cost_and_comparison(engine, clock)
     )
     snapshot = engine.decision_snapshots(outcome.execution_id)[-1]
     recap = render_recap(snapshot)
-    assert recap.startswith("↺ OpenReflex · COMPLETE")
-    assert "success" in recap
+    assert recap.startswith("↺ OpenReflex · VERIFIED")
     assert "test-first" not in recap
-    assert "5 calls" in recap
-    assert "Path check · no better option proven" in recap
-    assert "regret" not in recap.lower()
+    assert "calls" not in recap
+    assert "tokens" not in recap
+    assert "Path check" not in recap
 
 
 def test_claude_hook_surfaces_recap_as_system_message(project, tmp_path, clock):
@@ -113,9 +112,9 @@ def test_claude_hook_surfaces_recap_as_system_message(project, tmp_path, clock):
     assert start["systemMessage"].startswith("↺ OpenReflex · ")
     assert "authentication refresh" not in start["systemMessage"]
 
-    complete = json.loads(hooks.handle("claude-code", "Stop", {"session_id": "s", "cwd": str(project)},
-                                       engine_factory=factory))
-    assert complete["systemMessage"].startswith("↺ OpenReflex · UNVERIFIED")
+    complete = hooks.handle("claude-code", "Stop", {"session_id": "s", "cwd": str(project)},
+                            engine_factory=factory)
+    assert complete == ""
 
 
 def test_codex_remains_non_chatty_on_stop(project, tmp_path, clock):
