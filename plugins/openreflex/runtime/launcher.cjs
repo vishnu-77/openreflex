@@ -124,6 +124,17 @@ function acquireLock(timeoutMs = 120000) {
       return true;
     } catch (error) {
       if (error && error.code !== "EEXIST") throw error;
+      try {
+        const ageMs = Date.now() - fs.statSync(lockPath).mtimeMs;
+        if (ageMs > 300000) {
+          fs.unlinkSync(lockPath);
+          appendLog("reclaimed stale bootstrap lock");
+          continue;
+        }
+      } catch (_) {
+        // The lock disappeared between attempts; retry immediately.
+        continue;
+      }
       if (Date.now() >= deadline) return false;
       sleep(100);
     }
