@@ -71,8 +71,8 @@ with sufficient repetitions and a predeclared quality/non-inferiority criterion.
 
 ## CI/CD
 
-`.github/workflows/live-agent-eval.yml` runs weekly and can also be invoked manually. It requires the repository secret
-`ANTHROPIC_API_KEY`. The workflow installs the pinned Claude Code version, checks out the exact corpus commit, runs the
+`.github/workflows/live-agent-eval.yml` runs weekly and can also be invoked manually. It requires either the repository
+secret `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`. The workflow installs the pinned Claude Code version, checks out the exact corpus commit, runs the
 paired evaluation, publishes a GitHub Actions job summary, and retains the raw JSON results as an artifact for 30 days.
 
 The normal `CI` workflow does not spend model tokens. It validates the evaluation manifest and summarisation logic
