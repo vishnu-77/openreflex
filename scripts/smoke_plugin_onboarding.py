@@ -42,11 +42,11 @@ def main() -> int:
 
     if os.name == "nt":
         stale = old_bin / "openreflex.bat"
-        stale.write_text(f"@echo off\r\necho 0.3.2\r\necho stale>{sentinel}\r\n", encoding="utf-8")
+        stale.write_text(f'@echo off\r\necho stale>"{sentinel}"\r\necho 0.3.2\r\nexit /b 99\r\n', encoding="utf-8")
     else:
         stale = old_bin / "openreflex"
         stale.write_text(
-            f"#!/bin/sh\necho 0.3.2\necho stale > {sentinel}\n",
+            f'#!/bin/sh\necho stale > "{sentinel}"\necho 0.3.2\nexit 99\n',
             encoding="utf-8",
         )
         stale.chmod(stale.stat().st_mode | stat.S_IEXEC)
