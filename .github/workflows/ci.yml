@@ -53,6 +53,10 @@ jobs:
           "$BIN/python" -m pip install dist/*.whl
           cp scripts/smoke_installed.py "$RUNNER_TEMP/smoke.py"
           cd "$RUNNER_TEMP" && PATH="$BIN:$PATH" "$BIN/python" smoke.py
+      - name: Smoke-test fresh Claude plugin onboarding with stale global runtime
+        shell: bash
+        run: |
+          python scripts/smoke_plugin_onboarding.py dist/*.whl
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'ubuntu-latest'
         with:
