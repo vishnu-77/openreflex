@@ -25,6 +25,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from openreflex import __version__ as OPENREFLEX_VERSION
+
 REPO = Path(__file__).resolve().parents[1]
 PLUGIN = REPO / "plugins" / "openreflex"
 
@@ -256,6 +258,7 @@ def _paired_summary(results: list[dict], manifest: dict, model: str) -> dict:
         "corpus": manifest["name"],
         "repository": manifest["repository"],
         "model": model,
+        "openreflex_version": OPENREFLEX_VERSION,
         "claude_code_version": manifest.get("claude_code_version"),
         "tasks": len(manifest["tasks"]),
         "pairs_total": len(pairs),
