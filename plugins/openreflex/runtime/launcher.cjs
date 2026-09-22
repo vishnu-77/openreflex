@@ -204,33 +204,35 @@ function setupFailure(error) {
   return 1;
 }
 
-let python;
-try {
-  python = ensureRuntime();
-} catch (error) {
-  process.exitCode = setupFailure(error);
-  return;
+function main() {
+  let python;
+  try {
+    python = ensureRuntime();
+  } catch (error) {
+    return setupFailure(error);
+  }
+
+  if (!python) {
+    // Normal hook events fail open while SessionStart/onboarding owns bootstrap.
+    return 0;
+  }
+
+  const forwarded = args[0] === "onboard" ? ["onboard", ...args.slice(1)] : args;
+  const input = fs.readFileSync(0);
+  const env = {
+    ...process.env,
+    OPENREFLEX_PLUGIN_VERSION: expectedVersion,
+    OPENREFLEX_RUNTIME_COMMAND: shellQuote(runtimeExecutable),
+  };
+  const result = run(python, ["-m", "openreflex", ...forwarded], {
+    timeout: args[0] === "hook" ? 30000 : 120000,
+    input,
+    env,
+  });
+
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  return Number.isInteger(result.status) ? result.status : 1;
 }
 
-if (!python) {
-  // Normal hook events fail open while SessionStart/onboarding owns bootstrap.
-  process.exitCode = 0;
-  return;
-}
-
-const forwarded = args[0] === "onboard" ? ["onboard", ...args.slice(1)] : args;
-const input = fs.readFileSync(0);
-const env = {
-  ...process.env,
-  OPENREFLEX_PLUGIN_VERSION: expectedVersion,
-  OPENREFLEX_RUNTIME_COMMAND: shellQuote(runtimeExecutable),
-};
-const result = run(python, ["-m", "openreflex", ...forwarded], {
-  timeout: args[0] === "hook" ? 30000 : 120000,
-  input,
-  env,
-});
-
-if (result.stdout) process.stdout.write(result.stdout);
-if (result.stderr) process.stderr.write(result.stderr);
-process.exitCode = Number.isInteger(result.status) ? result.status : 1;
+process.exitCode = main();
