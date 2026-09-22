@@ -13,7 +13,7 @@ from .project import approve
 
 HOOK_COMMAND = "openreflex hook {agent} {event}"
 CLAUDE_PLUGIN_ROOT = ' --plugin-root "${CLAUDE_PLUGIN_ROOT}"'
-CLAUDE_PLUGIN_LAUNCHER = 'node "${CLAUDE_PLUGIN_ROOT}/runtime/launcher.cjs" hook claude-code {event} --plugin-root "${CLAUDE_PLUGIN_ROOT}"'
+CLAUDE_PLUGIN_LAUNCHER = 'node "${{CLAUDE_PLUGIN_ROOT}}/runtime/launcher.cjs" hook claude-code {event} --plugin-root "${{CLAUDE_PLUGIN_ROOT}}"'
 CLAUDE_EVENTS = {"SessionStart": 10, "UserPromptSubmit": 10, "PreToolUse": 10, "PostToolUse": 10,
                  "PostToolUseFailure": 10, "PreCompact": 10, "Stop": 15, "SessionEnd": 5}
 CODEX_EVENTS = {"SessionStart": 10, "UserPromptSubmit": 10, "PreToolUse": 10, "PostToolUse": 10,
