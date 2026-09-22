@@ -10,6 +10,7 @@ must never block the coding agent.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
@@ -91,8 +92,11 @@ def _plugin_manifest_version(root: str | None) -> str | None:
 def _record_hook_runtime(project: Path, argv: list[str]) -> None:
     """Record the versions Claude actually invoked, without persisting plugin cache paths."""
     state = read_state(project)
-    plugin_version = _plugin_manifest_version(_plugin_root_arg(argv))
-    fields: dict[str, object] = {}
+    plugin_version = _plugin_manifest_version(_plugin_root_arg(argv)) or os.environ.get("OPENREFLEX_PLUGIN_VERSION")
+    fields: dict[str, object] = {
+        "project_enabled": approval(project) is not None,
+        "runtime_source": "plugin-managed" if plugin_version else "system",
+    }
     if state.get("hook_runtime_version") != __version__:
         fields["hook_runtime_version"] = __version__
         fields["hook_loaded_at"] = round(time.time(), 3)
@@ -374,7 +378,7 @@ def _tui(argv: list[str]) -> int:
 def _onboard(argv: list[str]) -> int:
     """Explicit Claude-plugin onboarding: enable one project, pin UI, then show the dashboard."""
     project = project_root(_project_arg(argv))
-    plugin_version = _plugin_manifest_version(_plugin_root_arg(argv)) or sys.modules[__package__].__version__ if __package__ else __version__
+    plugin_version = _plugin_manifest_version(_plugin_root_arg(argv)) or os.environ.get("OPENREFLEX_PLUGIN_VERSION") or __version__
     approve(project, source="claude-plugin:onboard")
     _record_hook_runtime(project, ["onboard", "--plugin-root", _plugin_root_arg(argv) or ""])
     status = configure_statusline(project)
