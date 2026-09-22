@@ -291,40 +291,76 @@ def _summarize(results: list[dict], tasks: list[dict]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seed", required=True, help="Path to a local clone of the target repo")
-    parser.add_argument("--model", default="haiku")
-    parser.add_argument("--reps", type=int, default=1, help="Repetitions per task/condition, to average out model variance")
+    parser.add_argument("--seed", required=True, help="Path to the exact pinned checkout named by the manifest")
+    parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
+    parser.add_argument("--model", default="", help="Override the manifest model")
+    parser.add_argument("--reps", type=int, default=3, help="Paired repetitions per task")
+    parser.add_argument("--order-seed", type=int, default=20260922)
     parser.add_argument("--out", default="cold-start-eval-results.json")
+    parser.add_argument("--summary-out", default="cold-start-eval-summary.json")
     args = parser.parse_args()
 
+    manifest = _load_manifest(Path(args.manifest))
     seed = Path(args.seed).resolve()
     if not seed.is_dir():
         raise SystemExit(f"seed repo not found: {seed}")
+    actual_sha = _git_sha(seed)
+    expected_sha = manifest["repository"]["commit"]
+    if actual_sha != expected_sha:
+        raise SystemExit(f"seed commit mismatch: expected {expected_sha}, got {actual_sha}")
+    missing_targets = [task["target"] for task in manifest["tasks"] if not (seed / task["target"]).is_file()]
+    if missing_targets:
+        raise SystemExit("manifest target files missing from pinned repository: " + ", ".join(missing_targets))
 
+    model = args.model or manifest.get("model") or "sonnet"
     work = Path(tempfile.mkdtemp(prefix="openreflex-coldstart-"))
-    harness = Harness(args.model, work)
-    print(f"seed: {seed}\nworkdir: {work}\nclaude: {harness.claude}\nopenreflex: {harness.exe}\nreps: {args.reps}\n")
+    harness = Harness(model, work)
+    print(
+        f"corpus: {manifest['name']}\nseed: {seed}\ncommit: {actual_sha}\n"
+        f"workdir: {work}\nclaude: {harness.claude}\nopenreflex: {harness.exe}\n"
+        f"model: {model}\nreps: {args.reps}\n"
+    )
 
     results = []
-    for task in TASKS:
-        for condition in ("baseline", "primed"):
+    try:
+        for task in manifest["tasks"]:
             for rep in range(1, args.reps + 1):
-                print(f"running {task['name']} / {condition} / rep {rep} ...")
-                report = run_condition(harness, seed, task, condition, work, rep)
-                report["task"] = task["name"]
-                report["rep"] = rep
-                results.append(report)
-                print(f"  [{('ok' if report['code'] == 0 else 'FAIL')}] "
-                      f"{report['exploration_calls']} exploration calls, "
-                      f"found target: {report['found_correct_file']}, "
-                      f"rank: {report['target_rank_in_context']}, "
-                      f"{report['seconds']}s, cost ${report['total_cost_usd']}")
+                conditions = ["baseline", "primed"]
+                random.Random(f"{args.order_seed}:{task['name']}:{rep}").shuffle(conditions)
+                for condition in conditions:
+                    print(f"running {task['name']} / {condition} / rep {rep} ...")
+                    report = run_condition(harness, seed, task, condition, work, rep)
+                    report["task"] = task["name"]
+                    report["rep"] = rep
+                    report["target"] = task["target"]
+                    results.append(report)
+                    print(
+                        f"  [{('ok' if report['code'] == 0 else 'FAIL')}] "
+                        f"{report['exploration_calls']} exploration calls, "
+                        f"tokens={report['observed_model_tokens']}, "
+                        f"found target: {report['found_correct_file']}, "
+                        f"rank: {report['target_rank_in_context']}, "
+                        f"{report['seconds']}s, cost ${report['total_cost_usd']}"
+                    )
 
-    Path(args.out).write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
-    print(f"\nWrote {args.out}")
-    _summarize(results)
-    shutil.rmtree(work, ignore_errors=True)
-    return 0
+        summary = _paired_summary(results, manifest, model)
+        Path(args.out).write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
+        Path(args.summary_out).write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
+        print(f"\nWrote {args.out} and {args.summary_out}")
+        _summarize(results, manifest["tasks"])
+        print("\n--- paired result ---")
+        print(json.dumps(summary, indent=2))
+
+        # Gate experiment validity, not a desired positive result. Negative efficacy results are data.
+        if summary["pairs_valid"] == 0:
+            print("No valid baseline/treatment pairs completed.", file=sys.stderr)
+            return 2
+        if summary["missing_treatment_context"]:
+            print("OpenReflex treatment ran without delivered project context.", file=sys.stderr)
+            return 2
+        return 0
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 if __name__ == "__main__":
