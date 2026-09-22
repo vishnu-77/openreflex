@@ -564,6 +564,8 @@ def _onboard(argv: list[str]) -> int:
     print("  memory      enabled · local")
     if status == "preserved-existing":
         print("  statusline  existing user status line preserved")
+    elif status == "preserved-invalid":
+        print("  statusline  user settings unreadable; preserved unchanged")
     else:
         print("  statusline  managed OpenReflex runtime · user scope")
     print("")
@@ -703,7 +705,7 @@ def _augment_uninstall(argv: list[str], result: int) -> None:
         return
     project = project_root(_project_arg(argv))
     if remove_project_statusline(project):
-        print("  statusline  OpenReflex status line removed")
+        print("  statusline  legacy project status line removed")
 
 
 def main(argv: list[str] | None = None) -> int:
