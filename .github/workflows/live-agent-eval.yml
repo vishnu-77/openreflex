@@ -1,0 +1,158 @@
+name: Live Agent Efficiency Eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: Paired repetitions per task
+        required: false
+        default: "3"
+      model:
+        description: Claude model override; empty uses the pinned corpus model
+        required: false
+        default: ""
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openreflex-live-agent-eval
+  cancel-in-progress: false
+
+jobs:
+  click-cold-start:
+    name: real Claude A/B · Click cold start
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DISABLE_AUTOUPDATER: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Require live-eval credential
+        shell: bash
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "ANTHROPIC_API_KEY repository secret is required for the paid live-agent evaluation." >&2
+            exit 1
+          fi
+
+      - id: corpus
+        name: Read pinned evaluation contract
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          data = json.loads(Path("evals/cold_start/click.json").read_text())
+          print("repo_url=" + data["repository"]["url"])
+          print("repo_commit=" + data["repository"]["commit"])
+          print("claude_code_version=" + data["claude_code_version"])
+          print("model=" + data["model"])
+          PY
+
+      - name: Install OpenReflex under test
+        run: python -m pip install -e .
+
+      - name: Install pinned Claude Code
+        shell: bash
+        env:
+          CLAUDE_CODE_VERSION: ${{ steps.corpus.outputs.claude_code_version }}
+        run: |
+          npm install -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
+          claude --version
+
+      - name: Checkout pinned Click corpus
+        shell: bash
+        env:
+          CORPUS_URL: ${{ steps.corpus.outputs.repo_url }}
+          CORPUS_SHA: ${{ steps.corpus.outputs.repo_commit }}
+        run: |
+          git clone --quiet "$CORPUS_URL" "$RUNNER_TEMP/click"
+          git -C "$RUNNER_TEMP/click" checkout --quiet --detach "$CORPUS_SHA"
+          test "$(git -C "$RUNNER_TEMP/click" rev-parse HEAD)" = "$CORPUS_SHA"
+
+      - name: Run paired baseline vs OpenReflex evaluation
+        shell: bash
+        env:
+          REQUESTED_REPS: ${{ inputs.reps }}
+          REQUESTED_MODEL: ${{ inputs.model }}
+          PINNED_MODEL: ${{ steps.corpus.outputs.model }}
+        run: |
+          REPS="$REQUESTED_REPS"
+          MODEL="$REQUESTED_MODEL"
+          [ -n "$REPS" ] || REPS=3
+          [ -n "$MODEL" ] || MODEL="$PINNED_MODEL"
+          python scripts/live_cold_start_eval.py \
+            --seed "$RUNNER_TEMP/click" \
+            --manifest evals/cold_start/click.json \
+            --model "$MODEL" \
+            --reps "$REPS" \
+            --out live-eval-results.json \
+            --summary-out live-eval-summary.json
+
+      - name: Publish evaluation summary
+        if: always()
+        shell: bash
+        run: |
+          if [ ! -f live-eval-summary.json ]; then
+            echo "No live evaluation summary was produced." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path("live-eval-summary.json").read_text())
+
+          def pct(value):
+              return "-" if value is None else f"{value:+.1%}"
+
+          print("## OpenReflex real-agent paired pilot")
+          print("")
+          print(f"Corpus: `{data['corpus']}`  ")
+          print(f"Repository: `{data['repository']['name']}@{data['repository']['commit'][:12]}`  ")
+          print(f"Model: `{data['model']}`  ")
+          print(f"Valid pairs: **{data['pairs_valid']} / {data['pairs_total']}**")
+          print("")
+          print("| Metric | Baseline | OpenReflex | Paired change |")
+          print("|---|---:|---:|---:|")
+          metrics = [
+              ("Observed model tokens", "observed_model_tokens"),
+              ("Exploration calls", "exploration_calls"),
+              ("Total tool calls", "total_tool_calls"),
+              ("Wall time (s)", "seconds"),
+              ("Cost (USD)", "cost_usd"),
+          ]
+          for label, key in metrics:
+              before = data["baseline"].get(key)
+              after = data["primed"].get(key)
+              change = data["paired_relative_change"].get(key)
+              print(f"| {label} | {before if before is not None else '-'} | {after if after is not None else '-'} | {pct(change)} |")
+          print(f"| Success rate | {data['baseline']['success_rate']} | {data['primed']['success_rate']} | observational |")
+          print("")
+          print("> " + data["claim_scope"])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-agent-eval-click
+          path: |
+            evals/cold_start/click.json
+            live-eval-results.json
+            live-eval-summary.json
+          if-no-files-found: warn
+          retention-days: 30
