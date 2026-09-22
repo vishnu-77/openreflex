@@ -19,7 +19,7 @@ from typing import Callable, TypeVar
 
 from . import __version__, cli
 from .claude_ui import configure_statusline, remove_statusline
-from .project import approval, approve, log_error, project_root, should_notify_unapproved
+from .project import approval, approve, log_error, project_root
 from .project_map import enrich_snapshot
 from .project_memory import ensure_background_refresh, load_snapshot, read_state, run_worker, update_state
 from .privacy import categorize, file_paths
@@ -297,19 +297,6 @@ def _hook(argv: list[str]) -> int:
     project = project_root(cwd, hook_session=session)
     enabled = approval(project) is not None
     phase = None
-
-    if not enabled and event in SESSION_EVENTS and should_notify_unapproved(project):
-        output = safe_handle(agent, event, raw)
-        output = _merge_notice(
-            output,
-            "↺ OpenReflex · OFF\n"
-            "Local project memory is not enabled yet. Run /openreflex "
-            "(or /openreflex:openreflex if Claude shows the namespaced form) once to enable it.",
-        )
-        if output:
-            sys.stdout.write(output)
-            sys.stdout.flush()
-        return 0
 
     if enabled:
         _best_effort("record hook runtime", lambda: _record_hook_runtime(project, argv), None)
