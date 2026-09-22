@@ -102,8 +102,10 @@ function pythonVersion(command, prefix = []) {
 function findBasePython() {
   const candidates = [];
   if (process.env.OPENREFLEX_PYTHON) candidates.push([process.env.OPENREFLEX_PYTHON, []]);
-  if (process.platform === "win32") candidates.push(["py", ["-3"]]);
-  candidates.push(["python3", []], ["python", []]);
+  if (process.platform === "win32") {
+    candidates.push(["py", ["-3.13"]], ["py", ["-3.12"]], ["py", ["-3.11"]], ["py", ["-3"]]);
+  }
+  candidates.push(["python3.13", []], ["python3.12", []], ["python3.11", []], ["python3", []], ["python", []]);
   for (const [command, prefix] of candidates) {
     const found = pythonVersion(command, prefix);
     if (found) return found;
@@ -139,12 +141,12 @@ function bootstrapAllowed() {
 
 function ensureRuntime() {
   if (!expectedVersion) throw new Error("plugin manifest version is unavailable");
-  if (versionFrom(runtimePython) === expectedVersion) return runtimePython;
+  if (versionFrom(runtimePython) === expectedVersion && fs.existsSync(runtimeExecutable)) return runtimePython;
   if (!bootstrapAllowed()) return null;
 
   if (!acquireLock()) throw new Error("timed out waiting for another OpenReflex runtime bootstrap");
   try {
-    if (versionFrom(runtimePython) === expectedVersion) return runtimePython;
+    if (versionFrom(runtimePython) === expectedVersion && fs.existsSync(runtimeExecutable)) return runtimePython;
 
     const basePython = findBasePython();
     if (!basePython) {
@@ -218,7 +220,7 @@ function main() {
   }
 
   const forwarded = args[0] === "onboard" ? ["onboard", ...args.slice(1)] : args;
-  const input = fs.readFileSync(0);
+  const input = ["hook", "statusline"].includes(args[0]) ? fs.readFileSync(0) : Buffer.alloc(0);
   const env = {
     ...process.env,
     OPENREFLEX_PLUGIN_VERSION: expectedVersion,
