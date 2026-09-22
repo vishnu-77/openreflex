@@ -152,7 +152,7 @@ def render_recap(snapshot: DecisionSnapshot, previous: DecisionSnapshot | None =
         if snapshot.outcome == "unknown":
             return ""
 
-        state = "VERIFIED" if snapshot.outcome == "success" else "CHECK FAILED"
+        state = "COMPLETE" if snapshot.outcome == "success" else "FAILED"
         lines = [f"↺ OpenReflex · {state}"]
         if snapshot.reflex_name:
             lines.append(snapshot.reflex_name)
