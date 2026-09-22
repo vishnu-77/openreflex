@@ -26,7 +26,7 @@ def statusline_command() -> str:
 def _ours(command: object) -> bool:
     if not isinstance(command, str):
         return False
-    value = command.replace("\\\\", "/").lower()
+    value = command.replace("\\", "/").lower()
     return command == LEGACY_STATUSLINE_COMMAND or (
         ".openreflex/runtime/" in value and value.rstrip().endswith(" statusline")
     )
