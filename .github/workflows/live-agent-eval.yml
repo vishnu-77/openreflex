@@ -28,6 +28,7 @@ jobs:
     timeout-minutes: 120
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       DISABLE_AUTOUPDATER: "1"
     steps:
       - uses: actions/checkout@v4
@@ -44,8 +45,8 @@ jobs:
       - name: Require live-eval credential
         shell: bash
         run: |
-          if [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "ANTHROPIC_API_KEY repository secret is required for the paid live-agent evaluation." >&2
+          if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "Set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN as a repository secret for the live-agent evaluation." >&2
             exit 1
           fi
 
