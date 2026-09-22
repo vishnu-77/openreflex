@@ -109,7 +109,7 @@ OpenReflex installs per project with `openreflex install <agent>`, or as a plugi
 | **Cursor** | Lifecycle hooks | `openreflex install cursor` | Protocol and fuzz tests |
 | **OpenCode** | Local lifecycle plugin | `openreflex install opencode` | Protocol and fuzz tests |
 
-With a plugin install, enable each project with `openreflex approve`. Per-agent guides:
+With a plugin install, enable each project with `openreflex approve`. In Claude Code, run `/openreflex` at any time to display the current OpenReflex dashboard; it is user-invoked only and does not enable MCP diagnostics or participate in normal model routing. Per-agent guides:
 [Claude Code](https://openreflex.cc/claude-code), [Codex](https://openreflex.cc/codex), [Cursor](https://openreflex.cc/cursor),
 [OpenCode](https://openreflex.cc/opencode).
 

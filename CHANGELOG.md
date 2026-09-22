@@ -4,6 +4,13 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.8.1 (2026-09-22)
+
+- Add a bare `/openreflex` command to the Claude Code plugin for displaying the current OpenReflex dashboard.
+- Keep the command user-only with `disable-model-invocation: true`; normal ambient learning still uses lifecycle hooks and does not add MCP tools or automatic skill invocation.
+- `/openreflex` delegates only to `openreflex tui` and does not inspect or modify repository files.
+
+
 ## 0.8.0 (2026-09-21)
 
 - Let one execution reinforce multiple project scopes instead of forcing it into a single family. A runner change can
