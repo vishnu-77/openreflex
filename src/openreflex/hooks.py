@@ -220,19 +220,6 @@ def render(agent: str, name: str, context: str | None, notice: str | None = None
     return ""
 
 
-def _closure_context(agent: str, name: str, payload: dict, outcome) -> str | None:
-    """Ask Claude Code for one verification pass after edits, never loop or block read-only work."""
-    if agent != "claude-code" or name != "Stop" or outcome is None or payload.get("stop_hook_active") is True:
-        return None
-    if outcome.status != "unknown" or outcome.evidence != "no verification observed after the last edit":
-        return None
-    return (
-        "OpenReflex cannot verify this changed task yet. Before finishing, run the most relevant test, lint, or "
-        "build check. If verification is not possible, explain that limitation and finish; OpenReflex will retain "
-        "the execution as unverified rather than requiring an MCP call."
-    )
-
-
 def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
     agent = detect_agent(agent, payload)
     name = name or payload.get("hook_event_name") or payload.get("event") or ""
@@ -286,8 +273,9 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
                     detail.append(f"{event.pending_crons} scheduled")
                 notice = f"↺ OpenReflex · WAITING\n{total} pending · " + " · ".join(detail)
             else:
-                outcome = engine.stop(agent, event.session, assistant_completed=event.assistant_response_substantial)
-                context = _closure_context(agent, name, payload, outcome)
+                engine.stop(agent, event.session, assistant_completed=event.assistant_response_substantial)
+                # Missing verification is retained as internal evidence state. Ambient Stop never
+                # nags the agent or user merely because OpenReflex did not observe a post-change check.
                 if agent == "claude-code":
                     notice = engine.take_notice(agent, event.session)
         return render(agent, name, context, notice)
