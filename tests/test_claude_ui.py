@@ -1,0 +1,103 @@
+import json
+
+from openreflex.claude_ui import (
+    configure_statusline,
+    remove_project_statusline,
+    remove_statusline,
+)
+
+
+def _user_settings(tmp_path, monkeypatch):
+    config = tmp_path / "claude-user"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+    return config / "settings.json"
+
+
+def test_statusline_is_user_scoped_and_does_not_create_project_settings(tmp_path, monkeypatch):
+    settings = _user_settings(tmp_path, monkeypatch)
+    project = tmp_path / "repo"
+    project.mkdir()
+    runtime = tmp_path / ".openreflex" / "runtime" / "v0.9.2" / "bin" / "openreflex"
+    monkeypatch.setenv("OPENREFLEX_RUNTIME_COMMAND", f'"{runtime}"')
+
+    assert configure_statusline(project) == "configured"
+
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    assert data["statusLine"]["command"].endswith(" statusline")
+    assert "/runtime/v0.9.2/" in data["statusLine"]["command"].replace("\\", "/")
+    assert not (project / ".claude" / "settings.json").exists()
+
+
+def test_configure_migrates_legacy_project_statusline_without_touching_other_settings(tmp_path, monkeypatch):
+    user_settings = _user_settings(tmp_path, monkeypatch)
+    project = tmp_path / "repo"
+    project_settings = project / ".claude" / "settings.json"
+    project_settings.parent.mkdir(parents=True)
+    project_settings.write_text(json.dumps({
+        "permissions": {"allow": ["Bash(git status)"]},
+        "statusLine": {"type": "command", "command": "openreflex statusline"},
+    }), encoding="utf-8")
+
+    assert configure_statusline(project) == "configured"
+
+    migrated = json.loads(project_settings.read_text(encoding="utf-8"))
+    assert migrated == {"permissions": {"allow": ["Bash(git status)"]}}
+    assert "statusLine" in json.loads(user_settings.read_text(encoding="utf-8"))
+
+
+def test_configure_removes_statusline_only_project_file_entirely(tmp_path, monkeypatch):
+    _user_settings(tmp_path, monkeypatch)
+    project = tmp_path / "repo"
+    project_settings = project / ".claude" / "settings.json"
+    project_settings.parent.mkdir(parents=True)
+    project_settings.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": "openreflex statusline"},
+    }), encoding="utf-8")
+
+    configure_statusline(project)
+
+    assert not project_settings.exists()
+    assert not project_settings.parent.exists()
+
+
+def test_existing_user_statusline_is_preserved(tmp_path, monkeypatch):
+    settings = _user_settings(tmp_path, monkeypatch)
+    settings.parent.mkdir(parents=True)
+    original = {
+        "theme": "dark",
+        "statusLine": {"type": "command", "command": "~/.claude/my-statusline.sh", "padding": 1},
+    }
+    settings.write_text(json.dumps(original), encoding="utf-8")
+
+    assert configure_statusline(tmp_path / "repo") == "preserved-existing"
+    assert json.loads(settings.read_text(encoding="utf-8")) == original
+
+
+def test_invalid_user_settings_are_never_overwritten(tmp_path, monkeypatch):
+    settings = _user_settings(tmp_path, monkeypatch)
+    settings.parent.mkdir(parents=True)
+    settings.write_text("{broken", encoding="utf-8")
+
+    assert configure_statusline(tmp_path / "repo") == "preserved-invalid"
+    assert settings.read_text(encoding="utf-8") == "{broken"
+
+
+def test_project_cleanup_never_removes_user_statusline(tmp_path, monkeypatch):
+    settings = _user_settings(tmp_path, monkeypatch)
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": "openreflex statusline"},
+    }), encoding="utf-8")
+
+    project = tmp_path / "repo"
+    project_settings = project / ".claude" / "settings.json"
+    project_settings.parent.mkdir(parents=True)
+    project_settings.write_text(json.dumps({
+        "statusLine": {"type": "command", "command": "openreflex statusline"},
+    }), encoding="utf-8")
+
+    assert remove_project_statusline(project) is True
+    assert not project_settings.exists()
+    assert settings.exists()
+    assert remove_statusline() is True
+    assert json.loads(settings.read_text(encoding="utf-8")) == {}
