@@ -18,7 +18,7 @@ from typing import Callable, TypeVar
 
 from . import __version__, cli
 from .claude_ui import configure_statusline, remove_statusline
-from .project import approval, log_error, project_root
+from .project import approval, approve, log_error, project_root, should_notify_unapproved
 from .project_map import enrich_snapshot
 from .project_memory import ensure_background_refresh, load_snapshot, read_state, run_worker, update_state
 from .privacy import categorize, file_paths
@@ -294,6 +294,19 @@ def _hook(argv: list[str]) -> int:
     enabled = approval(project) is not None
     phase = None
 
+    if not enabled and event in SESSION_EVENTS and should_notify_unapproved(project):
+        output = safe_handle(agent, event, raw)
+        output = _merge_notice(
+            output,
+            "↺ OpenReflex · OFF\n"
+            "Local project memory is not enabled yet. Run /openreflex "
+            "(or /openreflex:openreflex if Claude shows the namespaced form) once to enable it.",
+        )
+        if output:
+            sys.stdout.write(output)
+            sys.stdout.flush()
+        return 0
+
     if enabled:
         _best_effort("record hook runtime", lambda: _record_hook_runtime(project, argv), None)
 
@@ -354,6 +367,36 @@ def _tui(argv: list[str]) -> int:
     if approval(project):
         _best_effort("TUI primer", lambda: ensure_background_refresh(project), "cold")
         _best_effort("TUI counts", lambda: sync_counts(project), {})
+    print(dashboard(project))
+    return 0
+
+
+def _onboard(argv: list[str]) -> int:
+    """Explicit Claude-plugin onboarding: enable one project, pin UI, then show the dashboard."""
+    project = project_root(_project_arg(argv))
+    plugin_version = _plugin_manifest_version(_plugin_root_arg(argv)) or sys.modules[__package__].__version__ if __package__ else __version__
+    approve(project, source="claude-plugin:onboard")
+    _record_hook_runtime(project, ["onboard", "--plugin-root", _plugin_root_arg(argv) or ""])
+    status = configure_statusline(project)
+    _best_effort("onboarding primer", lambda: ensure_background_refresh(project), "cold")
+    _best_effort("onboarding counts", lambda: sync_counts(project), {})
+    update_state(
+        project,
+        onboarding="ready",
+        project_enabled=True,
+        plugin_version=plugin_version or __version__,
+        hook_runtime_version=__version__,
+    )
+    print("OPENREFLEX / READY")
+    print(f"  project     {project}")
+    print(f"  runtime     v{__version__}")
+    print(f"  plugin      v{plugin_version or __version__}")
+    print("  memory      enabled · local")
+    if status == "preserved-existing":
+        print("  statusline  existing user status line preserved")
+    else:
+        print("  statusline  managed OpenReflex runtime")
+    print("")
     print(dashboard(project))
     return 0
 
@@ -505,6 +548,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if argv[0] == "statusline":
         return _statusline()
+    if argv[0] == "onboard":
+        return _onboard(argv[1:])
     if argv[0] == "tui":
         return _tui(argv[1:])
     if argv[0] == "memory":
