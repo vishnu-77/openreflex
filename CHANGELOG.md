@@ -4,6 +4,15 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.8.1 (2026-09-22)
+
+- Restore a user-facing Claude Code command as `/openref` without reintroducing the removed model-facing skill or
+  default MCP server. The command is manual-only and renders the local `openreflex tui` dashboard for the current
+  project.
+- Add a regression test that requires the Claude plugin to ship the command while preserving the ambient hooks-only
+  runtime surface.
+
+
 ## 0.8.0 (2026-09-21)
 
 - Let one execution reinforce multiple project scopes instead of forcing it into a single family. A runner change can
