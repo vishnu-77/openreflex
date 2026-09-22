@@ -234,6 +234,8 @@ retrieval, evidence-aware path selection, budget-aware execution, work-mode-spec
 path comparison. The [Researcher view](https://openreflex.cc/?view=research) on the site explains the idea,
 lets you step through one reflex forming in the graph, and places it next to related work.
 
+The reproducible evaluation protocol, pinned real-agent corpus, exact prompts, and claim boundaries are documented in [docs/evaluation.md](docs/evaluation.md).
+
 ## Community & Contributing
 
 - **Issues and ideas:** [GitHub Issues](https://github.com/vishnu-77/openreflex/issues)
