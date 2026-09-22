@@ -24,39 +24,35 @@ def _snapshot(*, outcome: str, expected_regret: float | None = 0.0) -> DecisionS
         context_tokens=0,
         budget_used=0.1,
         budget_pressure=0.1,
-        actual_tool_calls=1,
-        actual_tokens=0,
-        elapsed_seconds=18.0,
+        actual_tool_calls=9,
+        actual_tokens=7900,
+        elapsed_seconds=84.0,
         outcome=outcome,
         reflex_name="Helm values change",
     )
 
 
-def test_unknown_completion_is_unverified_and_hides_legacy_regret():
+def test_unknown_completion_is_silent_in_ambient_ui():
     recap = render_recap(_snapshot(outcome="unknown", expected_regret=0.0))
-    assert recap.startswith("↺ OpenReflex · UNVERIFIED")
-    assert "unknown · Helm values change" in recap
-    assert "regret" not in recap
-    assert "vs test-first" not in recap
+    assert recap == ""
 
 
-def test_success_completion_remains_complete_and_can_show_path_check():
+def test_success_completion_is_compact_and_evidence_backed():
     recap = render_recap(_snapshot(outcome="success", expected_regret=0.25))
-    assert recap.startswith("↺ OpenReflex · COMPLETE")
-    assert "success · Helm values change" in recap
-    assert "Path check · another approach may be better" in recap
-    assert "regret" not in recap.lower()
+    assert recap == "↺ OpenReflex · VERIFIED\nHelm values change"
+    assert "calls" not in recap
+    assert "tokens" not in recap
+    assert "Path check" not in recap
 
 
-def test_failure_completion_is_labelled_failed():
+def test_failure_completion_is_compact_and_evidence_backed():
     recap = render_recap(_snapshot(outcome="failure", expected_regret=0.4))
-    assert recap.startswith("↺ OpenReflex · FAILED")
-    assert "failure · Helm values change" in recap
-    assert "Path check · another approach may be better" in recap
-    assert "regret" not in recap.lower()
+    assert recap == "↺ OpenReflex · CHECK FAILED\nHelm values change"
+    assert "calls" not in recap
+    assert "tokens" not in recap
 
 
-def test_unverified_stop_can_upgrade_to_verified_completion(engine, clock):
+def test_unknown_stop_stays_internal_then_upgrades_to_visible_verified_completion(engine, clock):
     engine.prompt("claude-code", "s", "Fix the Helm deployment values validation failure please")
     engine.take_notice("claude-code", "s")  # consume the start recap
 
@@ -67,8 +63,12 @@ def test_unverified_stop_can_upgrade_to_verified_completion(engine, clock):
 
     first = engine.stop("claude-code", "s")
     assert first.status == "unknown"
-    first_recap = engine.take_notice("claude-code", "s")
-    assert first_recap.startswith("↺ OpenReflex · UNVERIFIED")
+    assert engine.take_notice("claude-code", "s") is None
+
+    completions = [item for item in engine.store.latest("claude-code", "s").decision_history
+                   if item.get("phase") == "complete"]
+    assert completions[-1]["outcome"] == "unknown"
+    assert completions[-1]["visibility"] == "ambient"
 
     clock.advance(1)
     verification = ("Bash", {"command": "helm lint charts/app"})
@@ -79,8 +79,7 @@ def test_unverified_stop_can_upgrade_to_verified_completion(engine, clock):
     second = engine.stop("claude-code", "s")
     assert second.status == "success"
     second_recap = engine.take_notice("claude-code", "s")
-    assert second_recap.startswith("↺ OpenReflex · COMPLETE")
-    assert "success" in second_recap
+    assert second_recap == "↺ OpenReflex · VERIFIED\nHelm values change"
 
     completions = [item for item in engine.store.latest("claude-code", "s").decision_history
                    if item.get("phase") == "complete"]
