@@ -6,8 +6,8 @@ disable-model-invocation: true
 
 # OpenReflex
 
-Display the OpenReflex dashboard below exactly as returned. Do not reinterpret, summarize, or modify it unless the user asks a follow-up question.
+Live local dashboard:
 
-```text
 !`openreflex tui`
-```
+
+Return the dashboard output exactly as produced, without reinterpreting or summarising it unless the user asks a follow-up question.
