@@ -1,17 +1,20 @@
 ---
 name: openreflex
-description: Set up or show OpenReflex for the current project. User-invoked only.
+description: OpenReflex project control. Show state, enable memory, inspect Reflexes, or run diagnostics.
+argument-hint: "[approve|status|reflexes|memory|doctor|why|trace|revoke]"
 user-invocable: true
 disable-model-invocation: true
 allowed-tools: Bash
 ---
 
-Run this command exactly once:
+OPENREFLEX_CONTROL_REQUEST: $ARGUMENTS
 
-`node "${CLAUDE_PLUGIN_ROOT}/runtime/launcher.cjs" onboard --plugin-root "${CLAUDE_PLUGIN_ROOT}"`
+Run exactly one command:
 
-Return the command output directly.
+`node "${CLAUDE_PLUGIN_ROOT}/runtime/launcher.cjs" control --plugin-root "${CLAUDE_PLUGIN_ROOT}" --request "$ARGUMENTS"`
 
-This is the explicit user onboarding/control action for the current project. It may prepare the plugin-managed OpenReflex runtime, enable local project memory, configure the OpenReflex status line when the user has no custom status line, and display the dashboard.
+Return the command output directly, with no preamble, summary, interpretation, or follow-up.
 
-Do not inspect or modify repository files. Do not enable MCP diagnostics. Do not call a global `openreflex` executable from PATH.
+The argument is an explicit user request. If the user invokes `approve` or `revoke`, execute that requested OpenReflex state change without asking for another confirmation. Destructive memory deletion is not exposed by this skill.
+
+Do not inspect or modify repository files. Do not enable MCP diagnostics. Do not call a global `openreflex` executable from PATH. Do not mention internal launcher, TUI, Python, shell, or runtime implementation details unless the command itself reports a failure.
