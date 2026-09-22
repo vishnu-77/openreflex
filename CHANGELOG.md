@@ -13,7 +13,7 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 - Stop asking Claude for an extra verification pass purely because OpenReflex did not observe one. The execution is
   still stored truthfully as unknown and remains inspectable through status/trace.
 - Add regression coverage for the real Claude Stop-hook path so edited-but-unverified work produces no user-facing
-  Stop payload and can still upgrade to a later verified completion.
+  Stop payload and can still upgrade to a later known successful completion.
 
 ## 0.9.1 (2026-09-22)
 
