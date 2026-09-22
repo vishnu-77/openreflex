@@ -13,6 +13,9 @@ on:
         default: ""
   schedule:
     - cron: "17 3 * * 1"
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -23,6 +26,7 @@ concurrency:
 
 jobs:
   click-cold-start:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     name: real Claude A/B · Click cold start
     runs-on: ubuntu-latest
     timeout-minutes: 120
