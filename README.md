@@ -65,26 +65,32 @@ OpenTelemetry export to a loopback-only OpenReflex receiver and stores counts on
 
 Requires Python 3.11 or newer.
 
+**Claude Code — recommended:** install the plugin, reload it, then invoke OpenReflex once in the project.
+
+```text
+/plugin marketplace add vishnu-77/openreflex
+/plugin install openreflex@openreflex
+/reload-plugins
+/openreflex
+```
+
+Claude may display the canonical plugin namespace as `/openreflex:openreflex`; both refer to the same user-invoked
+OpenReflex control surface when the bare alias is available. That first invocation explicitly enables local memory
+for the current project, prepares an exact plugin-version runtime under `~/.openreflex/runtime/`, configures the
+OpenReflex status line when you do not already have a custom one, and shows the dashboard. After that, work normally.
+
+The Claude plugin does **not** execute a global `openreflex` from PATH. An older pipx/uv/pip installation can coexist
+without taking over the plugin runtime.
+
+**CLI / other agents:** use a persistent package install.
+
 ```bash
 pipx install openreflex            # or: uv tool install openreflex
 cd your-project
-openreflex install claude-code     # hooks-only ambient runtime; enables this project
+openreflex install codex           # or cursor / opencode / claude-code
 ```
 
-```
-OPENREFLEX / CONNECT
-  agent       claude-code
-  project     D:\demo\shop
-  config      updated 2 files
-              D:\demo\shop\.openreflex.json
-              D:\demo\shop\.claude\settings.json
-  memory      enabled
-  storage     local
-
-  [ok] reflex active
-```
-
-Then work as usual. After a few tasks:
+After a few tasks:
 
 ```bash
 openreflex context "fix the login redirect bug"   # preview the context a task would receive
@@ -94,9 +100,8 @@ openreflex update --check                         # check the latest stable rele
 ```
 
 Package updates preserve local memory and project configuration. Managed `pipx` and `uv tool` installs can use
-`openreflex update`, `openreflex update --reinstall`, or `openreflex self reinstall`. To remove only the package,
-use `openreflex self uninstall --yes`; project memory is preserved. A fresh bootstrap still starts with
-`pipx install openreflex` or `uv tool install openreflex` because the `openreflex` command does not exist before installation.
+`openreflex update`, `openreflex update --reinstall`, or `openreflex self reinstall`. The Claude plugin manages
+its own pinned runtime automatically; these package-manager commands are only needed for standalone CLI installs.
 
 ## Use it with your agent
 
@@ -109,7 +114,7 @@ OpenReflex installs per project with `openreflex install <agent>`, or as a plugi
 | **Cursor** | Lifecycle hooks | `openreflex install cursor` | Protocol and fuzz tests |
 | **OpenCode** | Local lifecycle plugin | `openreflex install opencode` | Protocol and fuzz tests |
 
-With a plugin install, enable each project with `openreflex approve`. In Claude Code, run `/openreflex` at any time to display the current OpenReflex dashboard; it is user-invoked only and does not enable MCP diagnostics or participate in normal model routing. Per-agent guides:
+With the Claude plugin, run `/openreflex` once in each project you want OpenReflex to remember. That explicit user action enables only that project's local memory and repairs/prepares the plugin-managed runtime if necessary. The command is user-invoked only and does not enable MCP diagnostics or participate in normal model routing. Claude may show the canonical namespaced form `/openreflex:openreflex`. Per-agent guides:
 [Claude Code](https://openreflex.cc/claude-code), [Codex](https://openreflex.cc/codex), [Cursor](https://openreflex.cc/cursor),
 [OpenCode](https://openreflex.cc/opencode).
 
