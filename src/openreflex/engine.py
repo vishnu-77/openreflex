@@ -508,8 +508,9 @@ class Engine:
                                  actual_tokens=actual_tokens, elapsed_seconds=elapsed_seconds, outcome=outcome,
                                  expected_regret=expected_regret, model_tokens=model_tokens, token_usage=token_usage,
                                  reflex_name=reflex_name)
-        if not task.substantial:
-            # A greeting or a follow-up that only triggered a tool call is not a task; keep its snapshot quiet.
+        if not task.substantial or (phase == "complete" and outcome == "unknown"):
+            # Trivial activity and completion without observable evidence remain available in
+            # trace/status, but must not become alarming ambient user-facing recaps.
             snapshot = DecisionSnapshot.from_dict({**snapshot.as_dict(), "visibility": "ambient"})
         execution.decision_history.append(snapshot.as_dict())
         self.store.put(execution)
