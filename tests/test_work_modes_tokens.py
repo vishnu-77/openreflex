@@ -91,11 +91,11 @@ def test_zero_tool_investigation_does_not_fake_recommended_path(project):
         assert experience.task_mode == "investigate"
         assert experience.strategy is None
         recap = render_recap(snapshots[-1])
-        assert "COMPLETE" in recap
+        assert "VERIFIED" in recap
         assert "source-first" not in recap
-        assert "0.0k tokens" not in recap
+        assert "tokens" not in recap
         assert "regret" not in recap.lower()
-        assert "Path check · no better option proven" in recap
+        assert "Path check" not in recap
     finally:
         engine.close()
 
@@ -264,7 +264,7 @@ def test_otlp_token_usage_is_correlated_deduped_and_saved(project):
         engine.close()
 
 
-def test_completion_recap_prefers_real_model_tokens(project):
+def test_completion_accounting_keeps_real_model_tokens_out_of_ambient_recap(project):
     engine = Engine(project)
     try:
         engine.prompt("claude-code", "recap",
@@ -273,9 +273,11 @@ def test_completion_recap_prefers_real_model_tokens(project):
         ingest_otlp_logs(_otlp_api_request("recap", input_tokens=2200, output_tokens=800,
                                            cache_read=1000, cache_creation=0))
         outcome = engine.stop("claude-code", "recap", assistant_completed=True)
-        recap = render_recap(engine.decision_snapshots(outcome.execution_id)[-1])
-        assert "4.0k model tokens" in recap
+        snapshot = engine.decision_snapshots(outcome.execution_id)[-1]
+        recap = render_recap(snapshot)
+        assert outcome.model_tokens == 4000
+        assert snapshot.model_tokens == 4000
+        assert "model tokens" not in recap
         assert "tool-output est." not in recap
-        assert "regret" not in recap.lower()
     finally:
         engine.close()
