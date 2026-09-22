@@ -244,8 +244,16 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
     if not approval(project):
         notice = None
         if event.kind in ("session_start", "prompt") and should_notify_unapproved(project):
-            notice = (f"OpenReflex is installed but not enabled for {project.name}. "
-                      "Run `openreflex approve` in this project to enable local execution memory.")
+            if agent == "claude-code":
+                notice = (
+                    f"↺ OpenReflex · OFF\nLocal project memory is not enabled for {project.name}. "
+                    "Run /openreflex once (or /openreflex:openreflex if Claude shows the namespaced form)."
+                )
+            else:
+                notice = (
+                    f"OpenReflex is installed but not enabled for {project.name}. "
+                    "Run `openreflex approve` in this project to enable local execution memory."
+                )
         return render(agent, name, None, notice)
 
     engine = engine_factory(project)
