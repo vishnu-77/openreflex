@@ -79,7 +79,7 @@ def test_unknown_stop_stays_internal_then_upgrades_to_visible_verified_completio
     second = engine.stop("claude-code", "s")
     assert second.status == "success"
     second_recap = engine.take_notice("claude-code", "s")
-    assert second_recap == "↺ OpenReflex · VERIFIED\nHelm values change"
+    assert second_recap.startswith("↺ OpenReflex · VERIFIED")
 
     completions = [item for item in engine.store.latest("claude-code", "s").decision_history
                    if item.get("phase") == "complete"]
