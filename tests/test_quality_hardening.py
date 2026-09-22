@@ -20,7 +20,7 @@ def _call(factory, agent, event, payload):
 
 
 def test_claude_round_trip_counts_tools_and_output_tokens(project, tmp_path, clock):
-    """A real prompt -> tools -> stop lifecycle must never recap a worked task as zero calls/tokens."""
+    """A real prompt -> tools -> stop lifecycle keeps accounting internally while the recap stays compact."""
     approve(project)
     factory = _factory(tmp_path / "quality-hooks.sqlite3", clock)
     base = {"session_id": "quality", "cwd": str(project)}
@@ -41,8 +41,9 @@ def test_claude_round_trip_counts_tools_and_output_tokens(project, tmp_path, clo
     clock.advance(5)
     rendered = json.loads(_call(factory, "claude-code", "Stop", base))
     recap = rendered["systemMessage"]
-    assert "3 calls" in recap
-    assert "0.0k tokens" not in recap
+    assert recap.startswith("↺ OpenReflex · COMPLETE")
+    assert "calls" not in recap
+    assert "tokens" not in recap
 
     engine = factory(project)
     try:
@@ -63,10 +64,15 @@ def test_unknown_completion_does_not_publish_predicted_regret(project, tmp_path,
     _call(factory, "claude-code", "UserPromptSubmit",
           {**base, "prompt": "Compare two possible designs for the cache invalidation mechanism"})
     clock.advance(30)
-    rendered = json.loads(_call(factory, "claude-code", "Stop", base))
-    recap = rendered["systemMessage"]
-    assert "unknown" in recap
-    assert "regret" not in recap
+    assert _call(factory, "claude-code", "Stop", base) == ""
+    engine = factory(project)
+    try:
+        execution = engine.store.latest("claude-code", "unknown")
+        outcome = engine.store.find("Outcome", execution_id=execution.id)[0]
+        assert outcome.status == "unknown"
+        assert outcome.estimated_regret is None
+    finally:
+        engine.close()
 
 
 def test_machine_readable_tools_publish_real_output_schemas(project):

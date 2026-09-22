@@ -4,6 +4,17 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.9.2 (2026-09-22)
+
+- Make ambient completion messaging evidence-backed: successful verified work shows a compact `VERIFIED` recap and
+  observed failed checks show `CHECK FAILED`.
+- Keep unknown/unverified completion internal instead of showing `UNVERIFIED`, `unknown`, estimated tool-output
+  tokens, elapsed time, or a Path check at Stop.
+- Stop asking Claude for an extra verification pass purely because OpenReflex did not observe one. The execution is
+  still stored truthfully as unknown and remains inspectable through status/trace.
+- Add regression coverage for the real Claude Stop-hook path so edited-but-unverified work produces no user-facing
+  Stop payload and can still upgrade to a later known successful completion.
+
 ## 0.9.1 (2026-09-22)
 
 - Make the Claude OpenReflex skill a deterministic argument router: `approve`, `status`, `reflexes`, `memory`,

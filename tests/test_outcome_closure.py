@@ -31,24 +31,25 @@ def _successful_tool(factory, project, tool, arguments, tool_id):
     _call(factory, project, "PostToolUse", {**payload, "tool_response": {"stdout": "ok"}})
 
 
-def test_first_stop_after_unverified_edit_requests_one_verification_pass(tmp_path, project, clock):
+def test_first_stop_after_unverified_edit_is_silent(tmp_path, project, clock):
     approve(project)
     factory = _factory(tmp_path, clock)
     _call(factory, project, "UserPromptSubmit", {"prompt": "Fix the Helm values bug causing invalid deployment configuration"})
     _successful_tool(factory, project, "Edit", {"file_path": "charts/app/values.yaml"}, "e1")
 
-    first = json.loads(_call(factory, project, "Stop", {}))
-    closure = first["hookSpecificOutput"]["additionalContext"]
-    assert first["hookSpecificOutput"]["hookEventName"] == "Stop"
-    assert "cannot verify this changed task yet" in closure
-    assert "test, lint, or build" in closure
-    assert "record_outcome" not in closure
-    assert "rather than requiring an MCP call" in closure
+    first = _call(factory, project, "Stop", {})
+    assert first == ""
 
-    second_raw = _call(factory, project, "Stop", {"stop_hook_active": True})
-    if second_raw:
-        second = json.loads(second_raw)
-        assert "additionalContext" not in second.get("hookSpecificOutput", {})
+    engine = factory(project)
+    try:
+        execution = engine.store.latest("claude-code", "s")
+        outcome = engine.store.find("Outcome", execution_id=execution.id)[0]
+        assert outcome.status == "unknown"
+        assert outcome.evidence == "no verification observed after the last edit"
+    finally:
+        engine.close()
+
+    assert _call(factory, project, "Stop", {"stop_hook_active": True}) == ""
 
 
 def test_read_only_exploration_can_finish_unknown_without_continuation(tmp_path, project, clock):
