@@ -24,8 +24,7 @@ The machine-readable source of truth is `evals/cold_start/click.json`.
   - **baseline** — plain Claude Code, no OpenReflex plugin or hooks.
   - **primed** — OpenReflex enabled with a freshly built Project Map and no prior Experience.
 
-Each pair starts from a fresh copy of the same repository commit. Baseline/treatment order is deterministically shuffled
-inside each task/repetition pair.
+Each pair starts from an independent local clone of the same repository commit, preserving the pinned repository's Git history for both arms. Baseline/treatment order is deterministically shuffled inside each task/repetition pair.
 
 ### Prompts
 
