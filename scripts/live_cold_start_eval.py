@@ -17,6 +17,7 @@ Uses real model calls - a full pilot run costs a small amount.
 import argparse
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -27,29 +28,41 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 PLUGIN = REPO / "plugins" / "openreflex"
 
-TASKS = [
-    {
-        "name": "shell-completion",
-        "prompt": "Without editing any files, investigate how click implements shell completion for "
-                  "command groups with subcommands. Reply with the single file path (relative to the "
-                  "repo root) that contains that implementation, and a one-sentence summary.",
-        "target": "src/click/shell_completion.py",
-    },
-    {
-        "name": "type-conversion",
-        "prompt": "Without editing any files, investigate where click validates and converts a Choice "
-                  "option's raw string value using its type system. Reply with the single file path "
-                  "(relative to the repo root) that contains that implementation, and a one-sentence summary.",
-        "target": "src/click/types.py",
-    },
-    {
-        "name": "terminal-width",
-        "prompt": "Without editing any files, investigate how click determines the terminal width used "
-                  "when wrapping help text. Reply with the single file path (relative to the repo root) "
-                  "that contains that implementation, and a one-sentence summary.",
-        "target": "src/click/formatting.py",
-    },
-]
+DEFAULT_MANIFEST = REPO / "evals" / "cold_start" / "click.json"
+
+
+def _load_manifest(path: Path) -> dict:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("schema_version") != 1:
+        raise ValueError(f"unsupported eval schema: {data.get('schema_version')}")
+    repo = data.get("repository") or {}
+    tasks = data.get("tasks") or []
+    if not repo.get("commit") or not repo.get("url") or not tasks:
+        raise ValueError("manifest must define repository.url, repository.commit and tasks")
+    names = set()
+    for task in tasks:
+        for field in ("name", "prompt", "target"):
+            if not str(task.get(field) or "").strip():
+                raise ValueError(f"task missing {field}: {task}")
+        if task["name"] in names:
+            raise ValueError(f"duplicate task name: {task['name']}")
+        names.add(task["name"])
+    return data
+
+
+def _git_sha(repo: Path) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def _usage_tokens(usage: object) -> int | None:
+    if not isinstance(usage, dict):
+        return None
+    keys = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+    values = [usage.get(key) for key in keys]
+    numeric = [int(value) for value in values if isinstance(value, (int, float))]
+    return sum(numeric) if numeric else None
 
 READ_LIKE = {"Read", "Grep", "Glob"}
 
