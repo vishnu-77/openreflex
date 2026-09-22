@@ -39,7 +39,7 @@ def test_unknown_completion_is_silent_in_ambient_ui():
 
 def test_success_completion_is_compact_and_evidence_backed():
     recap = render_recap(_snapshot(outcome="success", expected_regret=0.25))
-    assert recap == "↺ OpenReflex · VERIFIED\nHelm values change"
+    assert recap == "↺ OpenReflex · COMPLETE\nHelm values change"
     assert "calls" not in recap
     assert "tokens" not in recap
     assert "Path check" not in recap
@@ -47,7 +47,7 @@ def test_success_completion_is_compact_and_evidence_backed():
 
 def test_failure_completion_is_compact_and_evidence_backed():
     recap = render_recap(_snapshot(outcome="failure", expected_regret=0.4))
-    assert recap == "↺ OpenReflex · CHECK FAILED\nHelm values change"
+    assert recap == "↺ OpenReflex · FAILED\nHelm values change"
     assert "calls" not in recap
     assert "tokens" not in recap
 
@@ -79,7 +79,7 @@ def test_unknown_stop_stays_internal_then_upgrades_to_visible_verified_completio
     second = engine.stop("claude-code", "s")
     assert second.status == "success"
     second_recap = engine.take_notice("claude-code", "s")
-    assert second_recap.startswith("↺ OpenReflex · VERIFIED")
+    assert second_recap.startswith("↺ OpenReflex · COMPLETE")
 
     completions = [item for item in engine.store.latest("claude-code", "s").decision_history
                    if item.get("phase") == "complete"]
