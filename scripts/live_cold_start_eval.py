@@ -1,22 +1,23 @@
-"""Live cold-start A/B pilot: does OpenReflex's Project Map actually reduce exploration cost
-on a real, unfamiliar repository's first task, compared to a plain Claude Code session?
+"""Paired real-Claude A/B evaluation for OpenReflex cold-start project memory.
 
-Each task is investigation-only (Read/Grep/Glob, no edits) with one known-correct target file,
-mirroring scripts/benchmark_cold_start.py's scenario shape but run against a real repo with a
-real model instead of the deterministic retrieval contract alone. "Primed" means the Project Map
-snapshot is built (as the background primer would do) before the session starts; "baseline" is a
-plain claude session with no OpenReflex plugin/hooks at all. Both conditions get a fresh repo copy
-and a fresh, empty OPENREFLEX_HOME so neither run carries over prior Experience.
+The corpus is versioned under ``evals/cold_start``. Each task is read-only and has one reviewed
+target file. For every task and repetition, the harness runs fresh copies of the exact same pinned
+repository commit in two conditions: plain Claude Code (baseline), and Claude Code with a freshly
+primed OpenReflex Project Map but no prior Experience (primed).
 
-Requires: `claude` (Claude Code, signed in) and openreflex installed in this Python environment.
-Uses real model calls - a full pilot run costs a small amount.
+Arm order is deterministically shuffled within each pair to reduce temporal/provider-order bias.
+The harness records real model usage, cost, tool calls, wall time, correctness, and whether the
+OpenReflex context actually reached Claude. CI gates experiment validity, not a desired positive
+result: a treatment that uses more tokens is still valid data.
 
-    python scripts/live_cold_start_eval.py --seed /path/to/cloned/target/repo [--model haiku] [--out results.json]
+Example:
+    python scripts/live_cold_start_eval.py --seed /path/to/pinned/repo --reps 3
 """
 
 import argparse
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -24,32 +25,46 @@ import tempfile
 import time
 from pathlib import Path
 
+from openreflex import __version__ as OPENREFLEX_VERSION
+
 REPO = Path(__file__).resolve().parents[1]
 PLUGIN = REPO / "plugins" / "openreflex"
 
-TASKS = [
-    {
-        "name": "shell-completion",
-        "prompt": "Without editing any files, investigate how click implements shell completion for "
-                  "command groups with subcommands. Reply with the single file path (relative to the "
-                  "repo root) that contains that implementation, and a one-sentence summary.",
-        "target": "src/click/shell_completion.py",
-    },
-    {
-        "name": "type-conversion",
-        "prompt": "Without editing any files, investigate where click validates and converts a Choice "
-                  "option's raw string value using its type system. Reply with the single file path "
-                  "(relative to the repo root) that contains that implementation, and a one-sentence summary.",
-        "target": "src/click/types.py",
-    },
-    {
-        "name": "terminal-width",
-        "prompt": "Without editing any files, investigate how click determines the terminal width used "
-                  "when wrapping help text. Reply with the single file path (relative to the repo root) "
-                  "that contains that implementation, and a one-sentence summary.",
-        "target": "src/click/formatting.py",
-    },
-]
+DEFAULT_MANIFEST = REPO / "evals" / "cold_start" / "click.json"
+
+
+def _load_manifest(path: Path) -> dict:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("schema_version") != 1:
+        raise ValueError(f"unsupported eval schema: {data.get('schema_version')}")
+    repo = data.get("repository") or {}
+    tasks = data.get("tasks") or []
+    if not repo.get("commit") or not repo.get("url") or not tasks:
+        raise ValueError("manifest must define repository.url, repository.commit and tasks")
+    names = set()
+    for task in tasks:
+        for field in ("name", "prompt", "target"):
+            if not str(task.get(field) or "").strip():
+                raise ValueError(f"task missing {field}: {task}")
+        if task["name"] in names:
+            raise ValueError(f"duplicate task name: {task['name']}")
+        names.add(task["name"])
+    return data
+
+
+def _git_sha(repo: Path) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def _usage_tokens(usage: object) -> int | None:
+    if not isinstance(usage, dict):
+        return None
+    keys = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+    values = [usage.get(key) for key in keys]
+    numeric = [int(value) for value in values if isinstance(value, (int, float))]
+    return sum(numeric) if numeric else None
 
 READ_LIKE = {"Read", "Grep", "Glob"}
 
@@ -147,11 +162,10 @@ def _target_rank(delivered: list[str], target: str) -> int | None:
 def run_condition(harness: Harness, seed: Path, task: dict, condition: str, work: Path, rep: int) -> dict:
     repo = work / f"{task['name']}-{condition}-{rep}-repo"
     home = work / f"{task['name']}-{condition}-{rep}-home"
-    shutil.copytree(seed, repo, ignore=shutil.ignore_patterns(".git"))
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
-    subprocess.run(["git", "-c", "user.email=eval@test", "-c", "user.name=eval", "commit", "-qm", "seed"],
-                   cwd=repo, check=True)
+    # Preserve the pinned repository's real Git history because Project Map uses Git
+    # structure as one prior. Both arms get independent local clones of the same SHA.
+    subprocess.run(["git", "clone", "--quiet", "--local", str(seed), str(repo)], check=True)
+    subprocess.run(["git", "checkout", "--quiet", "--detach", _git_sha(seed)], cwd=repo, check=True)
     env = harness.env_for(home)
 
     primed = condition == "primed"
@@ -176,6 +190,7 @@ def run_condition(harness: Harness, seed: Path, task: dict, condition: str, work
     report = {
         "condition": condition,
         "code": run["code"],
+        "observed_model_tokens": _usage_tokens(run["result"].get("usage")),
         "seconds": run["seconds"],
         "num_turns": run["result"].get("num_turns"),
         "total_cost_usd": run["result"].get("total_cost_usd"),
@@ -200,9 +215,70 @@ def _mean(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 2) if values else None
 
 
-def _summarize(results: list[dict]) -> None:
+def _paired_summary(results: list[dict], manifest: dict, model: str) -> dict:
+    pairs: dict[tuple[str, int], dict[str, dict]] = {}
+    for row in results:
+        pairs.setdefault((row["task"], int(row["rep"])), {})[row["condition"]] = row
+
+    valid_pairs = []
+    for key, arms in sorted(pairs.items()):
+        baseline, primed = arms.get("baseline"), arms.get("primed")
+        if baseline and primed and baseline["code"] == 0 and primed["code"] == 0:
+            valid_pairs.append((key, baseline, primed))
+
+    def profile(condition: str) -> dict:
+        rows = [row for row in results if row["condition"] == condition and row["code"] == 0]
+        token_values = [row["observed_model_tokens"] for row in rows if row["observed_model_tokens"] is not None]
+        return {
+            "runs": len(rows),
+            "success_rate": _mean([1.0 if row["found_correct_file"] and row["answer_mentions_target"] else 0.0 for row in rows]),
+            "observed_model_tokens": _mean(token_values),
+            "exploration_calls": _mean([row["exploration_calls"] for row in rows]),
+            "total_tool_calls": _mean([row["total_tool_calls"] for row in rows]),
+            "seconds": _mean([row["seconds"] for row in rows]),
+            "cost_usd": _mean([row["total_cost_usd"] for row in rows]),
+        }
+
+    def paired_change(field: str) -> float | None:
+        changes = []
+        for _, baseline, primed in valid_pairs:
+            before, after = baseline.get(field), primed.get(field)
+            if isinstance(before, (int, float)) and before > 0 and isinstance(after, (int, float)):
+                changes.append((after - before) / before)
+        return round(sum(changes) / len(changes), 4) if changes else None
+
+    missing_context = [
+        {"task": row["task"], "rep": row["rep"]}
+        for row in results
+        if row["condition"] == "primed" and row["code"] == 0 and not row["openreflex_context_delivered"]
+    ]
+    return {
+        "kind": "real-agent-paired-pilot",
+        "claim_scope": "pilot only; do not generalize causal token savings beyond this pinned corpus",
+        "corpus": manifest["name"],
+        "repository": manifest["repository"],
+        "model": model,
+        "openreflex_version": OPENREFLEX_VERSION,
+        "claude_code_version": manifest.get("claude_code_version"),
+        "tasks": len(manifest["tasks"]),
+        "pairs_total": len(pairs),
+        "pairs_valid": len(valid_pairs),
+        "baseline": profile("baseline"),
+        "primed": profile("primed"),
+        "paired_relative_change": {
+            "observed_model_tokens": paired_change("observed_model_tokens"),
+            "exploration_calls": paired_change("exploration_calls"),
+            "total_tool_calls": paired_change("total_tool_calls"),
+            "seconds": paired_change("seconds"),
+            "cost_usd": paired_change("total_cost_usd"),
+        },
+        "missing_treatment_context": missing_context,
+    }
+
+
+def _summarize(results: list[dict], tasks: list[dict]) -> None:
     print("\n--- summary (mean over reps) ---")
-    for task in TASKS:
+    for task in tasks:
         row = [r for r in results if r["task"] == task["name"]]
         for condition in ("baseline", "primed"):
             subset = [r for r in row if r["condition"] == condition]
@@ -218,40 +294,76 @@ def _summarize(results: list[dict]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seed", required=True, help="Path to a local clone of the target repo")
-    parser.add_argument("--model", default="haiku")
-    parser.add_argument("--reps", type=int, default=1, help="Repetitions per task/condition, to average out model variance")
+    parser.add_argument("--seed", required=True, help="Path to the exact pinned checkout named by the manifest")
+    parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
+    parser.add_argument("--model", default="", help="Override the manifest model")
+    parser.add_argument("--reps", type=int, default=3, help="Paired repetitions per task")
+    parser.add_argument("--order-seed", type=int, default=20260922)
     parser.add_argument("--out", default="cold-start-eval-results.json")
+    parser.add_argument("--summary-out", default="cold-start-eval-summary.json")
     args = parser.parse_args()
 
+    manifest = _load_manifest(Path(args.manifest))
     seed = Path(args.seed).resolve()
     if not seed.is_dir():
         raise SystemExit(f"seed repo not found: {seed}")
+    actual_sha = _git_sha(seed)
+    expected_sha = manifest["repository"]["commit"]
+    if actual_sha != expected_sha:
+        raise SystemExit(f"seed commit mismatch: expected {expected_sha}, got {actual_sha}")
+    missing_targets = [task["target"] for task in manifest["tasks"] if not (seed / task["target"]).is_file()]
+    if missing_targets:
+        raise SystemExit("manifest target files missing from pinned repository: " + ", ".join(missing_targets))
 
+    model = args.model or manifest.get("model") or "sonnet"
     work = Path(tempfile.mkdtemp(prefix="openreflex-coldstart-"))
-    harness = Harness(args.model, work)
-    print(f"seed: {seed}\nworkdir: {work}\nclaude: {harness.claude}\nopenreflex: {harness.exe}\nreps: {args.reps}\n")
+    harness = Harness(model, work)
+    print(
+        f"corpus: {manifest['name']}\nseed: {seed}\ncommit: {actual_sha}\n"
+        f"workdir: {work}\nclaude: {harness.claude}\nopenreflex: {harness.exe}\n"
+        f"model: {model}\nreps: {args.reps}\n"
+    )
 
     results = []
-    for task in TASKS:
-        for condition in ("baseline", "primed"):
+    try:
+        for task in manifest["tasks"]:
             for rep in range(1, args.reps + 1):
-                print(f"running {task['name']} / {condition} / rep {rep} ...")
-                report = run_condition(harness, seed, task, condition, work, rep)
-                report["task"] = task["name"]
-                report["rep"] = rep
-                results.append(report)
-                print(f"  [{('ok' if report['code'] == 0 else 'FAIL')}] "
-                      f"{report['exploration_calls']} exploration calls, "
-                      f"found target: {report['found_correct_file']}, "
-                      f"rank: {report['target_rank_in_context']}, "
-                      f"{report['seconds']}s, cost ${report['total_cost_usd']}")
+                conditions = ["baseline", "primed"]
+                random.Random(f"{args.order_seed}:{task['name']}:{rep}").shuffle(conditions)
+                for condition in conditions:
+                    print(f"running {task['name']} / {condition} / rep {rep} ...")
+                    report = run_condition(harness, seed, task, condition, work, rep)
+                    report["task"] = task["name"]
+                    report["rep"] = rep
+                    report["target"] = task["target"]
+                    results.append(report)
+                    print(
+                        f"  [{('ok' if report['code'] == 0 else 'FAIL')}] "
+                        f"{report['exploration_calls']} exploration calls, "
+                        f"tokens={report['observed_model_tokens']}, "
+                        f"found target: {report['found_correct_file']}, "
+                        f"rank: {report['target_rank_in_context']}, "
+                        f"{report['seconds']}s, cost ${report['total_cost_usd']}"
+                    )
 
-    Path(args.out).write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
-    print(f"\nWrote {args.out}")
-    _summarize(results)
-    shutil.rmtree(work, ignore_errors=True)
-    return 0
+        summary = _paired_summary(results, manifest, model)
+        Path(args.out).write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
+        Path(args.summary_out).write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
+        print(f"\nWrote {args.out} and {args.summary_out}")
+        _summarize(results, manifest["tasks"])
+        print("\n--- paired result ---")
+        print(json.dumps(summary, indent=2))
+
+        # Gate experiment validity, not a desired positive result. Negative efficacy results are data.
+        if summary["pairs_valid"] == 0:
+            print("No valid baseline/treatment pairs completed.", file=sys.stderr)
+            return 2
+        if summary["missing_treatment_context"]:
+            print("OpenReflex treatment ran without delivered project context.", file=sys.stderr)
+            return 2
+        return 0
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 if __name__ == "__main__":

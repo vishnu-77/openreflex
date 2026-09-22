@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "name": "click-cold-start-v1",
+  "purpose": "Paired real-Claude cold-start localisation evaluation. Measures whether OpenReflex project memory reduces exploration without reducing correctness.",
+  "repository": {
+    "name": "pallets/click",
+    "url": "https://github.com/pallets/click.git",
+    "commit": "3cbaa76b6014be7427d1ab06b4af40f01e7c278e"
+  },
+  "claude_code_version": "2.1.278",
+  "model": "claude-sonnet-4-6",
+  "allowed_tools": [
+    "Read",
+    "Grep",
+    "Glob"
+  ],
+  "tasks": [
+    {
+      "name": "shell-completion-dispatch",
+      "prompt": "Without editing any files, investigate where Click parses the shell-completion instruction (such as source versus complete), selects the shell completion implementation, and writes the completion output. Reply with the single file path relative to the repository root that contains that implementation, and a one-sentence summary.",
+      "target": "src/click/shell_completion.py"
+    },
+    {
+      "name": "choice-conversion",
+      "prompt": "Without editing any files, investigate where Click normalizes a Choice option's raw value, compares it with the configured choices, and returns the matching original choice. Reply with the single file path relative to the repository root that contains that implementation, and a one-sentence summary.",
+      "target": "src/click/types.py"
+    },
+    {
+      "name": "help-width",
+      "prompt": "Without editing any files, investigate where Click's help formatter determines its default text width from the terminal size and clamps it to a maximum width. Reply with the single file path relative to the repository root that contains that implementation, and a one-sentence summary.",
+      "target": "src/click/formatting.py"
+    }
+  ]
+}
