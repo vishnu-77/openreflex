@@ -34,6 +34,7 @@ def main() -> int:
 
     tmp = Path(tempfile.mkdtemp(prefix="openreflex-plugin-smoke-"))
     home = tmp / "home"
+    claude_config = tmp / "claude"
     project = tmp / "repo"
     old_bin = tmp / "old-bin"
     sentinel = tmp / "stale-runtime-was-called"
@@ -55,6 +56,7 @@ def main() -> int:
         **os.environ,
         "OPENREFLEX_HOME": str(home),
         "OPENREFLEX_BOOTSTRAP_SPEC": str(wheel),
+        "CLAUDE_CONFIG_DIR": str(claude_config),
         "PATH": str(old_bin) + os.pathsep + os.environ.get("PATH", ""),
     }
     env.pop("PYTHONPATH", None)
@@ -80,7 +82,8 @@ def main() -> int:
     assert "runtime source   plugin-managed" in onboard, onboard
     assert "project memory   enabled" in onboard, onboard
 
-    settings = json.loads((project / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    assert not (project / ".claude" / "settings.json").exists(), "plugin onboarding must not create project Claude settings"
+    settings = json.loads((claude_config / "settings.json").read_text(encoding="utf-8"))
     status_command = settings["statusLine"]["command"].replace("\\", "/")
     assert "/.openreflex/" not in status_command or "/runtime/" in status_command
     assert f"/runtime/v{expected}/" in status_command, status_command
