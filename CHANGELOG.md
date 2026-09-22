@@ -4,6 +4,16 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.9.1 (2026-09-22)
+
+- Make the Claude OpenReflex skill a deterministic argument router: `approve`, `status`, `reflexes`, `memory`,
+  `doctor`, `why`, `trace`, and `revoke` now map directly to the requested control action.
+- Keep the default OpenReflex view compact and user-facing; the internal TUI/launcher implementation is no longer
+  mentioned by the skill or normal control output.
+- Treat explicit OpenReflex control turns as operational metadata rather than project work. They are not captured as
+  tasks or experiences, do not increment execution history, and cannot trigger code-verification Stop-hook feedback.
+- Require explicit `approve` to enable project memory from the control surface; viewing OpenReflex state is read-only.
+
 ## 0.9.0 (2026-09-22)
 
 - Make the Claude plugin own an exact-version OpenReflex runtime under `~/.openreflex/runtime/vX.Y.Z` instead of

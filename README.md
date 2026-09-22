@@ -65,19 +65,21 @@ OpenTelemetry export to a loopback-only OpenReflex receiver and stores counts on
 
 Requires Python 3.11 or newer.
 
-**Claude Code — recommended:** install the plugin, reload it, then invoke OpenReflex once in the project.
+**Claude Code — recommended:** install the plugin, reload it, inspect the current state, then explicitly enable
+project memory.
 
 ```text
 /plugin marketplace add vishnu-77/openreflex
 /plugin install openreflex@openreflex
 /reload-plugins
 /openreflex
+/openreflex approve
 ```
 
 Claude may display the canonical plugin namespace as `/openreflex:openreflex`; both refer to the same user-invoked
-OpenReflex control surface when the bare alias is available. That first invocation explicitly enables local memory
-for the current project, prepares an exact plugin-version runtime under `~/.openreflex/runtime/`, configures the
-OpenReflex status line when you do not already have a custom one, and shows the dashboard. After that, work normally.
+OpenReflex control surface when the bare alias is available. The no-argument command is read-only and compact.
+`approve` explicitly enables local memory for the current project. The plugin prepares an exact-version runtime
+under `~/.openreflex/runtime/` and normal agent work remains ambient after approval.
 
 The Claude plugin does **not** execute a global `openreflex` from PATH. An older pipx/uv/pip installation can coexist
 without taking over the plugin runtime.
@@ -114,7 +116,12 @@ OpenReflex installs per project with `openreflex install <agent>`, or as a plugi
 | **Cursor** | Lifecycle hooks | `openreflex install cursor` | Protocol and fuzz tests |
 | **OpenCode** | Local lifecycle plugin | `openreflex install opencode` | Protocol and fuzz tests |
 
-With the Claude plugin, run `/openreflex` once in each project you want OpenReflex to remember. That explicit user action enables only that project's local memory and repairs/prepares the plugin-managed runtime if necessary. The command is user-invoked only and does not enable MCP diagnostics or participate in normal model routing. Claude may show the canonical namespaced form `/openreflex:openreflex`. Per-agent guides:
+With the Claude plugin, `/openreflex` shows a compact read-only state view. Use `/openreflex approve` to enable
+local memory for the current project, then work normally. Other explicit controls include `status`, `reflexes`,
+`memory`, `doctor`, `why`, `trace`, and `revoke`. OpenReflex control turns are not learned as project
+experiences and do not trigger normal task verification. The control skill is user-invoked only and does not enable
+MCP diagnostics or participate in normal model routing. Claude may show the canonical namespaced form
+`/openreflex:openreflex`. Per-agent guides:
 [Claude Code](https://openreflex.cc/claude-code), [Codex](https://openreflex.cc/codex), [Cursor](https://openreflex.cc/cursor),
 [OpenCode](https://openreflex.cc/opencode).
 

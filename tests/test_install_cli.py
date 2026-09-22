@@ -87,9 +87,12 @@ def test_plugin_hook_files_match_installer_definitions():
     assert "name: openreflex" in skill
     assert "user-invocable: true" in skill
     assert "disable-model-invocation: true" in skill
-    assert "launcher.cjs" in skill and "onboard" in skill
+    assert 'argument-hint: "[approve|status|reflexes|memory|doctor|why|trace|revoke]"' in skill
+    assert "OPENREFLEX_CONTROL_REQUEST: $ARGUMENTS" in skill
+    assert "launcher.cjs" in skill and " control " in skill and "--request" in skill
     assert "global `openreflex` executable" in skill
-    assert "diagnostics" in skill and "Do not enable MCP diagnostics" in skill
+    assert "Do not enable MCP diagnostics" in skill
+    assert "tui" not in skill.lower(), "the user-facing skill must not leak the internal TUI command"
 
     launcher = (PLUGIN / "runtime" / "launcher.cjs").read_text(encoding="utf-8")
     assert "openreflex==" in launcher
@@ -109,6 +112,62 @@ def test_cli_hook_never_blocks_even_with_bad_arguments(isolated_home, project):
     for args in (["hook"], ["hook", "nonsense-agent", "PostToolUse"], ["hook", "claude-code", "PostToolUse"]):
         result = _run(args, stdin="{broken", env_home=isolated_home, cwd=project)
         assert result.returncode == 0, (args, result.stderr)
+
+
+def test_control_surface_is_compact_and_approve_is_explicit(isolated_home, project):
+    before = _run(["control", "--request", "", "--project", str(project)], env_home=isolated_home, cwd=project)
+    text = before.stdout.decode()
+    assert before.returncode == 0
+    assert "Memory       not enabled" in text
+    assert "tui" not in text.lower()
+    assert approval(project) is None
+
+    enabled = _run(["control", "--request", "approve", "--project", str(project)], env_home=isolated_home, cwd=project)
+    text = enabled.stdout.decode()
+    assert enabled.returncode == 0
+    assert "OPENREFLEX" in text and "READY" in text
+    assert "Memory       enabled" in text
+    assert "tui" not in text.lower()
+
+
+@pytest.mark.parametrize("prompt", [
+    "/openreflex:openreflex status",
+    "enable openreflex for this project",
+])
+def test_openreflex_control_turn_is_not_learned_or_verified(isolated_home, project, prompt):
+    connected = _run(["install", "claude-code", "--project", str(project)], env_home=isolated_home, cwd=project)
+    assert connected.returncode == 0
+
+    base = {"session_id": "control", "cwd": str(project)}
+    events = [
+        ("UserPromptSubmit", {**base, "prompt": prompt}),
+        ("PreToolUse", {
+            **base,
+            "tool_name": "Bash",
+            "tool_input": {"command": "node /plugin/runtime/launcher.cjs control --request status"},
+            "tool_use_id": "control-1",
+        }),
+        ("PostToolUse", {
+            **base,
+            "tool_name": "Bash",
+            "tool_input": {"command": "node /plugin/runtime/launcher.cjs control --request status"},
+            "tool_use_id": "control-1",
+            "tool_response": {"stdout": "OPENREFLEX READY", "stderr": ""},
+        }),
+        ("Stop", base),
+    ]
+    outputs = []
+    for event, payload in events:
+        result = _run(["hook", "claude-code", event], stdin=json.dumps(payload),
+                      env_home=isolated_home, cwd=project)
+        assert result.returncode == 0 and not result.stderr, result.stderr
+        outputs.append(result.stdout.decode())
+
+    status = _run(["status", "--json", "--project", str(project)], env_home=isolated_home, cwd=project)
+    data = json.loads(status.stdout)
+    assert data["engagement"]["tasks"] == 0
+    assert data["engagement"]["experiences"] == 0
+    assert all("cannot verify" not in output.lower() for output in outputs)
 
 
 def test_cli_end_to_end_capture_via_subprocess(isolated_home, project):

@@ -146,7 +146,7 @@ function releaseLock() {
 }
 
 function bootstrapAllowed() {
-  if (args[0] === "onboard" || args[0] === "tui") return true;
+  if (args[0] === "onboard" || args[0] === "tui" || args[0] === "control") return true;
   return args[0] === "hook" && args[2] === "SessionStart";
 }
 
