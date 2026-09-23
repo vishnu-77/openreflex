@@ -208,26 +208,28 @@ def build_server(project: Path) -> FastMCP:
 
     @tool("Get project Reflexes", READ)
     def get_project_reflexes() -> str:
-        """Show the project-specific procedures OpenReflex has learned from repeated successful work.
-        Returns: a compact list of learned/proven Reflex names, lifecycle state, support/verification counts and
-        procedure steps. Candidate procedures from a single run are intentionally hidden until repeated evidence
-        promotes them.
+        """Show the project Reflex and specialised procedures OpenReflex is learning from repeated work.
+        Returns: the root Project Reflex after the first captured experience, plus specialised Reflexes with
+        learning/learned/proven/stale maturity, support/verification counts and procedure steps.
         Use when: the user asks what OpenReflex has learned specifically about this project, which reusable procedures
         exist, or how a named Reflex works.
         Not for: backend routing internals or generic strategies (use get_candidate_paths for those diagnostics).
         Side effects: none; read-only. It never recompiles memory or touches project files.
         Errors: a 'not enabled' message is returned until the project is approved."""
         def operation(e: Engine):
-            reflexes = visible_reflexes(e.store)
+            reflexes = display_reflexes(e.store)
             if not reflexes:
-                return "OPENREFLEX / PROJECT REFLEXES\n\nNo learned project Reflexes yet."
+                return "OPENREFLEX / PROJECT REFLEXES\n\nProject Reflex warming · capture the first substantial task."
             lines = ["OPENREFLEX / PROJECT REFLEXES", ""]
             for reflex in reflexes:
                 lines.append(
-                    f"{reflex.name} · {reflex.state} · {reflex.success_count} successful · "
+                    f"{reflex.name} · {display_state(reflex)} · {reflex.support_count} supporting · {reflex.success_count} successful · "
                     f"{reflex.verified_count} verified"
                 )
-                lines.append("  " + " -> ".join(reflex.procedure))
+                if reflex.family == "project-root":
+                    lines.append("  scope: whole project · cross-task · cross-mode")
+                elif reflex.procedure:
+                    lines.append("  " + " -> ".join(reflex.procedure))
             return "\n".join(lines)
         return run(operation)
 
