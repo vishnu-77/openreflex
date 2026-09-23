@@ -138,6 +138,8 @@ def test_credit_graph_round_trips_with_project_reflex(tmp_path):
             _record(store, 2, ["read", "edit", "lint"]),
             _record(store, 3, ["edit", "lint"]),
             _record(store, 4, ["edit", "lint"]),
+            _record(store, 5, ["read"], verified=False, status="failure"),
+            _record(store, 6, ["read"], verified=False, status="failure"),
         ]
         reflex = compile_for_experience(store, experiences[-1], now=100)
         restored = store.get_reflex(reflex.id)
