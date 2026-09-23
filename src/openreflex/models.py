@@ -243,6 +243,7 @@ class ProjectReflex(Model):
     seed_strategy: str | None = None
     procedure: list[str] = field(default_factory=list)
     credit_graph: list[dict] = field(default_factory=list)
+    credit_version: int = 0
     evidence_ids: list[str] = field(default_factory=list)
     support_count: int = 0
     success_count: int = 0
