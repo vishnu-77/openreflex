@@ -1,3 +1,4 @@
+import json
 from openreflex.models import Experience, Outcome, ProjectReflex, ToolCall
 from openreflex.reflexes import compile_for_experience, execution_credit_graph
 from openreflex.routing import embed
@@ -161,7 +162,7 @@ def test_pre_credit_reflex_json_loads_with_empty_graph(tmp_path):
         )
         payload = legacy.model_dump()
         payload.pop("credit_graph", None)
-        restored = ProjectReflex.model_validate(payload)
+        restored = ProjectReflex.model_validate_json(json.dumps(payload))
 
         assert restored.credit_graph == []
     finally:
