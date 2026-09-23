@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Callable, TypeVar
 
 from . import __version__, cli
-from .claude_ui import configure_statusline, remove_project_statusline
+from .claude_ui import configure_statusline, remove_project_integration
 from .project import approval, approve, log_error, project_root
 from .project_map import enrich_snapshot
 from .project_memory import ensure_background_refresh, load_snapshot, read_state, run_worker, update_state
@@ -704,8 +704,8 @@ def _augment_uninstall(argv: list[str], result: int) -> None:
     if result != 0 or len(argv) < 2 or argv[1] != "claude-code" or "--dry-run" in argv:
         return
     project = project_root(_project_arg(argv))
-    if remove_project_statusline(project):
-        print("  statusline  legacy project status line removed")
+    if remove_project_integration(project):
+        print("  project     legacy OpenReflex Claude config removed")
 
 
 def main(argv: list[str] | None = None) -> int:
