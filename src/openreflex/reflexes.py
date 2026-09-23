@@ -292,13 +292,13 @@ def _confidence(known: int, successes: int, verified: int) -> float:
 
 def _compile_family(store: Store, experience: Experience, family: str, now: float) -> ProjectReflex:
     project_scope = family.startswith("area:") or family == PROJECT_ROOT_FAMILY
-    group = [
+    observed_group = [
         item for item in store.list("Experience", limit=5000)
         if (project_scope or item.task_mode == experience.task_mode)
         and family in families_for_experience(item)
-        and item.status != "unknown"
     ]
-    group.sort(key=lambda item: item.created_at)
+    observed_group.sort(key=lambda item: item.created_at)
+    group = [item for item in observed_group if item.status != "unknown"]
     successes = [item for item in group if item.status == "success"]
     verified = 0
     for item in successes:
@@ -335,8 +335,8 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
         # Project-wide and project-area Reflexes are cross-mode memory, not one task recipe.
         # Mode-specific specialised Reflexes keep executable procedures.
         procedure=[] if project_scope else _procedure(store, successes or group or [experience]),
-        evidence_ids=[item.id for item in group[-20:]],
-        support_count=len(group),
+        evidence_ids=[item.id for item in (observed_group if family == PROJECT_ROOT_FAMILY else group)[-20:]],
+        support_count=len(observed_group) if family == PROJECT_ROOT_FAMILY else len(group),
         success_count=len(successes),
         verified_count=verified,
         confidence=_confidence(len(group), len(successes), verified),
@@ -400,6 +400,7 @@ def reflex_summary(store: Store) -> dict[str, object]:
         "project": root,
         "project_state": display_state(root) if root is not None else "cold",
         "project_support": root.support_count if root is not None else 0,
+        "visible": len(items),
         "specialised_total": len(specialised),
         "learning": states["learning"],
         "learned": states["learned"],
@@ -442,6 +443,8 @@ def match_reflex(store: Store, description: str, task_mode: str, task_class: str
     ensure_project_reflex(store)
     query = embed(description)
     hints = _query_hints(description) | set(family_hints or ())
+    # The project root is a baseline, not an intent hint; specific area/procedure Reflexes should win.
+    hints.discard(PROJECT_ROOT_FAMILY)
     scored: list[tuple[ProjectReflex, float]] = []
 
     for reflex in store.list_reflexes(states=_VISIBLE_STATES, limit=500):
