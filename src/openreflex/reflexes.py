@@ -252,17 +252,35 @@ def _step(category: str, files: list[str]) -> str:
     return f"Perform the {category} step"
 
 
-def execution_credit_graph(store: Store, group: list[Experience]) -> list[dict]:
+def _execution_cache(store: Store) -> tuple[dict[str, list[ToolCall]], dict[str, object]]:
+    calls_by_execution: dict[str, list[ToolCall]] = {}
+    for call in store.list("ToolCall", limit=100_000):
+        calls_by_execution.setdefault(call.execution_id, []).append(call)
+    outcomes_by_id = {outcome.id: outcome for outcome in store.list("Outcome", limit=100_000)}
+    return calls_by_execution, outcomes_by_id
+
+
+def execution_credit_graph(
+    store: Store,
+    group: list[Experience],
+    calls_by_execution: dict[str, list[ToolCall]] | None = None,
+    outcomes_by_id: dict[str, object] | None = None,
+) -> list[dict]:
     """Estimate action credit from repeated known outcomes."""
     known = [item for item in group if item.status in {"success", "failure"}]
     if not known:
         return []
 
+    if calls_by_execution is None or outcomes_by_id is None:
+        cached_calls, cached_outcomes = _execution_cache(store)
+        calls_by_execution = calls_by_execution or cached_calls
+        outcomes_by_id = outcomes_by_id or cached_outcomes
+
     records: list[dict] = []
     categories: set[str] = set()
     for item in known:
         calls = sorted(
-            store.find("ToolCall", execution_id=item.execution_id, limit=500),
+            calls_by_execution.get(item.execution_id, []),
             key=lambda call: (call.started_at, call.id),
         )
         completed = [
@@ -275,10 +293,7 @@ def execution_credit_graph(store: Store, group: list[Experience]) -> list[dict]:
         resolver_categories = {fixed.category for _, fixed in resolutions(calls)}
         verified = False
         if item.status == "success":
-            try:
-                verified = bool(getattr(store.get(item.outcome_id), "verified", False))
-            except ValueError:
-                verified = False
+            verified = bool(getattr(outcomes_by_id.get(item.outcome_id), "verified", False))
         records.append({
             "experience": item,
             "counts": counts,
@@ -355,10 +370,18 @@ def _credit_spine(graph: list[dict]) -> set[str]:
     return {str(item["action"]) for item in graph if item.get("spine")}
 
 
-def _procedure(store: Store, group: list[Experience], credit_graph: list[dict] | None = None) -> list[str]:
+def _procedure(
+    store: Store,
+    group: list[Experience],
+    credit_graph: list[dict] | None = None,
+    calls_by_execution: dict[str, list[ToolCall]] | None = None,
+) -> list[str]:
     sequences = []
     for item in group:
-        sequence = _collapsed_categories(store.find("ToolCall", execution_id=item.execution_id, limit=500))
+        calls = calls_by_execution.get(item.execution_id, []) if calls_by_execution is not None else store.find(
+            "ToolCall", execution_id=item.execution_id, limit=500
+        )
+        sequence = _collapsed_categories(calls)
         if sequence:
             sequences.append(sequence)
     files = _common_files(group)
