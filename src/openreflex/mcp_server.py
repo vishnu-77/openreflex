@@ -20,7 +20,7 @@ from .mcp_contracts import (
     SearchExperienceResult,
 )
 from .project import approval, approve, project_root
-from .reflexes import visible_reflexes
+from .reflexes import display_reflexes, display_state
 from .routing import Limits
 
 INSTRUCTIONS = """OpenReflex runs ambiently through lifecycle hooks. Normal coding-agent work does not require
