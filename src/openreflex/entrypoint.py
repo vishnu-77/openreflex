@@ -648,6 +648,14 @@ def _reflexes(argv: list[str]) -> int:
             print("    scope     cross-task project area")
         elif reflex.procedure:
             print(f"    steps     {' -> '.join(reflex.procedure)}")
+        spine = [signal for signal in reflex.credit_graph if signal.get("spine")]
+        if spine:
+            shown = " · ".join(
+                f"{signal['action']} {float(signal['credit']):.2f}" for signal in spine[:5]
+            )
+            print(f"    credit    {shown}")
+        elif reflex.credit_graph:
+            print(f"    credit    learning from {len(reflex.credit_graph)} action signal(s)")
     return 0
 
 
