@@ -4,6 +4,20 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.9.3 (2026-09-23)
+
+- Keep Claude plugin presentation user-scoped: OpenReflex now writes the status line only to the user's Claude
+  settings and never creates repository-local Claude settings merely for the status line.
+- Migrate legacy OpenReflex-owned project status-line and hook entries out of `.claude/settings.json` while
+  preserving user-owned permissions, hooks, and other Claude configuration.
+- Delete an empty project `.claude/settings.json` and empty `.claude/` directory when OpenReflex was their only
+  owner, preventing stale project configuration and duplicate hook execution.
+- Respect `CLAUDE_CONFIG_DIR`, preserve malformed or custom user settings instead of overwriting them, and keep
+  plugin onboarding smoke tests isolated from the developer's real Claude configuration.
+- Retain the quiet Stop behaviour from 0.9.2 so missing verification remains internal evidence rather than
+  conversational hook feedback.
+
+
 ## 0.9.2 (2026-09-22)
 
 - Make ambient completion messaging evidence-backed: successful verified work shows a compact `VERIFIED` recap and
