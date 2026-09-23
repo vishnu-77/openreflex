@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .engine import Engine
 from .project_memory import load_snapshot, snapshot_path, update_state
+from .reflexes import reflex_summary
 
 ROLE_BONUS = {
     "helm-config": 5.0,
@@ -91,18 +92,24 @@ def _evidence_state(item: dict) -> str:
     return "discovered"
 
 
-def _counts(engine: Engine) -> dict[str, int]:
+def _counts(engine: Engine) -> dict[str, object]:
     outcomes = engine.store.count("Outcome")
     unknown = engine.store.count("Outcome", "status", "unknown")
+    reflexes = reflex_summary(engine.store)
     return {
         "experiences": engine.store.count("Experience"),
         "verified": engine.store.count("Outcome", "verified", True),
         "known_outcomes": outcomes - unknown,
         "lessons": engine.store.count("Lesson"),
+        "project_reflex_state": reflexes["project_state"],
+        "project_reflex_support": reflexes["project_support"],
+        "reflexes_learning": reflexes["learning"],
+        "reflexes_learned": reflexes["learned"],
+        "reflexes_proven": reflexes["proven"],
     }
 
 
-def sync_counts(project: Path) -> dict[str, int]:
+def sync_counts(project: Path) -> dict[str, object]:
     """Refresh lightweight UI counts from the local Experience Graph."""
     engine = Engine(project)
     try:
