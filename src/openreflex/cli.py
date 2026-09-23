@@ -149,8 +149,14 @@ def cmd_status(args) -> int:
     print(f"OpenReflex {__version__} - {project}")
     print(f"  enabled: {data['enabled']}   agents: {', '.join(data['engagement']['agents']) or '-'}")
     print(f"  tasks: {data['engagement']['tasks']}   experiences: {data['engagement']['experiences']}   lessons: {data['lessons']}")
-    print(f"  project reflexes: {data['project_reflexes']['visible']} "
-          f"({data['project_reflexes']['learned']} learned / {data['project_reflexes']['proven']} proven)")
+    reflexes = data["project_reflexes"]
+    print(f"  project reflex: {reflexes['project_state']} · {reflexes['project_support']} supporting experience(s)")
+    specialised = []
+    for key in ("learning", "learned", "proven", "stale"):
+        count = int(reflexes.get(key, 0) or 0)
+        if count:
+            specialised.append(f"{count} {key}")
+    print("  specialised reflexes: " + (" / ".join(specialised) if specialised else "learning from project evidence"))
     print(f"  first session captured: {data['activation']['first_session_captured']}   "
           f"seconds to first task: {data['activation']['seconds_to_first_task']}")
     print(f"  tasks that used prior experience: {reuse['benefit_rate']}")

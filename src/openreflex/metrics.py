@@ -11,6 +11,7 @@ from statistics import mean
 
 from .engine import Engine
 from .learning import realized_utility
+from .reflexes import reflex_summary
 
 WEEK = 604800
 
@@ -47,8 +48,7 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
     executions = store.list("Execution", limit=100_000)
     experiences = sorted(store.list("Experience", limit=100_000), key=lambda x: x.created_at)
     contexts = {c.task_id: c for c in store.list("Context", limit=100_000)}
-    reflexes = store.list_reflexes(states=("learned", "proven"), limit=100_000)
-    reflex_states = Counter(item.state for item in reflexes)
+    reflexes = reflex_summary(store)
     task_by_id = {t.id: t for t in tasks}
     approved_at = (approval_record or {}).get("approved_at")
 
@@ -164,7 +164,15 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
         "execution_control": {"verdicts": dict(verdicts),
                               "success_after_pivot_or_stop": _avg(x.status == "success" for x in advised),
                               "tasks_within_tool_call_budget": _avg(within_budget)},
-        "project_reflexes": {"visible": len(reflexes), "learned": reflex_states["learned"],
-                             "proven": reflex_states["proven"]},
+        "project_reflexes": {
+            "visible": reflexes["visible"],
+            "project_state": reflexes["project_state"],
+            "project_support": reflexes["project_support"],
+            "specialised_total": reflexes["specialised_total"],
+            "learning": reflexes["learning"],
+            "learned": reflexes["learned"],
+            "proven": reflexes["proven"],
+            "stale": reflexes["stale"],
+        },
         "lessons": len(store.list("Lesson", limit=100_000)),
     }

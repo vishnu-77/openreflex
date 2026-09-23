@@ -33,7 +33,7 @@ def test_mcp_tools_require_approval_then_work(project, clock):
     assert "Working approach:" in context
     assert "Candidate paths:" not in context
     assert "test-first" not in context
-    assert "No learned project Reflexes yet" in tool_text(server, "get_project_reflexes", {})
+    assert "Project Reflex warming" in tool_text(server, "get_project_reflexes", {})
     assert "OPENREFLEX / WHY" in tool_text(server, "explain_decision", {})
     assert "OPENREFLEX / TRACE" in tool_text(server, "get_execution_trace", {})
     assert "OPENREFLEX / PATHS" in tool_text(server, "get_candidate_paths", {})
@@ -78,6 +78,8 @@ def test_metrics_report_reuse_and_path_checks(engine, clock, project):
         clock.advance(3600)
     data = metrics.project_metrics(engine, approval(project), now=clock.now)
     assert data["engagement"]["experiences"] == 3
+    assert data["project_reflexes"]["project_state"] == "learned"
+    assert data["project_reflexes"]["project_support"] == 3
     assert data["experience_reuse"]["benefit_rate"] == round(2 / 3, 3)
     assert data["efficiency_observational"]["with_prior_experience"]["n"] == 2
     assert data["routing"]["retrospective_best"] == {"debug": "test-first"}

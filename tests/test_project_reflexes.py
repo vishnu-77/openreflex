@@ -1,7 +1,15 @@
 import sqlite3
 
 from openreflex.models import Experience, Outcome, ProjectReflex, ToolCall
-from openreflex.reflexes import compile_for_experience, families_for_experience, match_reflex
+from openreflex.reflexes import (
+    PROJECT_ROOT_FAMILY,
+    compile_for_experience,
+    display_state,
+    ensure_project_reflex,
+    families_for_experience,
+    match_reflex,
+    reflex_summary,
+)
 from openreflex.routing import embed
 from openreflex.store import SCHEMA_VERSION, Store
 
@@ -159,6 +167,56 @@ def test_compiler_does_not_surface_single_run_candidate(tmp_path):
         store.close()
 
 
+def test_project_root_reflex_exists_from_first_experience_and_is_displayed_as_learning(tmp_path):
+    store = Store(tmp_path / "project-root.sqlite3")
+    try:
+        experience, outcome, calls = _experience(1)
+        store.put(outcome)
+        store.put(experience)
+        for call in calls:
+            store.put(call)
+        compile_for_experience(store, experience, now=10)
+
+        root = ensure_project_reflex(store, now=11)
+        assert root is not None
+        assert root.family == PROJECT_ROOT_FAMILY
+        assert root.task_mode == "project"
+        assert root.support_count == 1
+        assert root.success_count == 1
+        assert root.state == "candidate"
+        assert display_state(root) == "learning"
+
+        summary = reflex_summary(store)
+        assert summary["project_state"] == "learning"
+        assert summary["project_support"] == 1
+    finally:
+        store.close()
+
+
+def test_existing_experiences_backfill_project_root_without_new_task(tmp_path):
+    store = Store(tmp_path / "project-root-backfill.sqlite3")
+    try:
+        for index in range(1, 4):
+            experience, outcome, calls = _experience(index, verified=False)
+            store.put(outcome)
+            store.put(experience)
+            for call in calls:
+                store.put(call)
+
+        assert not any(item.family == PROJECT_ROOT_FAMILY for item in store.list_reflexes(limit=100))
+
+        summary = reflex_summary(store)
+        root = summary["project"]
+        assert root is not None
+        assert root.family == PROJECT_ROOT_FAMILY
+        assert root.support_count == 3
+        assert root.success_count == 3
+        assert root.verified_count == 0
+        assert summary["project_state"] == "learned"
+    finally:
+        store.close()
+
+
 def test_matching_reflex_is_project_specific_and_similarity_gated(tmp_path):
     store = Store(tmp_path / "matching.sqlite3")
     try:
@@ -299,7 +357,8 @@ def test_project_family_accumulates_evidence_across_different_task_classes(tmp_p
         assert latest.state == "learned"
         assert latest.support_count == 2
         assert "src/auth" in latest.module_patterns
-        assert len(store.list_reflexes(states=("learned", "proven"))) == 1
+        learned = store.list_reflexes(states=("learned", "proven"))
+        assert {item.family for item in learned} >= {"authentication", PROJECT_ROOT_FAMILY}
     finally:
         store.close()
 
