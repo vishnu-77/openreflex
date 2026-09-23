@@ -1,7 +1,9 @@
 import json
 
+from openreflex import __version__
 from openreflex.claude_ui import (
     configure_statusline,
+    remove_project_integration,
     remove_project_statusline,
     remove_statusline,
 )
@@ -17,14 +19,14 @@ def test_statusline_is_user_scoped_and_does_not_create_project_settings(tmp_path
     settings = _user_settings(tmp_path, monkeypatch)
     project = tmp_path / "repo"
     project.mkdir()
-    runtime = tmp_path / ".openreflex" / "runtime" / "v0.9.2" / "bin" / "openreflex"
+    runtime = tmp_path / ".openreflex" / "runtime" / f"v{__version__}" / "bin" / "openreflex"
     monkeypatch.setenv("OPENREFLEX_RUNTIME_COMMAND", f'"{runtime}"')
 
     assert configure_statusline(project) == "configured"
 
     data = json.loads(settings.read_text(encoding="utf-8"))
     assert data["statusLine"]["command"].endswith(" statusline")
-    assert "/runtime/v0.9.2/" in data["statusLine"]["command"].replace("\\", "/")
+    assert f"/runtime/v{__version__}/" in data["statusLine"]["command"].replace("\\", "/")
     assert not (project / ".claude" / "settings.json").exists()
 
 
@@ -101,3 +103,50 @@ def test_project_cleanup_never_removes_user_statusline(tmp_path, monkeypatch):
     assert settings.exists()
     assert remove_statusline() is True
     assert json.loads(settings.read_text(encoding="utf-8")) == {}
+
+
+def test_project_cleanup_removes_legacy_openreflex_hooks_and_preserves_user_hooks(tmp_path, monkeypatch):
+    _user_settings(tmp_path, monkeypatch)
+    project = tmp_path / "repo"
+    project_settings = project / ".claude" / "settings.json"
+    project_settings.parent.mkdir(parents=True)
+    user_hook = {"hooks": [{"type": "command", "command": "echo user-owned"}]}
+    openreflex_hook = {
+        "hooks": [{
+            "type": "command",
+            "command": 'openreflex hook claude-code Stop --plugin-root "${CLAUDE_PLUGIN_ROOT}"',
+            "timeout": 15,
+        }]
+    }
+    project_settings.write_text(json.dumps({
+        "permissions": {"allow": ["Bash(git status)"]},
+        "hooks": {"Stop": [user_hook, openreflex_hook]},
+    }), encoding="utf-8")
+
+    assert remove_project_integration(project) is True
+
+    data = json.loads(project_settings.read_text(encoding="utf-8"))
+    assert data["permissions"] == {"allow": ["Bash(git status)"]}
+    assert data["hooks"]["Stop"] == [user_hook]
+
+
+def test_project_cleanup_deletes_openreflex_only_hook_file(tmp_path, monkeypatch):
+    _user_settings(tmp_path, monkeypatch)
+    project = tmp_path / "repo"
+    project_settings = project / ".claude" / "settings.json"
+    project_settings.parent.mkdir(parents=True)
+    project_settings.write_text(json.dumps({
+        "hooks": {
+            "SessionStart": [{
+                "hooks": [{
+                    "type": "command",
+                    "command": 'openreflex hook claude-code SessionStart --plugin-root "${CLAUDE_PLUGIN_ROOT}"',
+                    "timeout": 10,
+                }]
+            }]
+        }
+    }), encoding="utf-8")
+
+    assert remove_project_integration(project) is True
+    assert not project_settings.exists()
+    assert not project_settings.parent.exists()
