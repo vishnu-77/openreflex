@@ -18,7 +18,7 @@ _VISIBLE_STATES = ("learned", "proven")
 PROJECT_ROOT_FAMILY = "project-root"
 CREDIT_SPINE_MIN_KNOWN = 3
 CREDIT_SPINE_MIN_SUPPORT = 2
-CREDIT_SPINE_THRESHOLD = 0.52
+CREDIT_SPINE_THRESHOLD = 0.55
 _STOPWORDS = {
     "the", "a", "an", "and", "or", "to", "for", "in", "on", "of", "this", "that", "with", "from",
     "please", "project", "repo", "repository", "change", "update", "fix", "add", "make", "work",
@@ -302,6 +302,7 @@ def execution_credit_graph(store: Store, group: list[Experience]) -> list[dict]:
         with_rate = success_with / support if support else 0.0
         without_rate = success_without / absent if absent else baseline
         gap = with_rate - without_rate if absent else 0.0
+        necessity = 1.0 - without_rate if absent else 0.5
         verified_support = sum(
             record["experience"].status == "success" and record["verified"]
             for record in with_action
@@ -312,9 +313,10 @@ def execution_credit_graph(store: Store, group: list[Experience]) -> list[dict]:
         coverage = support / total
 
         raw_credit = (
-            0.45 * with_rate
-            + 0.20 * gap
-            + 0.15 * (verified_support / support if support else 0.0)
+            0.30 * with_rate
+            + 0.25 * gap
+            + 0.15 * necessity
+            + 0.10 * (verified_support / support if support else 0.0)
             + 0.10 * (resolution_support / support if support else 0.0)
             + 0.10 * coverage
             - 0.15 * redundancy
@@ -338,6 +340,8 @@ def execution_credit_graph(store: Store, group: list[Experience]) -> list[dict]:
             "success_without": success_without,
             "success_rate_without": round(without_rate, 3) if absent else None,
             "counterfactual_gap": round(gap, 3) if absent else None,
+            "absence_success_rate": round(without_rate, 3) if absent else None,
+            "necessity_signal": round(necessity, 3),
             "verified_support": verified_support,
             "resolution_support": resolution_support,
             "redundancy": round(redundancy, 3),
