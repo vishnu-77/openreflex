@@ -242,6 +242,7 @@ class ProjectReflex(Model):
     state: str = one_of(("candidate", "learned", "proven", "stale"), "candidate")
     seed_strategy: str | None = None
     procedure: list[str] = field(default_factory=list)
+    credit_graph: list[dict] = field(default_factory=list)
     evidence_ids: list[str] = field(default_factory=list)
     support_count: int = 0
     success_count: int = 0
