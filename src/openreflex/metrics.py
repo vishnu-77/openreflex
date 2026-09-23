@@ -173,6 +173,8 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
             "learned": reflexes["learned"],
             "proven": reflexes["proven"],
             "stale": reflexes["stale"],
+            "credit_signals": reflexes["credit_signals"],
+            "credit_spine_actions": reflexes["credit_spine_actions"],
         },
         "lessons": len(store.list("Lesson", limit=100_000)),
     }

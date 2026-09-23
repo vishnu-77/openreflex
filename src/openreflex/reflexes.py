@@ -9,12 +9,17 @@ import time
 from collections import Counter
 from pathlib import PurePosixPath
 
+from .learning import resolutions
 from .models import Experience, ProjectReflex, ToolCall
 from .routing import embed, similarity
 from .store import Store
 
 _VISIBLE_STATES = ("learned", "proven")
 PROJECT_ROOT_FAMILY = "project-root"
+CREDIT_MODEL_VERSION = 1
+CREDIT_SPINE_MIN_KNOWN = 3
+CREDIT_SPINE_MIN_SUPPORT = 2
+CREDIT_SPINE_THRESHOLD = 0.55
 _STOPWORDS = {
     "the", "a", "an", "and", "or", "to", "for", "in", "on", "of", "this", "that", "with", "from",
     "please", "project", "repo", "repository", "change", "update", "fix", "add", "make", "work",
@@ -248,10 +253,136 @@ def _step(category: str, files: list[str]) -> str:
     return f"Perform the {category} step"
 
 
-def _procedure(store: Store, group: list[Experience]) -> list[str]:
+def _execution_cache(store: Store) -> tuple[dict[str, list[ToolCall]], dict[str, object]]:
+    calls_by_execution: dict[str, list[ToolCall]] = {}
+    for call in store.list("ToolCall", limit=100_000):
+        calls_by_execution.setdefault(call.execution_id, []).append(call)
+    outcomes_by_id = {outcome.id: outcome for outcome in store.list("Outcome", limit=100_000)}
+    return calls_by_execution, outcomes_by_id
+
+
+def execution_credit_graph(
+    store: Store,
+    group: list[Experience],
+    calls_by_execution: dict[str, list[ToolCall]] | None = None,
+    outcomes_by_id: dict[str, object] | None = None,
+) -> list[dict]:
+    """Estimate action credit from repeated known outcomes."""
+    known = [item for item in group if item.status in {"success", "failure"}]
+    if not known:
+        return []
+
+    if calls_by_execution is None or outcomes_by_id is None:
+        cached_calls, cached_outcomes = _execution_cache(store)
+        calls_by_execution = calls_by_execution or cached_calls
+        outcomes_by_id = outcomes_by_id or cached_outcomes
+
+    records: list[dict] = []
+    categories: set[str] = set()
+    for item in known:
+        calls = sorted(
+            calls_by_execution.get(item.execution_id, []),
+            key=lambda call: (call.started_at, call.id),
+        )
+        completed = [
+            call for call in calls
+            if call.status != "running" and call.category not in {"other", "plan"}
+        ]
+        counts = Counter(call.category for call in completed)
+        present = set(counts)
+        categories.update(present)
+        resolver_categories = {fixed.category for _, fixed in resolutions(calls)}
+        verified = False
+        if item.status == "success":
+            verified = bool(getattr(outcomes_by_id.get(item.outcome_id), "verified", False))
+        records.append({
+            "experience": item,
+            "counts": counts,
+            "present": present,
+            "resolvers": resolver_categories,
+            "verified": verified,
+        })
+
+    total = len(records)
+    total_successes = sum(record["experience"].status == "success" for record in records)
+    baseline = total_successes / total if total else 0.0
+    graph: list[dict] = []
+
+    for category in sorted(categories):
+        with_action = [record for record in records if category in record["present"]]
+        without_action = [record for record in records if category not in record["present"]]
+        support = len(with_action)
+        absent = len(without_action)
+        success_with = sum(record["experience"].status == "success" for record in with_action)
+        success_without = sum(record["experience"].status == "success" for record in without_action)
+        with_rate = success_with / support if support else 0.0
+        without_rate = success_without / absent if absent else baseline
+        gap = with_rate - without_rate if absent else 0.0
+        necessity = 1.0 - without_rate if absent else 0.5
+        verified_support = sum(
+            record["experience"].status == "success" and record["verified"]
+            for record in with_action
+        )
+        resolution_support = sum(category in record["resolvers"] for record in with_action)
+        occurrences = sum(int(record["counts"].get(category, 0)) for record in with_action)
+        redundancy = max(0.0, (occurrences - support) / occurrences) if occurrences else 0.0
+        coverage = support / total
+
+        raw_credit = (
+            0.30 * with_rate
+            + 0.25 * gap
+            + 0.15 * necessity
+            + 0.10 * (verified_support / support if support else 0.0)
+            + 0.10 * (resolution_support / support if support else 0.0)
+            + 0.10 * coverage
+            - 0.15 * redundancy
+        )
+        evidence_factor = min(1.0, total / 4)
+        credit = 0.5 + (raw_credit - 0.5) * evidence_factor
+        credit = round(max(0.0, min(1.0, credit)), 3)
+        spine = (
+            total >= CREDIT_SPINE_MIN_KNOWN
+            and support >= CREDIT_SPINE_MIN_SUPPORT
+            and credit >= CREDIT_SPINE_THRESHOLD
+        )
+        graph.append({
+            "action": category,
+            "credit": credit,
+            "support": support,
+            "known": total,
+            "success_with": success_with,
+            "success_rate_with": round(with_rate, 3),
+            "absent": absent,
+            "success_without": success_without,
+            "success_rate_without": round(without_rate, 3) if absent else None,
+            "counterfactual_gap": round(gap, 3) if absent else None,
+            "absence_success_rate": round(without_rate, 3) if absent else None,
+            "necessity_signal": round(necessity, 3),
+            "verified_support": verified_support,
+            "resolution_support": resolution_support,
+            "redundancy": round(redundancy, 3),
+            "spine": spine,
+        })
+
+    return sorted(graph, key=lambda item: (-float(item["credit"]), -int(item["support"]), str(item["action"])))
+
+
+def _credit_spine(graph: list[dict]) -> set[str]:
+    return {str(item["action"]) for item in graph if item.get("spine")}
+
+
+def _procedure(
+    store: Store,
+    group: list[Experience],
+    credit_graph: list[dict] | None = None,
+    calls_by_execution: dict[str, list[ToolCall]] | None = None,
+) -> list[str]:
     sequences = []
     for item in group:
-        sequence = _collapsed_categories(store.find("ToolCall", execution_id=item.execution_id, limit=500))
+        calls = calls_by_execution.get(item.execution_id, []) if calls_by_execution is not None else store.find(
+            "ToolCall", execution_id=item.execution_id, limit=500
+        )
+        sequence = _collapsed_categories(calls)
         if sequence:
             sequences.append(sequence)
     files = _common_files(group)
@@ -262,6 +393,11 @@ def _procedure(store: Store, group: list[Experience]) -> list[str]:
             return ["Frame the project-specific question", "Compare the relevant constraints", "Record the decision and assumptions"]
         return ["Inspect the relevant project area", "Make the focused change", "Verify the result"]
     sequence = Counter(sequences).most_common(1)[0][0]
+    spine = _credit_spine(credit_graph or [])
+    if spine:
+        compressed = tuple(category for category in sequence if category in spine)
+        if len(compressed) >= 2:
+            sequence = compressed
     steps: list[str] = []
     for category in sequence[:8]:
         step = _step(category, files if category in {"read", "edit"} else [])
@@ -290,7 +426,14 @@ def _confidence(known: int, successes: int, verified: int) -> float:
     ), 3)
 
 
-def _compile_family(store: Store, experience: Experience, family: str, now: float) -> ProjectReflex:
+def _compile_family(
+    store: Store,
+    experience: Experience,
+    family: str,
+    now: float,
+    calls_by_execution: dict[str, list[ToolCall]] | None = None,
+    outcomes_by_id: dict[str, object] | None = None,
+) -> ProjectReflex:
     project_scope = family.startswith("area:") or family == PROJECT_ROOT_FAMILY
     observed_group = [
         item for item in store.list("Experience", limit=5000)
@@ -300,13 +443,15 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
     observed_group.sort(key=lambda item: item.created_at)
     group = [item for item in observed_group if item.status != "unknown"]
     successes = [item for item in group if item.status == "success"]
-    verified = 0
-    for item in successes:
-        try:
-            outcome = store.get(item.outcome_id)
-        except ValueError:
-            continue
-        verified += int(bool(getattr(outcome, "verified", False)))
+    if calls_by_execution is None or outcomes_by_id is None:
+        cached_calls, cached_outcomes = _execution_cache(store)
+        calls_by_execution = calls_by_execution or cached_calls
+        outcomes_by_id = outcomes_by_id or cached_outcomes
+
+    verified = sum(
+        int(bool(getattr(outcomes_by_id.get(item.outcome_id), "verified", False)))
+        for item in successes
+    )
 
     reflex_mode = "project" if project_scope else experience.task_mode
     key = f"{reflex_mode}|{family}"
@@ -324,6 +469,7 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
     class_counts = Counter(item.task_class for item in (successes or group))
     primary_class = class_counts.most_common(1)[0][0] if class_counts else experience.task_class
     descriptions = " ".join(item.description for item in successes[-20:]) or experience.description
+    credit_graph = execution_credit_graph(store, group, calls_by_execution, outcomes_by_id)
     reflex = ProjectReflex(
         id=reflex_id,
         name=_name(family, experience),
@@ -334,7 +480,11 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
         seed_strategy=seed_strategy,
         # Project-wide and project-area Reflexes are cross-mode memory, not one task recipe.
         # Mode-specific specialised Reflexes keep executable procedures.
-        procedure=[] if project_scope else _procedure(store, successes or group or [experience]),
+        procedure=[] if project_scope else _procedure(
+            store, successes or group or [experience], credit_graph, calls_by_execution
+        ),
+        credit_graph=credit_graph,
+        credit_version=CREDIT_MODEL_VERSION,
         evidence_ids=[item.id for item in (observed_group if family == PROJECT_ROOT_FAMILY else group)[-20:]],
         support_count=len(observed_group) if family == PROJECT_ROOT_FAMILY else len(group),
         success_count=len(successes),
@@ -352,8 +502,12 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
 
 def compile_for_experience(store: Store, experience: Experience, now: float) -> ProjectReflex:
     """Compile every project scope represented by one execution and return its primary Reflex."""
+    calls_by_execution, outcomes_by_id = _execution_cache(store)
     families = families_for_experience(experience)
-    compiled = [_compile_family(store, experience, family, now) for family in families]
+    compiled = [
+        _compile_family(store, experience, family, now, calls_by_execution, outcomes_by_id)
+        for family in families
+    ]
     return compiled[0]
 
 
@@ -368,7 +522,15 @@ def ensure_project_reflex(store: Store, now: float | None = None) -> ProjectRefl
     if not experiences:
         return None
     latest = experiences[-1]
-    return _compile_family(store, latest, PROJECT_ROOT_FAMILY, time.time() if now is None else now)
+    calls_by_execution, outcomes_by_id = _execution_cache(store)
+    return _compile_family(
+        store,
+        latest,
+        PROJECT_ROOT_FAMILY,
+        time.time() if now is None else now,
+        calls_by_execution,
+        outcomes_by_id,
+    )
 
 
 def display_state(reflex: ProjectReflex) -> str:
@@ -406,6 +568,11 @@ def reflex_summary(store: Store) -> dict[str, object]:
         "learned": states["learned"],
         "proven": states["proven"],
         "stale": states["stale"],
+        "credit_signals": sum(len(item.credit_graph) for item in items),
+        "credit_spine_actions": sum(
+            sum(1 for signal in item.credit_graph if signal.get("spine"))
+            for item in items
+        ),
     }
 
 

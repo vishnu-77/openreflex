@@ -144,9 +144,21 @@ class ExecutionControlMetrics(BaseModel):
 
 
 class ProjectReflexMetrics(BaseModel):
-    visible: int = Field(ge=0, description="Learned and proven project-specific Reflex procedures currently available.")
-    learned: int = Field(ge=0, description="Reflexes promoted after repeated successful project executions.")
-    proven: int = Field(ge=0, description="Reflexes backed by stronger repeated and explicitly verified evidence.")
+    visible: int = Field(ge=0, description="Project and specialised Reflexes currently surfaced.")
+    project_state: Literal["cold", "learning", "learned", "proven", "stale"] = Field(
+        description="Current maturity of the root Project Reflex."
+    )
+    project_support: int = Field(ge=0, description="Captured experiences supporting the root Project Reflex.")
+    specialised_total: int = Field(ge=0, description="Number of specialised area/procedure Reflexes.")
+    learning: int = Field(ge=0, description="Specialised Reflexes still accumulating evidence.")
+    learned: int = Field(ge=0, description="Specialised Reflexes promoted after repeated successful executions.")
+    proven: int = Field(ge=0, description="Specialised Reflexes backed by repeated explicitly verified evidence.")
+    stale: int = Field(ge=0, description="Previously learned Reflexes contradicted by newer evidence.")
+    credit_signals: int = Field(ge=0, description="Action-level execution-credit signals stored across surfaced Reflexes.")
+    credit_spine_actions: int = Field(
+        ge=0,
+        description="Action signals with enough repeated evidence to participate in compressed Reflex procedures.",
+    )
 
 
 class ProjectInsightsResult(BaseModel):

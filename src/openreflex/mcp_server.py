@@ -214,7 +214,7 @@ def build_server(project: Path) -> FastMCP:
         Use when: the user asks what OpenReflex has learned specifically about this project, which reusable procedures
         exist, or how a named Reflex works.
         Not for: backend routing internals or generic strategies (use get_candidate_paths for those diagnostics).
-        Side effects: none; read-only. It never recompiles memory or touches project files.
+        Side effects: may refresh derived local Reflex data from already-captured evidence; touches no project files.
         Errors: a 'not enabled' message is returned until the project is approved."""
         def operation(e: Engine):
             reflexes = display_reflexes(e.store)
@@ -230,6 +230,16 @@ def build_server(project: Path) -> FastMCP:
                     lines.append("  scope: whole project · cross-task · cross-mode")
                 elif reflex.procedure:
                     lines.append("  " + " -> ".join(reflex.procedure))
+                spine = [signal for signal in reflex.credit_graph if signal.get("spine")]
+                if spine:
+                    lines.append(
+                        "  credit spine: " + " -> ".join(
+                            f"{signal['action']} ({float(signal['credit']):.2f})"
+                            for signal in spine[:5]
+                        )
+                    )
+                elif reflex.credit_graph:
+                    lines.append(f"  credit: learning from {len(reflex.credit_graph)} action signal(s)")
             return "\n".join(lines)
         return run(operation)
 
