@@ -468,18 +468,21 @@ def _compact_overview(project: Path, plugin_root: str | None = None) -> int:
     task = state.get("task") if isinstance(state.get("task"), dict) else {}
     reflex_name = str(task.get("reflex") or "").strip()
 
-    reflex_count = 0
+    reflex_state = "cold"
+    reflex_support = 0
     if enabled:
         try:
-            from .reflexes import visible_reflexes
+            from .reflexes import reflex_summary
             from .store import Store, database_path
             store = Store(database_path(project))
             try:
-                reflex_count = len(visible_reflexes(store))
+                summary = reflex_summary(store)
+                reflex_state = str(summary["project_state"])
+                reflex_support = int(summary["project_support"])
             finally:
                 store.close()
         except Exception:  # noqa: BLE001 - overview must remain available if optional detail fails
-            reflex_count = 0
+            reflex_state = "learning"
 
     state_label = "READY" if enabled and aligned else "SETUP" if not enabled else "ATTENTION"
     print(f"OPENREFLEX {__version__}                              {state_label}")
@@ -487,8 +490,11 @@ def _compact_overview(project: Path, plugin_root: str | None = None) -> int:
     print(f"Project      {project.name}")
     if enabled:
         experiences = int(state.get("experiences", 0) or 0)
-        print(f"Memory       {experiences} experiences · {reflex_count} Reflexes")
-        print(f"Current      {reflex_name or ('learning' if experiences else 'learning project')}")
+        reflex_label = reflex_state if experiences else "warming"
+        print(f"Memory       {experiences} experiences · Project Reflex {reflex_label}")
+        if reflex_support:
+            print(f"Evidence     {reflex_support} supporting experience(s)")
+        print(f"Current      {reflex_name or ('Project Reflex · ' + reflex_label)}")
     else:
         print("Memory       not enabled")
     print(f"Runtime      {'aligned' if aligned else f'plugin {plugin_version} / runtime {runtime_version}'}")
@@ -612,33 +618,35 @@ def _memory(argv: list[str]) -> int:
 
 
 def _reflexes(argv: list[str]) -> int:
-    from .reflexes import visible_reflexes
+    from .reflexes import display_reflexes, display_state
     from .store import Store, database_path
 
     if argv and argv[0] in {"-h", "--help"}:
         print("usage: openreflex reflexes [--project PATH]\n")
-        print("Show learned and proven project-specific Reflex procedures.")
+        print("Show the project Reflex and specialised Reflexes, including active learning.")
         return 0
     project = project_root(_project_arg(argv))
     store = Store(database_path(project))
     try:
-        reflexes = visible_reflexes(store)
+        reflexes = display_reflexes(store)
     finally:
         store.close()
     print("OPENREFLEX / PROJECT REFLEXES")
     print(f"  project     {project}")
     if not reflexes:
-        print("  state       learning")
-        print("  reflexes    none learned yet")
+        print("  state       warming")
+        print("  reflex      starts with the first captured experience")
         return 0
     for reflex in reflexes:
         print("")
         print(f"  {reflex.name}")
-        print(f"    state     {reflex.state}")
+        print(f"    state     {display_state(reflex)}")
         print(f"    evidence  {reflex.success_count} successful / {reflex.verified_count} verified")
-        if reflex.family.startswith("area:"):
+        if reflex.family == "project-root":
+            print("    scope     whole project · cross-task · cross-mode")
+        elif reflex.family.startswith("area:"):
             print("    scope     cross-task project area")
-        else:
+        elif reflex.procedure:
             print(f"    steps     {' -> '.join(reflex.procedure)}")
     return 0
 
