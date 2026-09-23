@@ -4,6 +4,17 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.9.5 (2026-09-23)
+
+- Add an Execution Credit Graph to every compiled Reflex. Action categories now carry transparent credit estimates derived from known outcomes, success when present versus absent, explicit verification, failure-resolution support, recurrence, and repeated-action penalties.
+- Treat credit as observational attribution rather than proven causality: unknown outcomes do not train credit, sparse history is shrunk toward neutral, and no action can enter the compressed Reflex spine until it has repeated support.
+- Compress specialised Reflex procedures toward their high-credit execution spine only after at least three known outcomes and repeated action support; otherwise preserve the existing observed procedure unchanged.
+- Use absence evidence explicitly so actions frequently omitted by equally successful executions lose necessity credit instead of becoming cargo-cult project habits.
+- Cache ToolCall and Outcome evidence once per Reflex compilation pass so project, area, and procedure credit graphs do not repeatedly rescan execution history.
+- Surface credit-spine actions and scores in `openreflex reflexes` and MCP Reflex diagnostics, and expose aggregate credit-signal coverage in project metrics.
+- Preserve existing Reflex JSON compatibility: pre-0.9.5 records load with an empty credit graph and are enriched on recompilation.
+
+
 ## 0.9.4 (2026-09-23)
 
 - Add an always-present root Project Reflex: every captured experience reinforces one cross-task, cross-mode project-level memory while specialised Helm, Terraform, CI, area and procedure Reflexes remain children.
