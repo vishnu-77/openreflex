@@ -1,4 +1,4 @@
-from openreflex.models import Experience, Outcome, ToolCall
+from openreflex.models import Experience, Outcome, ProjectReflex, ToolCall
 from openreflex.reflexes import compile_for_experience, execution_credit_graph
 from openreflex.routing import embed
 from openreflex.store import Store
@@ -139,5 +139,30 @@ def test_credit_graph_round_trips_with_project_reflex(tmp_path):
 
         assert restored.credit_graph == reflex.credit_graph
         assert any(item["spine"] for item in restored.credit_graph)
+    finally:
+        store.close()
+
+
+def test_pre_credit_reflex_json_loads_with_empty_graph(tmp_path):
+    store = Store(tmp_path / "legacy.sqlite3")
+    try:
+        legacy = ProjectReflex(
+            id="legacy-reflex",
+            name="Legacy procedure",
+            family="tests",
+            task_mode="build",
+            task_class="test",
+            state="learned",
+            procedure=["Run the project tests"],
+            support_count=2,
+            success_count=2,
+            verified_count=0,
+            confidence=0.6,
+        )
+        payload = legacy.model_dump()
+        payload.pop("credit_graph", None)
+        restored = ProjectReflex.model_validate(payload)
+
+        assert restored.credit_graph == []
     finally:
         store.close()
