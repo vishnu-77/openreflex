@@ -86,12 +86,13 @@ def test_success_when_action_is_absent_reduces_credit_and_compresses_incidental_
             _record(store, 2, ["read", "edit", "lint"]),
             _record(store, 3, ["edit", "lint"]),
             _record(store, 4, ["edit", "lint"]),
+            _record(store, 5, ["read"], verified=False, status="failure"),
+            _record(store, 6, ["read"], verified=False, status="failure"),
         ]
 
         graph = _by_action(execution_credit_graph(store, experiences))
-        assert graph["read"]["success_rate_with"] < 1.0
-        assert graph["read"]["success_rate_without"] < 1.0
-        assert graph["read"]["association"] == 0.0
+        assert graph["read"]["success_rate_with"] < graph["edit"]["success_rate_with"]
+        assert graph["read"]["association"] is not None and graph["read"]["association"] < 0
         assert graph["read"]["evidence"] == "comparative"
         assert graph["read"]["spine"] is False
         assert graph["edit"]["spine"] is True
