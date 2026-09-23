@@ -9,12 +9,16 @@ import time
 from collections import Counter
 from pathlib import PurePosixPath
 
+from .learning import resolutions
 from .models import Experience, ProjectReflex, ToolCall
 from .routing import embed, similarity
 from .store import Store
 
 _VISIBLE_STATES = ("learned", "proven")
 PROJECT_ROOT_FAMILY = "project-root"
+CREDIT_SPINE_MIN_KNOWN = 3
+CREDIT_SPINE_MIN_SUPPORT = 2
+CREDIT_SPINE_THRESHOLD = 0.52
 _STOPWORDS = {
     "the", "a", "an", "and", "or", "to", "for", "in", "on", "of", "this", "that", "with", "from",
     "please", "project", "repo", "repository", "change", "update", "fix", "add", "make", "work",
