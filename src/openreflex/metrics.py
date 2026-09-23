@@ -165,6 +165,7 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
                               "success_after_pivot_or_stop": _avg(x.status == "success" for x in advised),
                               "tasks_within_tool_call_budget": _avg(within_budget)},
         "project_reflexes": {
+            "visible": reflexes["visible"],
             "project_state": reflexes["project_state"],
             "project_support": reflexes["project_support"],
             "specialised_total": reflexes["specialised_total"],
