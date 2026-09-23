@@ -89,9 +89,10 @@ def test_success_when_action_is_absent_reduces_credit_and_compresses_incidental_
         ]
 
         graph = _by_action(execution_credit_graph(store, experiences))
-        assert graph["read"]["success_rate_with"] == 1.0
-        assert graph["read"]["success_rate_without"] == 1.0
-        assert graph["read"]["necessity_signal"] == 0.0
+        assert graph["read"]["success_rate_with"] < 1.0
+        assert graph["read"]["success_rate_without"] < 1.0
+        assert graph["read"]["association"] == 0.0
+        assert graph["read"]["evidence"] == "comparative"
         assert graph["read"]["spine"] is False
         assert graph["edit"]["spine"] is True
         assert graph["lint"]["spine"] is True
@@ -100,7 +101,7 @@ def test_success_when_action_is_absent_reduces_credit_and_compresses_incidental_
         reflex = compile_for_experience(store, experiences[-1], now=100)
         assert reflex.family == "helm-values"
         assert reflex.credit_graph
-        assert reflex.credit_version == 1
+        assert reflex.credit_version == 2
         assert reflex.procedure == [
             "Update charts/app/values.yaml",
             "Run the project validation checks",
@@ -122,6 +123,7 @@ def test_repeated_calls_are_recorded_as_redundancy_not_extra_support(tmp_path):
 
         assert graph["read"]["support"] == 4
         assert graph["read"]["redundancy"] > 0
+        assert graph["read"]["spine"] is False
         assert graph["read"]["credit"] < graph["edit"]["credit"]
     finally:
         store.close()
@@ -167,5 +169,48 @@ def test_pre_credit_reflex_json_loads_with_empty_graph(tmp_path):
 
         assert restored.credit_graph == []
         assert restored.credit_version == 0
+    finally:
+        store.close()
+
+
+def test_presence_only_actions_cannot_enter_credit_spine(tmp_path):
+    store = Store(tmp_path / "presence-only.sqlite3")
+    try:
+        experiences = [
+            _record(store, 1, ["read", "edit", "lint"]),
+            _record(store, 2, ["read", "edit", "lint"]),
+            _record(store, 3, ["read", "edit", "lint"]),
+            _record(store, 4, ["read", "edit", "lint"]),
+        ]
+        graph = _by_action(execution_credit_graph(store, experiences))
+
+        assert graph["edit"]["evidence"] == "presence-only"
+        assert graph["edit"]["association"] is None
+        assert graph["edit"]["confidence"] <= 0.45
+        assert graph["edit"]["spine"] is False
+    finally:
+        store.close()
+
+
+def test_failures_without_actions_create_comparative_credit_spine(tmp_path):
+    store = Store(tmp_path / "comparative.sqlite3")
+    try:
+        experiences = [
+            _record(store, 1, ["search", "read", "edit", "test"], verified=True),
+            _record(store, 2, ["search", "read", "edit", "test"], verified=True),
+            _record(store, 3, ["search", "read", "edit", "test"], verified=True),
+            _record(store, 4, ["search", "read", "edit", "test"], verified=True),
+            _record(store, 5, ["search", "read"], verified=False, status="failure"),
+            _record(store, 6, ["search", "read"], verified=False, status="failure"),
+        ]
+        graph = _by_action(execution_credit_graph(store, experiences))
+
+        assert graph["edit"]["spine"] is True
+        assert graph["test"]["spine"] is True
+        assert graph["edit"]["association"] > 0
+        assert graph["edit"]["confidence"] >= 0.5
+        assert graph["search"]["spine"] is False
+        assert graph["read"]["spine"] is False
+        assert graph["search"]["evidence"] == "presence-only"
     finally:
         store.close()
