@@ -43,6 +43,15 @@ def _ours(command: object) -> bool:
     )
 
 
+def _owned_project_hook(entry: object) -> bool:
+    """True only for hook entries installed by OpenReflex into project settings."""
+    value = json.dumps(entry, default=str).replace("\\\\", "/").lower()
+    return (
+        "openreflex hook claude-code" in value
+        or ("runtime/launcher.cjs" in value and " hook claude-code " in value)
+    )
+
+
 def _load(path: Path) -> dict | None:
     if not path.exists():
         return {}
@@ -83,13 +92,61 @@ def _remove_owned_statusline(path: Path, *, delete_empty: bool = False) -> bool:
     return True
 
 
-def remove_project_statusline(project: Path) -> bool:
-    """Remove only a legacy OpenReflex project-scoped status line.
+def remove_project_integration(project: Path) -> bool:
+    """Remove legacy OpenReflex-owned Claude project config, preserving user config.
 
-    This is a migration/cleanup operation. It never removes a custom project status line
-    and never changes the user-level OpenReflex status line.
+    The Claude plugin is user-scoped and must not require repository-local Claude
+    settings. Older OpenReflex releases could leave a project statusLine or hook entries
+    behind; remove only those entries and delete the file/directory when it becomes empty.
     """
-    return _remove_owned_statusline(project / ".claude" / "settings.json", delete_empty=True)
+    path = project / ".claude" / "settings.json"
+    data = _load(path)
+    if data is None or not path.exists():
+        return False
+
+    changed = False
+    current = data.get("statusLine")
+    if isinstance(current, dict) and _ours(current.get("command")):
+        data.pop("statusLine", None)
+        changed = True
+
+    hooks = data.get("hooks")
+    if isinstance(hooks, dict):
+        cleaned = {}
+        for event, entries in hooks.items():
+            if not isinstance(entries, list):
+                cleaned[event] = entries
+                continue
+            kept = [entry for entry in entries if not _owned_project_hook(entry)]
+            if kept:
+                cleaned[event] = kept
+            if len(kept) != len(entries):
+                changed = True
+        if cleaned:
+            data["hooks"] = cleaned
+        elif "hooks" in data:
+            data.pop("hooks", None)
+
+    if not changed:
+        return False
+
+    if not data:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        try:
+            path.parent.rmdir()
+        except OSError:
+            pass
+    else:
+        _write(path, data)
+    return True
+
+
+def remove_project_statusline(project: Path) -> bool:
+    """Backward-compatible cleanup entry point for legacy callers."""
+    return remove_project_integration(project)
 
 
 def configure_statusline(project: Path | None = None) -> str:
@@ -100,7 +157,7 @@ def configure_statusline(project: Path | None = None) -> str:
     status line is always written to the user scope.
     """
     if project is not None:
-        remove_project_statusline(project)
+        remove_project_integration(project)
 
     path = claude_settings_path()
     data = _load(path)
