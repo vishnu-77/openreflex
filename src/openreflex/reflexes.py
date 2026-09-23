@@ -16,6 +16,7 @@ from .store import Store
 
 _VISIBLE_STATES = ("learned", "proven")
 PROJECT_ROOT_FAMILY = "project-root"
+CREDIT_MODEL_VERSION = 1
 CREDIT_SPINE_MIN_KNOWN = 3
 CREDIT_SPINE_MIN_SUPPORT = 2
 CREDIT_SPINE_THRESHOLD = 0.55
@@ -483,6 +484,7 @@ def _compile_family(
             store, successes or group or [experience], credit_graph, calls_by_execution
         ),
         credit_graph=credit_graph,
+        credit_version=CREDIT_MODEL_VERSION,
         evidence_ids=[item.id for item in (observed_group if family == PROJECT_ROOT_FAMILY else group)[-20:]],
         support_count=len(observed_group) if family == PROJECT_ROOT_FAMILY else len(group),
         success_count=len(successes),
