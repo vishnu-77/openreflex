@@ -21,6 +21,7 @@ class Clock:
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENREFLEX_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-user"))
     for name in ("OPENREFLEX_PROJECT", "CLAUDE_PROJECT_DIR", "OPENREFLEX_AUTO_APPROVE", "OPENREFLEX_DISABLE"):
         monkeypatch.delenv(name, raising=False)
     return tmp_path / "home"

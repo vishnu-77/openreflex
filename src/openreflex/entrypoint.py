@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Callable, TypeVar
 
 from . import __version__, cli
-from .claude_ui import configure_statusline, remove_statusline
+from .claude_ui import configure_statusline, remove_project_integration
 from .project import approval, approve, log_error, project_root
 from .project_map import enrich_snapshot
 from .project_memory import ensure_background_refresh, load_snapshot, read_state, run_worker, update_state
@@ -564,8 +564,10 @@ def _onboard(argv: list[str]) -> int:
     print("  memory      enabled · local")
     if status == "preserved-existing":
         print("  statusline  existing user status line preserved")
+    elif status == "preserved-invalid":
+        print("  statusline  user settings unreadable; preserved unchanged")
     else:
-        print("  statusline  managed OpenReflex runtime")
+        print("  statusline  managed OpenReflex runtime · user scope")
     print("")
     print(dashboard(project))
     return 0
@@ -694,14 +696,16 @@ def _augment_install(argv: list[str], result: int) -> None:
         print(f"  statusline  OpenReflex v{__version__} enabled")
     elif status == "preserved-existing":
         print("  statusline  existing user status line preserved")
+    elif status == "preserved-invalid":
+        print("  statusline  user settings unreadable; preserved unchanged")
 
 
 def _augment_uninstall(argv: list[str], result: int) -> None:
     if result != 0 or len(argv) < 2 or argv[1] != "claude-code" or "--dry-run" in argv:
         return
     project = project_root(_project_arg(argv))
-    if remove_statusline(project):
-        print("  statusline  OpenReflex status line removed")
+    if remove_project_integration(project):
+        print("  project     legacy OpenReflex Claude config removed")
 
 
 def main(argv: list[str] | None = None) -> int:
