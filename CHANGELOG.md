@@ -4,6 +4,15 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.9.4 (2026-09-23)
+
+- Add an always-present root Project Reflex: every captured experience reinforces one cross-task, cross-mode project-level memory while specialised Helm, Terraform, CI, area and procedure Reflexes remain children.
+- Backfill the root Project Reflex from existing experience history when project status, summaries or Reflex diagnostics are read, so upgraded projects do not need a new task before project learning appears.
+- Present candidate maturity as `learning` in user-facing surfaces. Once project evidence exists, OpenReflex no longer reports `0 Reflexes` or `none learned` as if nothing is happening.
+- Update Claude overview, TUI, CLI metrics and diagnostics to show Project Reflex state and supporting experience count; specialised Reflexes remain separately visible with learning/learned/proven/stale maturity.
+- Keep promotion evidence honest: project learning can be visible without claiming verification, and learned/proven thresholds still depend on observed outcomes and explicit verification.
+
+
 ## 0.9.3 (2026-09-23)
 
 - Keep Claude plugin presentation user-scoped: OpenReflex now writes the status line only to the user's Claude
