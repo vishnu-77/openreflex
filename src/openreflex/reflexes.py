@@ -566,6 +566,11 @@ def reflex_summary(store: Store) -> dict[str, object]:
         "learned": states["learned"],
         "proven": states["proven"],
         "stale": states["stale"],
+        "credit_signals": sum(len(item.credit_graph) for item in items),
+        "credit_spine_actions": sum(
+            sum(1 for signal in item.credit_graph if signal.get("spine"))
+            for item in items
+        ),
     }
 
 
