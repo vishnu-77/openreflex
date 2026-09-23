@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+import time
 from collections import Counter
 from pathlib import PurePosixPath
 
@@ -13,6 +14,7 @@ from .routing import embed, similarity
 from .store import Store
 
 _VISIBLE_STATES = ("learned", "proven")
+PROJECT_ROOT_FAMILY = "project-root"
 _STOPWORDS = {
     "the", "a", "an", "and", "or", "to", "for", "in", "on", "of", "this", "that", "with", "from",
     "please", "project", "repo", "repository", "change", "update", "fix", "add", "make", "work",
@@ -62,11 +64,13 @@ def _query_hints(text: str) -> set[str]:
 
 
 def _scope_specificity(family: str) -> int:
-    """Deterministic tie-break: concrete technology/file scopes beat broad semantic scopes."""
+    """Deterministic tie-break: concrete scopes beat the always-present project root."""
     if family in {"helm-values", "helm-chart", "helm-template", "terraform", "ci", "database", "dependencies", "tests"}:
         return 3
     if family.startswith("area:"):
         return 2
+    if family == PROJECT_ROOT_FAMILY:
+        return 0
     return 1
 
 
@@ -138,6 +142,9 @@ def families_for_experience(experience: Experience) -> tuple[str, ...]:
 
     if not families:
         add(f"{experience.task_mode}-{experience.task_class}")
+    # Every meaningful execution also reinforces one cross-mode project Reflex.
+    # Specialised families remain first so existing primary-family behaviour is preserved.
+    add(PROJECT_ROOT_FAMILY)
     return tuple(families)
 
 
@@ -147,6 +154,8 @@ def _family(experience: Experience) -> str:
 
 
 def _name(family: str, experience: Experience) -> str:
+    if family == PROJECT_ROOT_FAMILY:
+        return "Project Reflex"
     if family.startswith("area:"):
         words = family.removeprefix("area:").replace("-", " ")
         return f"{words.capitalize()} work"
@@ -282,10 +291,10 @@ def _confidence(known: int, successes: int, verified: int) -> float:
 
 
 def _compile_family(store: Store, experience: Experience, family: str, now: float) -> ProjectReflex:
-    project_area = family.startswith("area:")
+    project_scope = family.startswith("area:") or family == PROJECT_ROOT_FAMILY
     group = [
         item for item in store.list("Experience", limit=5000)
-        if (project_area or item.task_mode == experience.task_mode)
+        if (project_scope or item.task_mode == experience.task_mode)
         and family in families_for_experience(item)
         and item.status != "unknown"
     ]
@@ -299,7 +308,7 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
             continue
         verified += int(bool(getattr(outcome, "verified", False)))
 
-    reflex_mode = "project" if project_area else experience.task_mode
+    reflex_mode = "project" if project_scope else experience.task_mode
     key = f"{reflex_mode}|{family}"
     reflex_id = "reflex-" + hashlib.sha1(key.encode()).hexdigest()[:16]
     try:
@@ -323,9 +332,9 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
         task_class=primary_class,
         state=_state(len(group), len(successes), verified, previous_state),
         seed_strategy=seed_strategy,
-        # Project-area Reflexes are cross-mode scope memory, not an execution recipe. Replaying a BUILD
-        # procedure into a THINK/docs task would be actively misleading; mode-specific Reflexes keep procedures.
-        procedure=[] if project_area else _procedure(store, successes or group or [experience]),
+        # Project-wide and project-area Reflexes are cross-mode memory, not one task recipe.
+        # Mode-specific specialised Reflexes keep executable procedures.
+        procedure=[] if project_scope else _procedure(store, successes or group or [experience]),
         evidence_ids=[item.id for item in group[-20:]],
         support_count=len(group),
         success_count=len(successes),
@@ -346,6 +355,57 @@ def compile_for_experience(store: Store, experience: Experience, now: float) -> 
     families = families_for_experience(experience)
     compiled = [_compile_family(store, experience, family, now) for family in families]
     return compiled[0]
+
+
+def ensure_project_reflex(store: Store, now: float | None = None) -> ProjectReflex | None:
+    """Backfill/update the root project Reflex from all captured experiences.
+
+    Older OpenReflex versions did not compile a root project Reflex. Reading a project
+    summary is therefore also a safe migration point: existing execution evidence is
+    consolidated without inventing success or verification.
+    """
+    experiences = sorted(store.list("Experience", limit=5000), key=lambda item: item.created_at)
+    if not experiences:
+        return None
+    latest = experiences[-1]
+    return _compile_family(store, latest, PROJECT_ROOT_FAMILY, time.time() if now is None else now)
+
+
+def display_state(reflex: ProjectReflex) -> str:
+    """User-facing maturity: a candidate means learning is actively underway."""
+    return "learning" if reflex.state == "candidate" else reflex.state
+
+
+def display_reflexes(store: Store) -> list[ProjectReflex]:
+    """Return the root Reflex plus specialised Reflexes, including learning candidates."""
+    root = ensure_project_reflex(store)
+    items = store.list_reflexes(limit=500)
+    ordered = []
+    if root is not None:
+        ordered.append(root)
+    ordered.extend(
+        item for item in items
+        if (root is None or item.id != root.id) and item.state in {"candidate", "learned", "proven", "stale"}
+    )
+    return ordered
+
+
+def reflex_summary(store: Store) -> dict[str, object]:
+    """Summarise project learning without collapsing active learning to a misleading zero."""
+    items = display_reflexes(store)
+    root = next((item for item in items if item.family == PROJECT_ROOT_FAMILY), None)
+    specialised = [item for item in items if item.family != PROJECT_ROOT_FAMILY]
+    states = Counter(display_state(item) for item in specialised)
+    return {
+        "project": root,
+        "project_state": display_state(root) if root is not None else "cold",
+        "project_support": root.support_count if root is not None else 0,
+        "specialised_total": len(specialised),
+        "learning": states["learning"],
+        "learned": states["learned"],
+        "proven": states["proven"],
+        "stale": states["stale"],
+    }
 
 
 def _reflex_family(reflex: ProjectReflex) -> str:
@@ -379,6 +439,7 @@ def _locality(description: str, reflex: ProjectReflex) -> float:
 def match_reflex(store: Store, description: str, task_mode: str, task_class: str,
                  threshold: float = 0.28, family_hints: set[str] | None = None) -> tuple[ProjectReflex, float] | None:
     """Resolve the strongest project Reflex using intent, family, locality and execution evidence."""
+    ensure_project_reflex(store)
     query = embed(description)
     hints = _query_hints(description) | set(family_hints or ())
     scored: list[tuple[ProjectReflex, float]] = []
