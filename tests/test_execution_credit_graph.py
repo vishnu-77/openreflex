@@ -100,6 +100,7 @@ def test_success_when_action_is_absent_reduces_credit_and_compresses_incidental_
         reflex = compile_for_experience(store, experiences[-1], now=100)
         assert reflex.family == "helm-values"
         assert reflex.credit_graph
+        assert reflex.credit_version == 1
         assert reflex.procedure == [
             "Update charts/app/values.yaml",
             "Run the project validation checks",
@@ -165,5 +166,6 @@ def test_pre_credit_reflex_json_loads_with_empty_graph(tmp_path):
         restored = ProjectReflex.model_validate_json(json.dumps(payload))
 
         assert restored.credit_graph == []
+        assert restored.credit_version == 0
     finally:
         store.close()
