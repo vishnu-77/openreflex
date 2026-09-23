@@ -252,6 +252,105 @@ def _step(category: str, files: list[str]) -> str:
     return f"Perform the {category} step"
 
 
+def execution_credit_graph(store: Store, group: list[Experience]) -> list[dict]:
+    """Estimate action credit from repeated known outcomes."""
+    known = [item for item in group if item.status in {"success", "failure"}]
+    if not known:
+        return []
+
+    records: list[dict] = []
+    categories: set[str] = set()
+    for item in known:
+        calls = sorted(
+            store.find("ToolCall", execution_id=item.execution_id, limit=500),
+            key=lambda call: (call.started_at, call.id),
+        )
+        completed = [
+            call for call in calls
+            if call.status != "running" and call.category not in {"other", "plan"}
+        ]
+        counts = Counter(call.category for call in completed)
+        present = set(counts)
+        categories.update(present)
+        resolver_categories = {fixed.category for _, fixed in resolutions(calls)}
+        verified = False
+        if item.status == "success":
+            try:
+                verified = bool(getattr(store.get(item.outcome_id), "verified", False))
+            except ValueError:
+                verified = False
+        records.append({
+            "experience": item,
+            "counts": counts,
+            "present": present,
+            "resolvers": resolver_categories,
+            "verified": verified,
+        })
+
+    total = len(records)
+    total_successes = sum(record["experience"].status == "success" for record in records)
+    baseline = total_successes / total if total else 0.0
+    graph: list[dict] = []
+
+    for category in sorted(categories):
+        with_action = [record for record in records if category in record["present"]]
+        without_action = [record for record in records if category not in record["present"]]
+        support = len(with_action)
+        absent = len(without_action)
+        success_with = sum(record["experience"].status == "success" for record in with_action)
+        success_without = sum(record["experience"].status == "success" for record in without_action)
+        with_rate = success_with / support if support else 0.0
+        without_rate = success_without / absent if absent else baseline
+        gap = with_rate - without_rate if absent else 0.0
+        verified_support = sum(
+            record["experience"].status == "success" and record["verified"]
+            for record in with_action
+        )
+        resolution_support = sum(category in record["resolvers"] for record in with_action)
+        occurrences = sum(int(record["counts"].get(category, 0)) for record in with_action)
+        redundancy = max(0.0, (occurrences - support) / occurrences) if occurrences else 0.0
+        coverage = support / total
+
+        raw_credit = (
+            0.45 * with_rate
+            + 0.20 * gap
+            + 0.15 * (verified_support / support if support else 0.0)
+            + 0.10 * (resolution_support / support if support else 0.0)
+            + 0.10 * coverage
+            - 0.15 * redundancy
+        )
+        evidence_factor = min(1.0, total / 4)
+        credit = 0.5 + (raw_credit - 0.5) * evidence_factor
+        credit = round(max(0.0, min(1.0, credit)), 3)
+        spine = (
+            total >= CREDIT_SPINE_MIN_KNOWN
+            and support >= CREDIT_SPINE_MIN_SUPPORT
+            and credit >= CREDIT_SPINE_THRESHOLD
+        )
+        graph.append({
+            "action": category,
+            "credit": credit,
+            "support": support,
+            "known": total,
+            "success_with": success_with,
+            "success_rate_with": round(with_rate, 3),
+            "absent": absent,
+            "success_without": success_without,
+            "success_rate_without": round(without_rate, 3) if absent else None,
+            "counterfactual_gap": round(gap, 3) if absent else None,
+            "verified_support": verified_support,
+            "resolution_support": resolution_support,
+            "redundancy": round(redundancy, 3),
+            "spine": spine,
+        })
+
+    return sorted(graph, key=lambda item: (-float(item["credit"]), -int(item["support"]), str(item["action"])))
+
+
+def _credit_spine(graph: list[dict]) -> set[str]:
+    return {str(item["action"]) for item in graph if item.get("spine")}
+
+
 def _procedure(store: Store, group: list[Experience]) -> list[str]:
     sequences = []
     for item in group:
