@@ -16,10 +16,12 @@ from .store import Store
 
 _VISIBLE_STATES = ("learned", "proven")
 PROJECT_ROOT_FAMILY = "project-root"
-CREDIT_MODEL_VERSION = 1
-CREDIT_SPINE_MIN_KNOWN = 3
+CREDIT_MODEL_VERSION = 2
+CREDIT_SPINE_MIN_KNOWN = 4
 CREDIT_SPINE_MIN_SUPPORT = 2
-CREDIT_SPINE_THRESHOLD = 0.55
+CREDIT_SPINE_MIN_ABSENT = 2
+CREDIT_SPINE_THRESHOLD = 0.62
+CREDIT_SPINE_MIN_CONFIDENCE = 0.50
 _STOPWORDS = {
     "the", "a", "an", "and", "or", "to", "for", "in", "on", "of", "this", "that", "with", "from",
     "please", "project", "repo", "repository", "change", "update", "fix", "add", "make", "work",
@@ -261,13 +263,23 @@ def _execution_cache(store: Store) -> tuple[dict[str, list[ToolCall]], dict[str,
     return calls_by_execution, outcomes_by_id
 
 
+def _beta_rate(successes: int, trials: int) -> float:
+    """Small-sample-safe success-rate estimate using a Beta(1, 1) prior."""
+    return (successes + 1) / (trials + 2) if trials >= 0 else 0.5
+
+
 def execution_credit_graph(
     store: Store,
     group: list[Experience],
     calls_by_execution: dict[str, list[ToolCall]] | None = None,
     outcomes_by_id: dict[str, object] | None = None,
 ) -> list[dict]:
-    """Estimate action credit from repeated known outcomes."""
+    """Build an evidence-weighted execution credit graph.
+
+    Credit is an observational attribution signal, not a causal claim. A step only
+    becomes part of the replay spine when OpenReflex has both presence and absence
+    evidence, enough repetitions, and a positive association with successful outcomes.
+    """
     known = [item for item in group if item.status in {"success", "failure"}]
     if not known:
         return []
@@ -292,9 +304,10 @@ def execution_credit_graph(
         present = set(counts)
         categories.update(present)
         resolver_categories = {fixed.category for _, fixed in resolutions(calls)}
-        verified = False
-        if item.status == "success":
-            verified = bool(getattr(outcomes_by_id.get(item.outcome_id), "verified", False))
+        verified = bool(
+            item.status == "success"
+            and getattr(outcomes_by_id.get(item.outcome_id), "verified", False)
+        )
         records.append({
             "experience": item,
             "counts": counts,
@@ -304,8 +317,6 @@ def execution_credit_graph(
         })
 
     total = len(records)
-    total_successes = sum(record["experience"].status == "success" for record in records)
-    baseline = total_successes / total if total else 0.0
     graph: list[dict] = []
 
     for category in sorted(categories):
@@ -315,10 +326,12 @@ def execution_credit_graph(
         absent = len(without_action)
         success_with = sum(record["experience"].status == "success" for record in with_action)
         success_without = sum(record["experience"].status == "success" for record in without_action)
-        with_rate = success_with / support if support else 0.0
-        without_rate = success_without / absent if absent else baseline
-        gap = with_rate - without_rate if absent else 0.0
-        necessity = 1.0 - without_rate if absent else 0.5
+
+        # Bayesian smoothing prevents 1/1 and 0/1 cohorts from looking definitive.
+        with_rate = _beta_rate(success_with, support)
+        without_rate = _beta_rate(success_without, absent) if absent else None
+        association = (with_rate - without_rate) if without_rate is not None else 0.0
+
         verified_support = sum(
             record["experience"].status == "success" and record["verified"]
             for record in with_action
@@ -328,43 +341,85 @@ def execution_credit_graph(
         redundancy = max(0.0, (occurrences - support) / occurrences) if occurrences else 0.0
         coverage = support / total
 
+        presence_evidence = min(1.0, support / 4)
+        absence_evidence = min(1.0, absent / 4) if absent else 0.0
+        comparison_balance = min(presence_evidence, absence_evidence)
+        verified_rate = verified_support / support if support else 0.0
+        resolver_rate = resolution_support / support if support else 0.0
+
+        # Confidence is deliberately capped when there is no counterfactual cohort.
+        if absent:
+            confidence = min(
+                1.0,
+                0.50 * comparison_balance
+                + 0.25 * min(1.0, total / 8)
+                + 0.15 * verified_rate
+                + 0.10 * resolver_rate,
+            )
+        else:
+            confidence = min(
+                0.45,
+                0.20 * presence_evidence
+                + 0.15 * min(1.0, total / 8)
+                + 0.07 * verified_rate
+                + 0.03 * resolver_rate,
+            )
+
+        # Neutral starts at 0.5. Association drives attribution; verification and
+        # resolution support increase confidence in usefulness, while repeated
+        # duplicate calls reduce it.
         raw_credit = (
-            0.30 * with_rate
-            + 0.25 * gap
-            + 0.15 * necessity
-            + 0.10 * (verified_support / support if support else 0.0)
-            + 0.10 * (resolution_support / support if support else 0.0)
-            + 0.10 * coverage
-            - 0.15 * redundancy
+            0.50
+            + 0.42 * association
+            + 0.10 * verified_rate
+            + 0.08 * resolver_rate
+            + 0.04 * (coverage - 0.5)
+            - 0.18 * redundancy
         )
-        evidence_factor = min(1.0, total / 4)
-        credit = 0.5 + (raw_credit - 0.5) * evidence_factor
+        shrink = min(1.0, confidence + 0.20)
+        credit = 0.5 + (raw_credit - 0.5) * shrink
         credit = round(max(0.0, min(1.0, credit)), 3)
+        confidence = round(max(0.0, min(1.0, confidence)), 3)
+
         spine = (
             total >= CREDIT_SPINE_MIN_KNOWN
             and support >= CREDIT_SPINE_MIN_SUPPORT
+            and absent >= CREDIT_SPINE_MIN_ABSENT
+            and confidence >= CREDIT_SPINE_MIN_CONFIDENCE
+            and association > 0.0
             and credit >= CREDIT_SPINE_THRESHOLD
         )
         graph.append({
             "action": category,
             "credit": credit,
+            "confidence": confidence,
             "support": support,
             "known": total,
             "success_with": success_with,
             "success_rate_with": round(with_rate, 3),
             "absent": absent,
             "success_without": success_without,
-            "success_rate_without": round(without_rate, 3) if absent else None,
-            "counterfactual_gap": round(gap, 3) if absent else None,
-            "absence_success_rate": round(without_rate, 3) if absent else None,
-            "necessity_signal": round(necessity, 3),
+            "success_rate_without": round(without_rate, 3) if without_rate is not None else None,
+            "association": round(association, 3) if without_rate is not None else None,
+            "counterfactual_gap": round(association, 3) if without_rate is not None else None,
+            "absence_success_rate": round(without_rate, 3) if without_rate is not None else None,
             "verified_support": verified_support,
             "resolution_support": resolution_support,
             "redundancy": round(redundancy, 3),
+            "evidence": "comparative" if absent else "presence-only",
             "spine": spine,
         })
 
-    return sorted(graph, key=lambda item: (-float(item["credit"]), -int(item["support"]), str(item["action"])))
+    return sorted(
+        graph,
+        key=lambda item: (
+            -int(bool(item["spine"])),
+            -float(item["credit"]),
+            -float(item["confidence"]),
+            -int(item["support"]),
+            str(item["action"]),
+        ),
+    )
 
 
 def _credit_spine(graph: list[dict]) -> set[str]:

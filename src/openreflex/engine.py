@@ -725,6 +725,13 @@ def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple
             lines.append("Project-area memory: related work in this component has been seen across task types.")
         elif reflex.procedure:
             lines.append("Procedure: " + " -> ".join(reflex.procedure))
+            spine = [signal for signal in reflex.credit_graph if signal.get("spine")]
+            if spine:
+                lines.append(
+                    "Attribution: comparative execution evidence retained "
+                    + " -> ".join(str(signal["action"]) for signal in spine[:5])
+                    + "."
+                )
         lines.append(f"Evidence: {reflex.success_count} successful / {reflex.verified_count} verified project run(s).")
         text = "\n".join(lines)
         max_chars = cfg.integer("context.reflex_max_chars")

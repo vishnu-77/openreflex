@@ -4,6 +4,17 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.9.6 (2026-09-23)
+
+- Harden the Execution Credit Graph so a Reflex action enters the replay spine only with comparative presence-versus-absence evidence, sufficient support, positive outcome association, and minimum attribution confidence.
+- Replace raw small-sample success ratios with Beta-smoothed estimates, preventing one or two lucky executions from looking definitive.
+- Add explicit credit confidence, observational association, evidence mode, verification support, failure-resolution support, and redundancy penalties for every execution action signal.
+- Cap presence-only attribution confidence and never promote presence-only correlation into the credit spine. Successful history alone is not treated as proof that every repeated step mattered.
+- Compress specialised Reflex procedures only when at least two actions form a sufficiently supported credit spine; otherwise retain the ordinary observed procedure.
+- Surface comparative attribution in injected Reflex context so agents can distinguish an evidence-compressed procedure from an uncompressed historical pattern.
+- Expand regression coverage for absence evidence, failed comparison cohorts, redundant calls, sparse history, persistence, and procedure compression.
+
+
 ## 0.9.5 (2026-09-23)
 
 - Add an Execution Credit Graph to every compiled Reflex. Action categories now carry transparent credit estimates derived from known outcomes, success when present versus absent, explicit verification, failure-resolution support, recurrence, and repeated-action penalties.
