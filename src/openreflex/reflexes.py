@@ -351,7 +351,7 @@ def _credit_spine(graph: list[dict]) -> set[str]:
     return {str(item["action"]) for item in graph if item.get("spine")}
 
 
-def _procedure(store: Store, group: list[Experience]) -> list[str]:
+def _procedure(store: Store, group: list[Experience], credit_graph: list[dict] | None = None) -> list[str]:
     sequences = []
     for item in group:
         sequence = _collapsed_categories(store.find("ToolCall", execution_id=item.execution_id, limit=500))
@@ -365,6 +365,11 @@ def _procedure(store: Store, group: list[Experience]) -> list[str]:
             return ["Frame the project-specific question", "Compare the relevant constraints", "Record the decision and assumptions"]
         return ["Inspect the relevant project area", "Make the focused change", "Verify the result"]
     sequence = Counter(sequences).most_common(1)[0][0]
+    spine = _credit_spine(credit_graph or [])
+    if spine:
+        compressed = tuple(category for category in sequence if category in spine)
+        if len(compressed) >= 2:
+            sequence = compressed
     steps: list[str] = []
     for category in sequence[:8]:
         step = _step(category, files if category in {"read", "edit"} else [])
@@ -427,6 +432,7 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
     class_counts = Counter(item.task_class for item in (successes or group))
     primary_class = class_counts.most_common(1)[0][0] if class_counts else experience.task_class
     descriptions = " ".join(item.description for item in successes[-20:]) or experience.description
+    credit_graph = execution_credit_graph(store, group)
     reflex = ProjectReflex(
         id=reflex_id,
         name=_name(family, experience),
@@ -437,7 +443,8 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
         seed_strategy=seed_strategy,
         # Project-wide and project-area Reflexes are cross-mode memory, not one task recipe.
         # Mode-specific specialised Reflexes keep executable procedures.
-        procedure=[] if project_scope else _procedure(store, successes or group or [experience]),
+        procedure=[] if project_scope else _procedure(store, successes or group or [experience], credit_graph),
+        credit_graph=credit_graph,
         evidence_ids=[item.id for item in (observed_group if family == PROJECT_ROOT_FAMILY else group)[-20:]],
         support_count=len(observed_group) if family == PROJECT_ROOT_FAMILY else len(group),
         success_count=len(successes),
