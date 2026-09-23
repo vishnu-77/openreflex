@@ -425,7 +425,14 @@ def _confidence(known: int, successes: int, verified: int) -> float:
     ), 3)
 
 
-def _compile_family(store: Store, experience: Experience, family: str, now: float) -> ProjectReflex:
+def _compile_family(
+    store: Store,
+    experience: Experience,
+    family: str,
+    now: float,
+    calls_by_execution: dict[str, list[ToolCall]] | None = None,
+    outcomes_by_id: dict[str, object] | None = None,
+) -> ProjectReflex:
     project_scope = family.startswith("area:") or family == PROJECT_ROOT_FAMILY
     observed_group = [
         item for item in store.list("Experience", limit=5000)
@@ -435,13 +442,15 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
     observed_group.sort(key=lambda item: item.created_at)
     group = [item for item in observed_group if item.status != "unknown"]
     successes = [item for item in group if item.status == "success"]
-    verified = 0
-    for item in successes:
-        try:
-            outcome = store.get(item.outcome_id)
-        except ValueError:
-            continue
-        verified += int(bool(getattr(outcome, "verified", False)))
+    if calls_by_execution is None or outcomes_by_id is None:
+        cached_calls, cached_outcomes = _execution_cache(store)
+        calls_by_execution = calls_by_execution or cached_calls
+        outcomes_by_id = outcomes_by_id or cached_outcomes
+
+    verified = sum(
+        int(bool(getattr(outcomes_by_id.get(item.outcome_id), "verified", False)))
+        for item in successes
+    )
 
     reflex_mode = "project" if project_scope else experience.task_mode
     key = f"{reflex_mode}|{family}"
@@ -459,7 +468,7 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
     class_counts = Counter(item.task_class for item in (successes or group))
     primary_class = class_counts.most_common(1)[0][0] if class_counts else experience.task_class
     descriptions = " ".join(item.description for item in successes[-20:]) or experience.description
-    credit_graph = execution_credit_graph(store, group)
+    credit_graph = execution_credit_graph(store, group, calls_by_execution, outcomes_by_id)
     reflex = ProjectReflex(
         id=reflex_id,
         name=_name(family, experience),
@@ -470,7 +479,9 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
         seed_strategy=seed_strategy,
         # Project-wide and project-area Reflexes are cross-mode memory, not one task recipe.
         # Mode-specific specialised Reflexes keep executable procedures.
-        procedure=[] if project_scope else _procedure(store, successes or group or [experience], credit_graph),
+        procedure=[] if project_scope else _procedure(
+            store, successes or group or [experience], credit_graph, calls_by_execution
+        ),
         credit_graph=credit_graph,
         evidence_ids=[item.id for item in (observed_group if family == PROJECT_ROOT_FAMILY else group)[-20:]],
         support_count=len(observed_group) if family == PROJECT_ROOT_FAMILY else len(group),
@@ -489,8 +500,12 @@ def _compile_family(store: Store, experience: Experience, family: str, now: floa
 
 def compile_for_experience(store: Store, experience: Experience, now: float) -> ProjectReflex:
     """Compile every project scope represented by one execution and return its primary Reflex."""
+    calls_by_execution, outcomes_by_id = _execution_cache(store)
     families = families_for_experience(experience)
-    compiled = [_compile_family(store, experience, family, now) for family in families]
+    compiled = [
+        _compile_family(store, experience, family, now, calls_by_execution, outcomes_by_id)
+        for family in families
+    ]
     return compiled[0]
 
 
@@ -505,7 +520,15 @@ def ensure_project_reflex(store: Store, now: float | None = None) -> ProjectRefl
     if not experiences:
         return None
     latest = experiences[-1]
-    return _compile_family(store, latest, PROJECT_ROOT_FAMILY, time.time() if now is None else now)
+    calls_by_execution, outcomes_by_id = _execution_cache(store)
+    return _compile_family(
+        store,
+        latest,
+        PROJECT_ROOT_FAMILY,
+        time.time() if now is None else now,
+        calls_by_execution,
+        outcomes_by_id,
+    )
 
 
 def display_state(reflex: ProjectReflex) -> str:
