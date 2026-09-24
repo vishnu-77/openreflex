@@ -14,7 +14,7 @@ import pytest
 from openreflex import hooks
 from openreflex.engine import Engine
 from openreflex.models import Experience
-from openreflex.project import approve
+from openreflex.project import approve, atomic_write_text
 from openreflex.routing import embed
 from openreflex.store import Store, database_path
 
@@ -132,3 +132,17 @@ def test_well_formed_unusual_payloads_log_no_errors(isolated_home, project):
         hooks.safe_handle("claude-code", event, json.dumps(payload))
     log = isolated_home / "logs" / "errors.log"
     assert not log.exists(), log.read_text(encoding="utf-8") if log.exists() else ""
+
+
+def test_concurrent_atomic_writes_never_collide(tmp_path):
+    # A shared temp name made overlapping writers fail on Windows and could publish a torn file on POSIX.
+    target = tmp_path / "settings.json"
+
+    def write(index):
+        atomic_write_text(target, json.dumps({"writer": index, "padding": "x" * 4096}))
+
+    with ThreadPoolExecutor(32) as pool:
+        list(pool.map(write, range(1000)))
+
+    assert json.loads(target.read_text(encoding="utf-8"))["writer"] in range(1000)
+    assert list(tmp_path.glob("*.tmp")) == []

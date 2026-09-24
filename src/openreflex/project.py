@@ -4,12 +4,35 @@ import hashlib
 import json
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
 
 def home() -> Path:
     return Path(os.environ.get("OPENREFLEX_HOME") or Path.home() / ".openreflex")
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Replace path atomically; a per-writer temp file keeps concurrent writers from clobbering each other."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    temp.write_text(text, encoding="utf-8")
+    try:
+        for attempt in range(20):
+            try:
+                os.replace(temp, path)
+                return
+            except PermissionError:
+                if attempt == 19:
+                    raise
+                # Windows denies a replace while another writer's replace of the same file is in flight.
+                time.sleep(min(0.005 * 2**attempt, 0.1))
+    finally:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _repo_root(start: Path) -> tuple[Path, str]:
@@ -78,11 +101,7 @@ def _read_approvals() -> dict:
 
 
 def _write_approvals(data: dict) -> None:
-    path = _approvals_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(".tmp")
-    temp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
-    os.replace(temp, path)
+    atomic_write_text(_approvals_path(), json.dumps(data, indent=2, sort_keys=True))
 
 
 def approval(project: Path) -> dict | None:

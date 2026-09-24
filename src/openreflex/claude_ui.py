@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 
-from .project import home
+from .project import atomic_write_text, home
 
 LEGACY_STATUSLINE_COMMAND = "openreflex statusline"
 
@@ -73,10 +73,7 @@ def _load(path: Path) -> dict | None:
 
 
 def _write(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(path.suffix + ".tmp")
-    temp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    os.replace(temp, path)
+    atomic_write_text(path, json.dumps(data, indent=2) + "\n")
 
 
 def _remove_owned_statusline(path: Path, *, delete_empty: bool = False) -> bool:

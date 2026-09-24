@@ -4,6 +4,11 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.9.8 (2026-09-24)
+
+- Write Claude settings and project approvals through a per-writer temp file. Every writer previously shared one `settings.json.tmp` / `approvals.tmp`, so overlapping writers failed on Windows and could publish a truncated file on POSIX.
+- Retry a contended Windows file replace for up to ~1.6s with capped backoff instead of ~0.14s, well inside the agents' hook timeout.
+
 ## 0.9.7 (2026-09-24)
 
 - Remove the plugin's user-level Claude status line once the OpenReflex plugin is uninstalled. Claude Code runs no plugin hook on uninstall, so the statusline command now removes its own runtime-managed entry when `installed_plugins.json` no longer lists OpenReflex; standalone and user-owned status lines are never touched.
