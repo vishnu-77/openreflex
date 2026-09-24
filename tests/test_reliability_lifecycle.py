@@ -96,6 +96,7 @@ def test_uninstall_codex_removes_only_openreflex_block(project):
 
 def test_claude_global_plugin_is_detected(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     settings = tmp_path / ".claude" / "settings.json"
     settings.parent.mkdir()
     settings.write_text(json.dumps({"enabledPlugins": {"openreflex@openreflex": True}}))

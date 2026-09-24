@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Callable, TypeVar
 
 from . import __version__, cli
-from .claude_ui import configure_statusline, remove_project_integration
+from .claude_ui import configure_statusline, remove_orphaned_statusline, remove_project_integration
 from .project import approval, approve, log_error, project_root
 from .project_map import enrich_snapshot
 from .project_memory import ensure_background_refresh, load_snapshot, read_state, run_worker, update_state
@@ -428,6 +428,8 @@ def _hook(argv: list[str]) -> int:
 def _statusline() -> int:
     """Render from cached state only; never scan, query git, or open the Experience Graph on the refresh path."""
     raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+    if _best_effort("orphaned statusline", remove_orphaned_statusline, False):
+        return 0
     hinted = claude_project_from_stdin(raw)
     project = project_root(hinted)
     print(statusline(project, force_colour=True))

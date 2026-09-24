@@ -10,6 +10,8 @@ import json
 import os
 from pathlib import Path
 
+from .project import home
+
 LEGACY_STATUSLINE_COMMAND = "openreflex statusline"
 
 
@@ -34,13 +36,21 @@ def claude_settings_path() -> Path:
     return root / "settings.json"
 
 
-def _ours(command: object) -> bool:
+def _runtime_root() -> str:
+    """Mirror runtime/launcher.cjs so relocated runtimes are still recognised as ours."""
+    root = os.environ.get("OPENREFLEX_RUNTIME_ROOT") or str(home() / "runtime")
+    return root.replace("\\", "/").rstrip("/").lower() + "/"
+
+
+def _runtime_managed(command: object) -> bool:
     if not isinstance(command, str):
         return False
     value = command.replace("\\", "/").lower()
-    return command == LEGACY_STATUSLINE_COMMAND or (
-        ".openreflex/runtime/" in value and value.rstrip().endswith(" statusline")
-    )
+    return (".openreflex/runtime/" in value or _runtime_root() in value) and value.rstrip().endswith(" statusline")
+
+
+def _ours(command: object) -> bool:
+    return command == LEGACY_STATUSLINE_COMMAND or _runtime_managed(command)
 
 
 def _owned_project_hook(entry: object) -> bool:
@@ -184,3 +194,29 @@ def configure_statusline(project: Path | None = None) -> str:
 def remove_statusline() -> bool:
     """Remove only the OpenReflex-owned user-level status line."""
     return _remove_owned_statusline(claude_settings_path())
+
+
+def plugin_installed() -> bool | None:
+    """Whether Claude lists an OpenReflex plugin in any scope; None when that is unknown."""
+    data = _load(claude_settings_path().parent / "plugins" / "installed_plugins.json")
+    plugins = data.get("plugins") if data else None
+    if not isinstance(plugins, dict):
+        return None
+    return any(str(name).lower().startswith("openreflex@") for name in plugins)
+
+
+def remove_orphaned_statusline() -> bool:
+    """Remove the plugin's user status line once the plugin itself is gone.
+
+    Claude Code runs no plugin hook on uninstall, so the status line command is the only
+    OpenReflex code that still executes afterwards. Only the runtime-managed command is
+    touched: the plugin writes it, whereas the legacy command belongs to standalone installs.
+    """
+    path = claude_settings_path()
+    data = _load(path)
+    current = data.get("statusLine") if data else None
+    if not isinstance(current, dict) or not _runtime_managed(current.get("command")):
+        return False
+    if plugin_installed() is not False:
+        return False
+    return _remove_owned_statusline(path)

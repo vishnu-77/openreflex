@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from . import __version__
+from .claude_ui import claude_settings_path
 from .project import approval, approve, home, project_resolution, project_root, revoke
 
 AGENT_CHOICES = ["claude-code", "codex", "cursor", "opencode"]
@@ -346,7 +347,7 @@ def _json(path: Path) -> dict:
 
 
 def _claude_plugin_enabled() -> bool:
-    settings = _json(Path.home() / ".claude" / "settings.json")
+    settings = _json(claude_settings_path())
     enabled = settings.get("enabledPlugins")
     if isinstance(enabled, dict):
         return any("openreflex" in str(name).lower() and value is not False for name, value in enabled.items())

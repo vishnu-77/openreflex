@@ -1,9 +1,12 @@
 import json
 
+import pytest
+
 from openreflex import __version__
 from openreflex.claude_ui import (
     configure_statusline,
     remove_project_integration,
+    remove_orphaned_statusline,
     remove_project_statusline,
     remove_statusline,
 )
@@ -150,3 +153,59 @@ def test_project_cleanup_deletes_openreflex_only_hook_file(tmp_path, monkeypatch
     assert remove_project_integration(project) is True
     assert not project_settings.exists()
     assert not project_settings.parent.exists()
+
+
+def _plugin_statusline(tmp_path, monkeypatch, installed):
+    settings = _user_settings(tmp_path, monkeypatch)
+    runtime = tmp_path / ".openreflex" / "runtime" / f"v{__version__}" / "bin" / "openreflex"
+    monkeypatch.setenv("OPENREFLEX_RUNTIME_COMMAND", f'"{runtime}"')
+    assert configure_statusline() == "configured"
+    registry = settings.parent / "plugins" / "installed_plugins.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_text(json.dumps({"version": 2, "plugins": installed}), encoding="utf-8")
+    return settings
+
+
+def test_statusline_removes_itself_after_plugin_uninstall(tmp_path, monkeypatch):
+    settings = _plugin_statusline(tmp_path, monkeypatch, {"other@market": []})
+    data = json.loads(settings.read_text(encoding="utf-8"))
+    settings.write_text(json.dumps({**data, "theme": "dark"}), encoding="utf-8")
+
+    assert remove_orphaned_statusline() is True
+    assert json.loads(settings.read_text(encoding="utf-8")) == {"theme": "dark"}
+
+
+def test_statusline_kept_while_plugin_installed_or_registry_unknown(tmp_path, monkeypatch):
+    settings = _plugin_statusline(tmp_path, monkeypatch, {"openreflex@openreflex": []})
+    assert remove_orphaned_statusline() is False
+
+    (settings.parent / "plugins" / "installed_plugins.json").unlink()
+    assert remove_orphaned_statusline() is False
+    assert "statusLine" in json.loads(settings.read_text(encoding="utf-8"))
+
+
+def test_orphan_cleanup_leaves_standalone_and_user_statuslines(tmp_path, monkeypatch):
+    settings = _plugin_statusline(tmp_path, monkeypatch, {})
+    for command in ("openreflex statusline", "my-own-statusline"):
+        settings.write_text(json.dumps({"statusLine": {"type": "command", "command": command}}), encoding="utf-8")
+        assert remove_orphaned_statusline() is False
+        assert json.loads(settings.read_text(encoding="utf-8"))["statusLine"]["command"] == command
+
+
+@pytest.mark.parametrize("variable, runtime_root", [
+    ("OPENREFLEX_RUNTIME_ROOT", "custom-runtimes"),
+    ("OPENREFLEX_HOME", "custom-home/runtime"),
+])
+def test_relocated_runtime_statusline_is_cleaned_up(tmp_path, monkeypatch, variable, runtime_root):
+    settings = _user_settings(tmp_path, monkeypatch)
+    monkeypatch.setenv(variable, str(tmp_path / runtime_root.removesuffix("/runtime")))
+    runtime = tmp_path / runtime_root / f"v{__version__}" / "bin" / "openreflex"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({"statusLine": {"type": "command", "command": f'"{runtime}" statusline'}}),
+                        encoding="utf-8")
+    registry = settings.parent / "plugins" / "installed_plugins.json"
+    registry.parent.mkdir()
+    registry.write_text(json.dumps({"version": 2, "plugins": {}}), encoding="utf-8")
+
+    assert remove_orphaned_statusline() is True
+    assert "statusLine" not in json.loads(settings.read_text(encoding="utf-8"))
