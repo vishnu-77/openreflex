@@ -4,6 +4,12 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.9.7 (2026-09-24)
+
+- Remove the plugin's user-level Claude status line once the OpenReflex plugin is uninstalled. Claude Code runs no plugin hook on uninstall, so the statusline command now removes its own runtime-managed entry when `installed_plugins.json` no longer lists OpenReflex; standalone and user-owned status lines are never touched.
+- Recognise runtime-managed status lines under `OPENREFLEX_RUNTIME_ROOT` or `OPENREFLEX_HOME/runtime`, matching the plugin launcher.
+- `doctor` plugin detection now honours `CLAUDE_CONFIG_DIR`.
+
 ## 0.9.6 (2026-09-23)
 
 - Harden the Execution Credit Graph so a Reflex action enters the replay spine only with comparative presence-versus-absence evidence, sufficient support, positive outcome association, and minimum attribution confidence.
