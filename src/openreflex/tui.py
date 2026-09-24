@@ -107,7 +107,7 @@ def statusline(project: Path, *, force_colour: bool = True) -> str:
             details.append(label)
         if recall.get("experiences") is not None:
             details.append(f"{recall.get('experiences', 0)} related")
-    elif phase in {"watch", "investigate", "think"}:
+    elif phase in {"watch", "investigate", "think", "pivot"}:
         if activity:
             details.append(activity)
         elif phase == "investigate":
@@ -118,7 +118,7 @@ def statusline(project: Path, *, force_colour: bool = True) -> str:
             details.append(f"{execution.get('calls', 0)} calls")
         if total_tokens:
             details.append(f"{total_tokens / 1000:.1f}k tokens")
-        if phase == "watch" and execution.get("budget_used") is not None:
+        if execution.get("budget_used") is not None:
             details.append(f"budget {float(execution['budget_used']):.0%}")
     elif phase == "waiting":
         pending = state.get("pending") or {}

@@ -148,7 +148,8 @@ def build_server(project: Path) -> FastMCP:
         is approved."""
         def operation(e: Engine):
             execution, verdict, problems, budget = e.progress()
-            action = verdict.action if problems else "continue"
+            # A stop means the budget is spent and nothing is worth more; never mask it as "no signs of trouble".
+            action = verdict.action if problems or verdict.action == "stop" else "continue"
             lines = [f"Recommendation: {action}" + ("" if problems else " (no signs of trouble)") + ".",
                      f"Estimate: {verdict.summary()}.",
                      f"Marginal value: continue {verdict.value_continue:+.3f}"

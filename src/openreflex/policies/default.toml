@@ -14,6 +14,14 @@ task_class_bonus = 0.10
 success_bonus = 0.05
 minimum_similar_evidence = 3
 
+[novelty]
+# A task with no past work above similarity_threshold, in a project with enough history, is "novel". The lexical
+# embedding puts unrelated prompts at up to ~0.3 (shared filler words, hash collisions), above retrieval.threshold.
+similarity_threshold = 0.35
+min_history = 5
+routine_count = 3
+budget_multiplier = 1.5
+
 [context]
 max_chars = 1400
 reflex_max_chars = 900
@@ -226,7 +234,8 @@ stagnation_calls = 15
 stagnation_seconds = 600.0
 exploration_stagnation_multiplier = 2.0
 minimum_stagnation_calls_with_time = 5
-recent_progress_window = 8
+over_budget_tiers = [1.0, 1.5, 2.0]
+over_budget_escalation = 0.20
 
 [detectors.severity]
 repeated_action = 0.60
@@ -258,10 +267,4 @@ relevance = 0.10
 [visibility]
 show_start = true
 show_complete = true
-runtime_events = ["pivot", "stop", "failure_loop", "stagnation", "over_budget", "context_growth"]
-
-[recap]
-max_words = 30
-
-[phases]
-ordered = ["orient", "explore", "hypothesise", "act", "verify", "resolve"]
+runtime_events = ["pivot", "stop", "failure_loop", "repeated_action", "stagnation", "over_budget", "context_growth"]

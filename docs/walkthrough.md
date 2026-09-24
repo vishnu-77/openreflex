@@ -55,11 +55,11 @@ The first thing in the transcript is OpenReflex's start recap, delivered through
 
 ```
 ↺ OpenReflex · 23
-0 experiences · test-first 93% · ~18 calls · ~6k tokens · +0 context tokens
+0 experiences · working approach · 93% · ~18 calls · ~6k tokens · +0 context tokens
 ```
 
-Read it as: this project has no experience with similar tasks yet, so the plan is the default prior (`test-first`,
-estimated 93% success, about 18 tool calls). `+0 context tokens` means nothing was injected into the model's context.
+Read it as: this project has no experience with similar tasks yet, so the plan is the default prior (estimated 93%
+success, about 18 tool calls). `+0 context tokens` means nothing was injected into the model's context.
 OpenReflex never adds context it does not have evidence for. The number 23 is the Reflex Score, how strong the
 recommendation is; with no evidence it is low.
 
@@ -68,17 +68,15 @@ Claude then did what it normally does: `Grep` for `apply_discount`, `Read` the m
 
 ```
 ↺ OpenReflex · COMPLETE
-success · inspect-first
-5 calls · 1.0k tokens · 0.8m
-Path check · better option: none proven
 ```
 
-Three things happened here:
+The completion surface stays that compact on purpose. Behind it, three things happened:
 
 - The outcome is `success` because a test run passed after the last edit. OpenReflex infers outcomes only from
   checks that actually ran; without one, the outcome would stay `unknown` and nothing would be learned.
-- The path taken was inferred as `inspect-first` (search, read, edit, verify), not the suggested `test-first`.
-- Path check says no better option is proven: OpenReflex does not claim an alternative was better without comparable completed-task evidence.
+- The path taken was inferred as `inspect-first` (search, read, edit, verify), not the default `test-first`.
+- The path comparison was recorded as evidence, not shown: `openreflex status` and `openreflex trace` report it, and
+  OpenReflex does not claim an alternative was better without comparable completed-task evidence.
 
 What was stored for this task, from the local database:
 
@@ -114,22 +112,18 @@ This time the start recap says something different:
 
 ```
 ↺ OpenReflex · 21
-1 experiences · test-first 93% · ~18 calls · ~6k tokens · +162 context tokens
+1 experiences · working approach · 82% · ~12 calls · ~4k tokens · +94 context tokens
 ```
 
-One similar past task was found, and 162 tokens of context were injected before Claude's first tool call. This is
+One similar past task was found, and 94 tokens of context were injected before Claude's first tool call. This is
 the exact text the model received (from Claude Code's session log):
 
 ```
-[OpenReflex] debug task | 1 similar past task(s) here, 1 succeeded.
-Suggested path: test-first - Reproduce the issue with a focused check -> Change the smallest failing behavior
--> Run focused tests and relevant regression checks (success~93%, ~18 tool calls, default prior).
-Alternatives: inspect-first (+0.34 vs +0.34), incremental (dominated by test-first)
-Budget: ~45 tool calls, ~22 min, ~30k tokens of tool output.
+[OpenReflex] BUILD · debug | 1 similar past task(s) here, 1 succeeded.
+Working approach: Locate the relevant implementation with targeted search -> Inspect nearby conventions -> Make a small change and verify it
+Budget: ~30 tool calls, ~20 min, ~30k tokens of tool output.
 Likely relevant files: shop/pricing.py, tests/test_pricing.py
-Lessons:
-- inspect-first worked for a similar debug task (5 tool calls, 1 min).
-Advisory only. If you follow a different approach, the choose_path tool records it.
+Advisory; choose_path records deviations.
 ```
 
 Claude's first words were "I'll look at the pricing module to find the coupon logic." It went to `shop/pricing.py`
@@ -138,16 +132,14 @@ minute, all five tests passing, and a completion recap:
 
 ```
 ↺ OpenReflex · COMPLETE
-success · inspect-first
-5 calls · 1.3k tokens · 1.0m
-Path check · better option: none proven
 ```
 
 An honest reading of this pair: in a three-file repository there is not much for a well-behaved agent to save, and
 both sessions took five calls. What the second session shows is the mechanism working end to end: the first task was
 recorded with a verified outcome, the second task retrieved it, the model received the files and the approach that
-worked before it did anything, and the new outcome was recorded the same way. The `test-first` estimate still comes
-from the default prior; after one run, OpenReflex is deliberately not confident.
+worked before it did anything, and the new outcome was recorded the same way. The working approach already follows what
+worked (locate, inspect, change, verify) and the budget tightened from about 45 tool calls to about 30, but the
+success estimate is deliberately modest after one run.
 
 ## Ask OpenReflex what it knows
 
@@ -205,20 +197,26 @@ And a preview of what a third, similar task would receive, without recording any
 
 ```
 $ openreflex context "Fix the pricing bug where cart_total applies a coupon twice"
-[OpenReflex] debug task | 2 similar past task(s) here, 2 succeeded.
-Suggested path: inspect-first - Locate the relevant implementation with targeted search -> Inspect nearby
-conventions -> Make a small change and verify it (success~85%, ~11 tool calls, from 2 past run(s)).
-Alternatives: test-first (+0.34 vs +0.38), incremental (dominated by test-first)
+[OpenReflex] BUILD · debug | 2 similar past task(s) here, 2 succeeded.
+Working approach: Locate the relevant implementation with targeted search -> Inspect nearby conventions -> Make a small change and verify it
 Budget: ~30 tool calls, ~20 min, ~30k tokens of tool output.
 Likely relevant files: shop/pricing.py, tests/test_pricing.py
-Lessons:
-- inspect-first worked for a similar debug task (5 tool calls, 1 min). (seen 2x)
-Advisory only. If you follow a different approach, the choose_path tool records it.
+Advisory; choose_path records deviations.
 ```
 
-After two verified runs the recommendation has changed from the default `test-first` to `inspect-first`, with
-"from 2 past run(s)" instead of "default prior", and the budget has tightened from about 45 tool calls to about 30.
+After two verified runs the working approach is the one that actually worked here (locate, inspect, change, verify)
+rather than the default reproduce-first prior, and the budget has tightened from about 45 tool calls to about 30.
 That is the feedback loop: what actually worked in this project now outranks the prior.
+
+The opposite case matters too. Once a project has at least five recorded tasks, a prompt with no similar past work
+is flagged instead of silently getting an empty context:
+
+```
+[OpenReflex] BUILD · refactor | Novel task for this project: no similar past work. Explore before editing; budget widened.
+```
+
+The budget for a novel task is widened (1.5x by default, never past a limit you set), so the over-budget alerts at
+100%, 150% and 200% of the budget do not fire just because unfamiliar work takes longer.
 
 ## What was never stored
 

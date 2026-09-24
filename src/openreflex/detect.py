@@ -13,6 +13,7 @@ class Alert:
     kind: str
     severity: float
     detail: str
+    level: int = 0
 
 
 def detect(execution: Execution, calls: list[ToolCall], budget: Budget, now: float, active_seconds: float = 0,
@@ -73,12 +74,18 @@ def detect(execution: Execution, calls: list[ToolCall], budget: Budget, now: flo
             f"(budget ~{int(budget.context_tokens) // 1000}k)"
         alerts.append(Alert("context_growth", float(severity["context_growth"]), reason))
 
-    progress_window = int(values["recent_progress_window"])
-    recent_progress = any(c.category in PROGRESS and c.status == "success" for c in calls[-progress_window:])
-    if not recent_progress and (len(calls) > budget.tool_calls or (implementing and active_seconds > budget.seconds)):
-        detail = (f"{len(calls)} tool calls (budget ~{budget.tool_calls:.0f})" if len(calls) > budget.tool_calls
-                  else f"{active_seconds / 60:.0f} min of work (budget ~{budget.seconds / 60:.0f} min)")
-        alerts.append(Alert("over_budget", float(severity["over_budget"]), detail))
+    # Budget.usage, as the verdict uses it; reading time only counts once implementing, since exploration is slow by
+    # nature. Recent edits no longer mute it: an agent can be busy and still far past what the task was worth.
+    used = budget.usage(active_seconds if implementing else 0, len(calls), execution.output_tokens_estimate)
+    level = sum(used > float(tier) for tier in values["over_budget_tiers"]) - 1
+    # First-tier overrun driven by tool output is exactly what context_growth reports, with more specific advice.
+    token_driven = execution.output_tokens_estimate / budget.context_tokens >= used
+    if level > 0 or (level == 0 and not (token_driven and any(a.kind == "context_growth" for a in alerts))):
+        detail = (f"{used:.0%} of the execution budget ({len(calls)}/{budget.tool_calls:.0f} calls, "
+                  f"{active_seconds / 60:.0f}/{budget.seconds / 60:.0f} min, "
+                  f"~{execution.output_tokens_estimate // 1000}k/{budget.context_tokens / 1000:.0f}k tokens of tool output)")
+        alerts.append(Alert("over_budget", float(severity["over_budget"]) + level * float(values["over_budget_escalation"]),
+                            detail, level))
     return alerts
 
 
@@ -87,5 +94,6 @@ def select(execution: Execution, alerts: list[Alert], now: float, policy: Policy
     if now - execution.last_alert_at < cfg.number("detectors.cooldown_seconds"):
         return None
     fresh = [a for a in alerts if a.kind not in execution.alerts or
-             (a.kind == "context_growth" and execution.alerts.count(a.kind) < 1 + min(execution.compactions, 1))]
+             (a.kind == "context_growth" and execution.alerts.count(a.kind) < 1 + min(execution.compactions, 1)) or
+             (a.kind == "over_budget" and execution.alerts.count(a.kind) <= a.level)]
     return max(fresh, key=lambda a: a.severity, default=None)

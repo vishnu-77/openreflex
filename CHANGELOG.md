@@ -4,6 +4,15 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.9.9 (2026-09-24)
+
+- Alerts raised on events an agent cannot display (Cursor `preToolUse`/`postToolUseFailure`, OpenCode `tool.before`/`tool.error`) are held and delivered at the next event that can show them. Previously they were marked as shown, silently dropped, and the cooldown then suppressed the next alert, so failure-loop warnings never reached Cursor or OpenCode.
+- The status line and TUI now show budget use and switch to the amber `PIVOT` state when a pivot or stop was just advised. `budget_used` was read but never written, so the budget always showed 0%.
+- Over-budget alerts escalate at 100%, 150% and 200% of the execution budget, count tool-output tokens, and fire even while the agent is still editing. A stop recommendation remains the final escalation and is not repeated.
+- New novelty detection: once a project has at least five recorded tasks, a prompt with no past work above `novelty.similarity_threshold` is flagged `Novel task for this project` and its budget is widened 1.5x (never past a user-set limit). Novelty (`unknown`/`novel`/`familiar`/`routine`) is stored on tasks and experiences, and `openreflex context` previews it.
+- Repeated identical tool calls are now surfaced to the user as well as the agent; `check_progress` no longer masks a stop verdict as "no signs of trouble"; `detectors.retry_warning_failures` is honoured.
+- Removed dead "Suggested path"/"Alternatives" parsing and unused policy keys (`recap.max_words`, `phases.ordered`); `docs/walkthrough.md` examples regenerated from the current output.
+
 ## 0.9.8 (2026-09-24)
 
 - Write Claude settings and project approvals through a per-writer temp file. Every writer previously shared one `settings.json.tmp` / `approvals.tmp`, so overlapping writers failed on Windows and could publish a truncated file on POSIX.

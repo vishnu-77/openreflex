@@ -89,12 +89,26 @@ class Engine:
     def take_pending_context(self, agent: str, session: str) -> str | None:
         with self.store.transaction():
             execution = self.store.active(agent, session)
-            if execution is None or not execution.pending_context:
-                return None
-            execution.pending_context = False
-            self.store.put(execution)
+            return self._deliver(execution, None, True) if execution is not None else None
+
+    def _deliver(self, execution: Execution, message: str | None, deliverable: bool) -> str | None:
+        """Hold context/alerts raised on events the agent cannot display; release them at the next one that can."""
+        if not deliverable:
+            if message and message not in (execution.pending_alert or ""):
+                execution.pending_alert = "\n\n".join(part for part in (execution.pending_alert, message) if part)
+                self.store.put(execution)
+            return None
+        parts = []
+        if execution.pending_context:
             context = next(iter(self.store.list("Context", "task_id", execution.task_id, limit=1)), None)
-            return context.text if context is not None and context.injected else None
+            if context is not None and context.injected:
+                parts.append(context.text)
+        if execution.pending_alert:
+            parts.append(execution.pending_alert)
+        if execution.pending_context or execution.pending_alert:
+            execution.pending_context, execution.pending_alert = False, None
+            self.store.put(execution)
+        return "\n\n".join(parts + ([message] if message else [])) or None
 
     def take_notice(self, agent: str, session: str) -> str | None:
         """Return the newest visible recap/intervention once, advancing past ambient snapshots too."""
@@ -112,7 +126,8 @@ class Engine:
                 return None
             return render_recap(visible[-1], previous)
 
-    def tool_start(self, agent: str, session: str, tool_id: str | None, name: str, arguments: object) -> str | None:
+    def tool_start(self, agent: str, session: str, tool_id: str | None, name: str, arguments: object,
+                   deliverable: bool = True) -> str | None:
         now = self.clock()
         with self.store.transaction():
             execution = self._execution_for(agent, session, now)
@@ -124,10 +139,11 @@ class Engine:
                             files=file_paths(arguments, self.project), started_at=now)
             self.store.put(call)
             self.store.link(execution.id, "used", call.id)
-            return self._retry_warning(execution, call)
+            return self._deliver(execution, self._retry_warning(execution, call), deliverable)
 
     def tool_end(self, agent: str, session: str, tool_id: str | None, name: str, arguments: object,
-                 success: bool, error: str | None = None, output_chars: int = 0) -> str | None:
+                 success: bool, error: str | None = None, output_chars: int = 0,
+                 deliverable: bool = True) -> str | None:
         now = self.clock()
         with self.store.transaction():
             execution = self._execution_for(agent, session, now)
@@ -156,7 +172,7 @@ class Engine:
             else:
                 for failed, resolver in learning.resolutions(calls):
                     self.store.link(failed.id, "resolved_by", resolver.id)
-            message = self._alert(execution, calls, now)
+            message = self._deliver(execution, self._alert(execution, calls, now), deliverable)
             self.store.put(execution)
             return message
 
@@ -210,6 +226,18 @@ class Engine:
                 context = self.store.list("Context", "task_id", current.task_id, limit=1)[0]
                 return current, context
             return self._start(agent, session or f"mcp-{int(now)}", description, now, substantial=True, limits=limits)
+
+    def runtime_status(self, agent: str, session: str) -> dict | None:
+        """Budget use and whether a pivot/stop was just advised, for the live status line. Read-only, no write lock."""
+        execution = self.store.active(agent, session)
+        if execution is None:
+            return None
+        calls, now = self._calls(execution.id), self.clock()
+        used = self._budget(execution).usage(learning.active_seconds(execution, calls, now), len(calls),
+                                             execution.output_tokens_estimate)
+        verdict, _, at = (execution.verdicts[-1] if execution.verdicts else "continue@0").rpartition("@")
+        recent = len(calls) - int(at or 0) < self.policy.integer("detectors.recent_repeat_window")
+        return {"budget_used": round(used, 3), "advice": verdict.partition(":")[0] if recent else "continue"}
 
     def progress(self, agent: str | None = None, session: str | None = None):
         with self.store.transaction():
@@ -284,12 +312,12 @@ class Engine:
         task_class = classify(description)
         task = Task(description=redact(description, 1000), task_class=task_class, session_id="preview",
                     agent="preview", started_at=self.clock(), task_mode=task_mode(task_class))
-        retrieved = self.retrieve(task.description, task.task_class)
+        retrieved, task.novelty = self._recall(task)
         limits = limits_from_env()
         paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits,
                            self.policy, task_mode_name=task.task_mode)
         return render_context(task, paths, retrieved, self.lessons([x for x, _ in retrieved]),
-                              budget_for(paths[0], limits, self.policy), self.policy)
+                              self._widened(budget_for(paths[0], limits, self.policy), task.novelty), self.policy)
 
     def decision_snapshots(self, execution_id: str | None = None) -> list[DecisionSnapshot]:
         """Snapshots of the given execution, or of the most recent one that made decisions. Activity without a
@@ -332,13 +360,40 @@ class Engine:
 
     def retrieve(self, description: str, task_class: str | None = None,
                  k: int | None = None) -> list[tuple[Experience, float]]:
+        limit = k if k is not None else self.policy.integer("retrieval.max_experiences")
+        return self._scan(description, task_class)[0][:limit]
+
+    def _recall(self, task: Task) -> tuple[list[tuple[Experience, float]], str]:
+        """One store scan yields both the context to inject and how novel the task is for this project."""
+        if not task.substantial:
+            return [], "unknown"
+        similar, sims = self._scan(task.description, task.task_class)
+        close = sum(sim >= self.policy.number("novelty.similarity_threshold") for sim in sims)
+        if len(sims) < self.policy.integer("novelty.min_history"):
+            novelty = "unknown"
+        elif not close:
+            return [], "novel"  # anything retrieved sits in the lexical noise floor; don't present it as related work
+        else:
+            novelty = "routine" if close >= self.policy.integer("novelty.routine_count") else "familiar"
+        return similar[:self.policy.integer("retrieval.max_experiences")], novelty
+
+    def _widened(self, budget: Budget, novelty: str) -> Budget:
+        if novelty != "novel" or budget.source != "estimated":
+            return budget  # never widen past a limit the user set
+        factor = self.policy.number("novelty.budget_multiplier")
+        return Budget(budget.seconds * factor, budget.tool_calls * factor, budget.context_tokens * factor, budget.source)
+
+    def _scan(self, description: str, task_class: str | None) -> tuple[list[tuple[Experience, float]], list[float]]:
+        """Scored experiences above the retrieval threshold, plus the raw similarity of every experience scanned."""
         query = embed(description)
         now = self.clock()
         scored = []
         threshold = self.policy.number("retrieval.threshold")
         scan = self.policy.integer("engine.max_store_scan")
+        sims = []
         for experience in self.store.list("Experience", limit=scan):
             sim = similarity(query, experience.embedding)
+            sims.append(sim)
             if sim < threshold:
                 continue
             age_weeks = max(0.0, now - experience.created_at) / (7 * 24 * 60 * 60)
@@ -348,8 +403,7 @@ class Engine:
                      - min(self.policy.number("retrieval.age_bonus_limit"),
                            self.policy.number("retrieval.age_decay_per_week") * age_weeks))
             scored.append((experience, round(score, 4)))
-        limit = k if k is not None else self.policy.integer("retrieval.max_experiences")
-        return sorted(scored, key=lambda pair: -pair[1])[:limit]
+        return sorted(scored, key=lambda pair: -pair[1]), sims
 
     def lessons(self, experiences: list[Experience], limit: int | None = None) -> list[tuple[Lesson, float, int]]:
         grouped: dict[str, list[Lesson]] = {}
@@ -418,14 +472,15 @@ class Engine:
                            self.policy, task_mode_name=task.task_mode)
         execution = Execution(task_id=task.id, agent=agent, session_id=session, recommended_path_id=paths[0].id,
                               started_at=now, last_progress_at=now, reflex_id=reflex.id if reflex else None)
-        self._set_budget(execution, budget_for(paths[0], limits, self.policy))
+        retrieved, task.novelty = self._recall(task)
+        self._set_budget(execution, self._widened(budget_for(paths[0], limits, self.policy), task.novelty))
         self.store.put(task)
         for path in paths:
             self.store.put(path)
             self.store.link(path.id, "recommended_for", task.id)
         self.store.put(execution)
         self.store.link(task.id, "caused", execution.id)
-        context = self._write_context(task, paths, self._budget(execution), reflex)
+        context = self._write_context(task, paths, self._budget(execution), reflex, retrieved)
         self.store.link(execution.id, "used", context.id)
         execution.context_tokens = self._injected_context_tokens(context)
         if substantial:
@@ -440,6 +495,7 @@ class Engine:
         task.description, task.task_class = redact(description, 1000), classify(description)
         task.task_mode = task_mode(task.task_class)
         task.substantial = is_substantial(description) or task.substantial
+        retrieved, task.novelty = self._recall(task)
         self.store.put(task)
         for node in self.store.list("CandidatePath", "task_id", task.id) + self.store.list("Context", "task_id", task.id):
             self.store.delete(node.id)
@@ -454,8 +510,8 @@ class Engine:
         execution.recommended_path_id = paths[0].id
         execution.chosen_path_id, execution.chosen_inferred = None, False
         execution.reflex_id = reflex.id if reflex else None
-        self._set_budget(execution, budget_for(paths[0], limits, self.policy))
-        context = self._write_context(task, paths, self._budget(execution), reflex)
+        self._set_budget(execution, self._widened(budget_for(paths[0], limits, self.policy), task.novelty))
+        context = self._write_context(task, paths, self._budget(execution), reflex, retrieved)
         execution.context_tokens = self._injected_context_tokens(context)
         if task.substantial:
             self._record_decision(execution, "start", "recommend", paths[0], paths, now,
@@ -465,15 +521,17 @@ class Engine:
         return context
 
     def _write_context(self, task: Task, paths: list[CandidatePath], budget: Budget | None = None,
-                       reflex: ProjectReflex | None = None) -> Context:
-        retrieved = self.retrieve(task.description, task.task_class) if task.substantial else []
+                       reflex: ProjectReflex | None = None,
+                       retrieved: list[tuple[Experience, float]] | None = None) -> Context:
+        if retrieved is None:
+            retrieved = self.retrieve(task.description, task.task_class) if task.substantial else []
         experiences = [e for e, _ in retrieved]
         lessons = self.lessons(experiences)
         text = render_context(task, paths, retrieved, lessons, budget, self.policy, reflex)
         context = Context(task_id=task.id, text=text, experience_ids=[e.id for e in experiences],
                           lesson_ids=[lesson.id for lesson, _, _ in lessons],
                           reflex_id=reflex.id if reflex else None,
-                          injected=task.substantial and bool(experiences or reflex))
+                          injected=task.substantial and bool(experiences or reflex or task.novelty == "novel"))
         self.store.put(context)
         for experience in experiences:
             self.store.link(context.id, "used", experience.id)
@@ -521,7 +579,7 @@ class Engine:
                        if c.id != call.id), key=lambda c: c.started_at)
         failures = [c for c in same if c.status == "failure"]
         marker = "retry:" + call.fingerprint[:12]
-        threshold = self.policy.integer("detectors.repeat_threshold") - 1
+        threshold = self.policy.integer("detectors.retry_warning_failures")
         if len(failures) >= threshold and not any(c.status == "success" for c in same) and marker not in execution.alerts:
             execution.alerts.append(marker)
             self.store.put(execution)
@@ -573,6 +631,9 @@ class Engine:
                "stop": "stop"}.get(verdict.action)
         fresh_verdict = key is not None and key not in {v.rpartition("@")[0] for v in execution.verdicts}
         alert = detect.select(execution, problems, now, self.policy)
+        stopped = "stop" in {v.rpartition("@")[0] for v in execution.verdicts}
+        if alert is not None and alert.kind == "over_budget" and alert.level and stopped:
+            alert = None  # a stop is the final escalation; later budget tiers would only repeat it
         if alert is None and not fresh_verdict:
             return None
         if alert is not None:
@@ -585,7 +646,9 @@ class Engine:
             "repeated_action": "Reuse the earlier result instead of re-running the same call",
             "stagnation": "Progress has stalled; re-plan before continuing",
             "context_growth": "Prefer targeted reads (line ranges, filtered or tail'ed command output) over full dumps",
-            "over_budget": "This is past the execution budget; re-scope or re-plan",
+            "over_budget": ("This is past the execution budget; re-plan before continuing",
+                            "This is well past the budget; re-scope with the user before continuing",
+                            "This is double the budget; weigh the recommendation below seriously")[min(alert.level, 2)],
         }[alert.kind]
         parts = [f"OpenReflex: {alert.detail}."]
         if verdict.action == "stop":
@@ -694,7 +757,7 @@ class Engine:
             benefited=bool(context and (context.experience_ids or context.reflex_id)),
             estimated_regret=outcome.estimated_regret,
             alerts=[a for a in execution.alerts if not a.startswith("retry:")], verdicts=list(execution.verdicts),
-            embedding=embed(task.description), created_at=now, task_mode=task.task_mode,
+            embedding=embed(task.description), created_at=now, task_mode=task.task_mode, novelty=task.novelty,
             input_tokens=outcome.input_tokens, output_tokens=outcome.output_tokens,
             cache_read_tokens=outcome.cache_read_tokens, cache_creation_tokens=outcome.cache_creation_tokens,
             estimated_cost_usd=outcome.estimated_cost_usd)
@@ -737,8 +800,10 @@ def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple
         max_chars = cfg.integer("context.reflex_max_chars")
         return text if len(text) <= max_chars else text[: max_chars - 1] + "..."
     else:
-        lines = [f"[OpenReflex] {task.task_mode.upper()} · {task.task_class} | "
-                 f"{len(experiences)} similar past task(s) here, {succeeded} succeeded."]
+        recall = ("Novel task for this project: no similar past work. Explore before editing; budget widened."
+                  if task.novelty == "novel" else
+                  f"{len(experiences)} similar past task(s) here, {succeeded} succeeded.")
+        lines = [f"[OpenReflex] {task.task_mode.upper()} · {task.task_class} | {recall}"]
         lines.append("Working approach: " + " -> ".join(best.steps))
     if budget is not None:
         lines.append(f"Budget: ~{budget.tool_calls:.0f} tool calls, ~{budget.seconds / 60:.0f} min, "

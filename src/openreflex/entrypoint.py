@@ -220,7 +220,6 @@ def _merge_notice(output: str, notice: str) -> str:
 
 def _prompt_state(project: Path, output: str, project_context: str | None) -> None:
     experiences = 0
-    route = None
     reflex_name = None
     reflex_state = None
     previous_task = read_state(project).get("task") or {}
@@ -246,13 +245,6 @@ def _prompt_state(project: Path, output: str, project_context: str | None) -> No
         if match:
             reflex_name = match.group(1).strip()
             mode = match.group(2).lower()
-    match = re.search(r"Suggested path:\s*([a-z0-9_-]+)", text, re.I)
-    if match:
-        route = match.group(1)
-    alternatives = None
-    match = re.search(r"Alternatives:\s*(.+)", text)
-    if match:
-        alternatives = match.group(1).strip()
     match = re.search(r"\[OpenReflex\]\s+(BUILD|INVESTIGATE|THINK)", text, re.I)
     if match:
         mode = match.group(1).lower()
@@ -261,10 +253,6 @@ def _prompt_state(project: Path, output: str, project_context: str | None) -> No
         task["reflex"] = reflex_name
     if reflex_state:
         task["reflex_state"] = reflex_state
-    if route:
-        task["route"] = route
-    if alternatives:
-        task["alternatives"] = alternatives
     # A new prompt is a new task surface. Do not carry the previous task's call count/activity into it.
     phase = "recall" if experiences or reflex_name or project_context else ("investigate" if mode == "investigate" else
                                                               "think" if mode == "think" else "watch")
@@ -299,7 +287,17 @@ def _tool_start_state(project: Path, payload: dict) -> None:
                  verification=activity["label"].lower() if phase == "verify" else None)
 
 
-def _tool_end_state(project: Path, payload: dict, *, failed: bool = False) -> None:
+def _runtime_status(project: Path, agent: str, session: str) -> dict | None:
+    from .engine import Engine
+
+    engine = Engine(project)
+    try:
+        return engine.runtime_status(agent, session)
+    finally:
+        engine.close()
+
+
+def _tool_end_state(project: Path, payload: dict, *, failed: bool = False, agent: str = "", session: str = "") -> None:
     state = read_state(project)
     execution = dict(state.get("execution") or {})
     execution["calls"] = int(execution.get("calls", 0)) + 1
@@ -307,6 +305,11 @@ def _tool_end_state(project: Path, payload: dict, *, failed: bool = False) -> No
     mode = str((state.get("task") or {}).get("mode") or "build")
     phase = ("verify" if activity["category"] in {"test", "lint", "build"} else
              "investigate" if mode == "investigate" else "think" if mode == "think" else "watch")
+    status = _best_effort("runtime status", lambda: _runtime_status(project, agent, session), None) if session else None
+    if status:
+        execution["budget_used"] = status["budget_used"]
+        if status["advice"] in {"pivot", "stop"}:
+            phase = "pivot"
     update_state(project, phase, execution=execution, activity=activity,
                  verification=activity["label"].lower() if phase == "verify" else None)
 
@@ -415,7 +418,8 @@ def _hook(argv: list[str]) -> int:
         _best_effort("update prompt state", lambda: _prompt_state(project, output, project_context), None)
     elif enabled and event in TOOL_END_EVENTS:
         _best_effort("update tool state",
-                     lambda: _tool_end_state(project, payload, failed=event == "PostToolUseFailure"), None)
+                     lambda: _tool_end_state(project, payload, failed=event == "PostToolUseFailure",
+                                             agent=agent, session=session), None)
     elif enabled and event in STOP_EVENTS:
         _best_effort("reinforce outcome", lambda: _stop_state(project, agent, session, output, payload), None)
 

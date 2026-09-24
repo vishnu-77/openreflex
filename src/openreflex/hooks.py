@@ -201,10 +201,16 @@ def normalize(agent: str, name: str, payload: dict) -> Event:
     raise ValueError(f"Unsupported agent: {agent}")
 
 
+_CLAUDE_CONTEXT = {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop"}
+# Events whose hook output each agent actually shows the model. Alerts raised elsewhere are held for the next one.
+CONTEXT_EVENTS = {"claude-code": _CLAUDE_CONTEXT, "codex": _CLAUDE_CONTEXT,
+                  "cursor": {"sessionStart", "postToolUse"}, "opencode": {"chat.message", "tool.after"}}
+
+
 def render(agent: str, name: str, context: str | None, notice: str | None = None) -> str:
     if agent in ("claude-code", "codex"):
         output: dict = {}
-        if context and name in {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop"}:
+        if context and name in CONTEXT_EVENTS[agent]:
             output["hookSpecificOutput"] = {"hookEventName": name, "additionalContext": context}
         if notice:
             output["systemMessage"] = notice
@@ -212,7 +218,7 @@ def render(agent: str, name: str, context: str | None, notice: str | None = None
     if agent == "cursor":
         if name == "beforeSubmitPrompt":
             return json.dumps({"continue": True})
-        if context and name in {"sessionStart", "postToolUse"}:
+        if context and name in CONTEXT_EVENTS[agent]:
             return json.dumps({"additional_context": context})
         return json.dumps({})
     if agent == "opencode":
@@ -252,12 +258,12 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
             if agent == "claude-code":
                 notice = engine.take_notice(agent, event.session)
         elif event.kind == "tool_start":
-            context = engine.tool_start(agent, event.session, event.tool_id, event.tool, event.arguments)
+            context = engine.tool_start(agent, event.session, event.tool_id, event.tool, event.arguments,
+                                        deliverable=name in CONTEXT_EVENTS.get(agent, ()))
         elif event.kind == "tool_end":
-            alert = engine.tool_end(agent, event.session, event.tool_id, event.tool, event.arguments,
-                                    event.success, event.error, event.output_chars)
-            pending = engine.take_pending_context(agent, event.session) if agent == "cursor" else None
-            context = "\n\n".join(part for part in (pending, alert) if part) or None
+            context = engine.tool_end(agent, event.session, event.tool_id, event.tool, event.arguments,
+                                      event.success, event.error, event.output_chars,
+                                      deliverable=name in CONTEXT_EVENTS.get(agent, ()))
             if agent == "claude-code":
                 notice = engine.take_notice(agent, event.session)
         elif event.kind == "compaction":

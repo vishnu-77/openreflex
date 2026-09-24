@@ -72,6 +72,9 @@ class Model:
         return dataclasses.replace(self, **(update or {}))
 
 
+NOVELTY = ("unknown", "novel", "familiar", "routine")
+
+
 @dataclass(kw_only=True)
 class Task(Model):
     description: str
@@ -81,6 +84,7 @@ class Task(Model):
     started_at: float
     substantial: bool = True
     task_mode: str = one_of(("build", "investigate", "think"), "build")
+    novelty: str = one_of(NOVELTY, "unknown")
 
 
 @dataclass(kw_only=True)
@@ -130,6 +134,7 @@ class Execution(Model):
     alerts: list[str] = field(default_factory=list)
     compactions: int = 0
     pending_context: bool = False
+    pending_alert: str | None = None
     budget_seconds: float | None = None
     budget_tool_calls: float | None = None
     budget_tokens: float | None = None
@@ -204,6 +209,7 @@ class Experience(Model):
     embedding: list[float]
     created_at: float
     task_mode: str = one_of(("build", "investigate", "think"), "build")
+    novelty: str = one_of(NOVELTY, "unknown")
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
