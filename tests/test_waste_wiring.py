@@ -152,3 +152,15 @@ def test_check_progress_reports_a_stop_even_without_fresh_problems(project, monk
     monkeypatch.setattr(Engine, "_verdict", lambda *a: dataclasses.replace(verdict(*a), action="stop"))
     monkeypatch.setattr(detect, "detect", lambda *a, **k: [])
     assert tool_text(server, "check_progress", {}).startswith("Recommendation: stop")
+
+
+def test_retried_command_is_recognised_despite_a_new_description(engine, clock):
+    # Real Claude Bash calls carry a model-written description that differs on every retry.
+    engine.prompt("claude-code", "s1", "Fix the failing import in the payments worker")
+    said = []
+    for i in range(3):
+        clock.advance(200)
+        arguments = {"command": "python -c 'import missing_mod'", "description": f"Try the import, attempt {i}"}
+        said.append(engine.tool_start("claude-code", "s1", f"t{i}", "Bash", arguments))
+        engine.tool_end("claude-code", "s1", f"t{i}", "Bash", arguments, False, "ModuleNotFoundError: missing_mod")
+    assert said[2] and "already failed 2x" in said[2], said

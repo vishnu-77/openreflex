@@ -4,6 +4,11 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+## 0.9.10 (2026-09-24)
+
+- Codex plugin hooks now run through the plugin-owned launcher and managed runtime (`runtime/launcher.cjs`), like the Claude plugin, instead of whatever `openreflex` is on PATH. They previously failed when no global install existed and could run a stale version when one did.
+- Tool-call fingerprints ignore arguments that describe rather than change a call (`description`, `justification`, `timeout`, `timeout_ms`). Claude's Bash tool sends a new model-written description each time, so retried identical commands never triggered the retry warning or repeated-call detection in real sessions.
+
 ## 0.9.9 (2026-09-24)
 
 - Alerts raised on events an agent cannot display (Cursor `preToolUse`/`postToolUseFailure`, OpenCode `tool.before`/`tool.error`) are held and delivered at the next event that can show them. Previously they were marked as shown, silently dropped, and the cooldown then suppressed the next alert, so failure-loop warnings never reached Cursor or OpenCode.

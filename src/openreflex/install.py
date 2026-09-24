@@ -13,7 +13,8 @@ from .project import approve
 
 HOOK_COMMAND = "openreflex hook {agent} {event}"
 CLAUDE_PLUGIN_ROOT = ' --plugin-root "${CLAUDE_PLUGIN_ROOT}"'
-CLAUDE_PLUGIN_LAUNCHER = 'node "${{CLAUDE_PLUGIN_ROOT}}/runtime/launcher.cjs" hook claude-code {event} --plugin-root "${{CLAUDE_PLUGIN_ROOT}}"'
+# Codex also provides CLAUDE_PLUGIN_ROOT to plugin hooks, so both plugins share one launcher command shape.
+PLUGIN_LAUNCHER = 'node "${{CLAUDE_PLUGIN_ROOT}}/runtime/launcher.cjs" hook {agent} {event} --plugin-root "${{CLAUDE_PLUGIN_ROOT}}"'
 CLAUDE_EVENTS = {"SessionStart": 10, "UserPromptSubmit": 10, "PreToolUse": 10, "PostToolUse": 10,
                  "PostToolUseFailure": 10, "PreCompact": 10, "Stop": 15, "SessionEnd": 5}
 CODEX_EVENTS = {"SessionStart": 10, "UserPromptSubmit": 10, "PreToolUse": 10, "PostToolUse": 10,
@@ -31,17 +32,23 @@ def claude_style_hooks(agent: str, events: dict[str, int]) -> dict:
                                           "timeout": timeout}]}] for event, timeout in events.items()}}
 
 
-def claude_plugin_hooks() -> dict:
-    """Claude plugin hooks use the plugin-owned launcher, never an arbitrary PATH runtime."""
-    timeouts = {**CLAUDE_EVENTS, "SessionStart": 120}
+def plugin_hooks(agent: str, events: dict[str, int]) -> dict:
+    """Plugin hooks use the plugin-owned launcher, never an arbitrary PATH runtime.
+
+    SessionStart gets room for the one-time managed-runtime bootstrap."""
+    timeouts = {**events, "SessionStart": 120}
     return {"hooks": {
         event: [{"hooks": [{
             "type": "command",
-            "command": CLAUDE_PLUGIN_LAUNCHER.format(event=event),
+            "command": PLUGIN_LAUNCHER.format(agent=agent, event=event),
             "timeout": timeout,
         }]}]
         for event, timeout in timeouts.items()
     }}
+
+
+def claude_plugin_hooks() -> dict:
+    return plugin_hooks("claude-code", CLAUDE_EVENTS)
 
 
 def cursor_hooks() -> dict:

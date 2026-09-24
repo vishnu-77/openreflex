@@ -5,8 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook codex SessionStart",
-            "timeout": 10
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/runtime/launcher.cjs\" hook codex SessionStart --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
+            "timeout": 120
           }
         ]
       }
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook codex UserPromptSubmit",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/runtime/launcher.cjs\" hook codex UserPromptSubmit --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 10
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook codex PreToolUse",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/runtime/launcher.cjs\" hook codex PreToolUse --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 10
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook codex PostToolUse",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/runtime/launcher.cjs\" hook codex PostToolUse --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 10
           }
         ]
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook codex PreCompact",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/runtime/launcher.cjs\" hook codex PreCompact --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 10
           }
         ]
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook codex Stop",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/runtime/launcher.cjs\" hook codex Stop --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 15
           }
         ]
@@ -71,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "openreflex hook codex SessionEnd",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/runtime/launcher.cjs\" hook codex SessionEnd --plugin-root \"${CLAUDE_PLUGIN_ROOT}\"",
             "timeout": 3
           }
         ]

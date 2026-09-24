@@ -47,8 +47,15 @@ def redact(value: str, limit: int = 2000) -> str:
     return SECRET.sub(lambda m: (m.group(1) or m.group(2) or "") + "[REDACTED]", value)[:limit]
 
 
+# Arguments that describe or bound a call without changing what it does. Claude's Bash tool gets a fresh
+# model-written `description` every time, which made identical retried commands look distinct.
+VOLATILE_ARGUMENTS = frozenset({"description", "justification", "timeout", "timeout_ms"})
+
+
 def fingerprint(name: str, arguments: object) -> str:
     # Full inputs are deliberately discarded, but the hash distinguishes repeated calls.
+    if isinstance(arguments, dict):
+        arguments = {key: value for key, value in arguments.items() if key not in VOLATILE_ARGUMENTS}
     return hashlib.sha256((name + json.dumps(arguments, sort_keys=True, default=str)).encode()).hexdigest()
 
 

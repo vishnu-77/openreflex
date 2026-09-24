@@ -70,7 +70,7 @@ def test_plugin_hook_files_match_installer_definitions():
     claude = json.loads((PLUGIN / "hooks" / "hooks.json").read_text())
     assert claude["hooks"] == install.claude_plugin_hooks()["hooks"]
     assert json.loads((PLUGIN / "hooks" / "codex-hooks.json").read_text()) == \
-        install.claude_style_hooks("codex", install.CODEX_EVENTS)
+        install.plugin_hooks("codex", install.CODEX_EVENTS)
     assert json.loads((PLUGIN / "hooks" / "cursor-hooks.json").read_text()) == install.cursor_hooks()
     codex = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text())
     cursor = json.loads((PLUGIN / ".cursor-plugin" / "plugin.json").read_text())
