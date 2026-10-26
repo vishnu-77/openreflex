@@ -1,6 +1,8 @@
-"""Privacy-minimal Claude Code token accounting via local OTLP/HTTP JSON logs.
+"""Privacy-minimal Claude Code token accounting.
 
-OpenReflex records counts and attribution only. Prompt/response/tool content logging remains disabled.
+By default, counts are read from the transcript Claude Code already writes (``transcript_path`` in every hook
+payload). The optional OTLP/HTTP receiver (``openreflex tokens enable``) adds estimated cost. Either way OpenReflex
+records counts and attribution only, never prompt, response or tool content.
 """
 from __future__ import annotations
 
@@ -12,11 +14,13 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .models import UsageSample
+from .claude_ui import claude_settings_path
+from .models import Execution, UsageSample
 from .project import home
 from .store import Store, database_path
 
@@ -212,6 +216,89 @@ def ingest_otlp_logs(payload: dict) -> int:
     return sum(_record(attrs, timestamp_ns) for attrs, timestamp_ns in _records(payload))
 
 
+FIRST_READ_BYTES = 8_000_000
+
+
+def _transcript_files(transcript: Path, session_id: str) -> list[tuple[Path, str]]:
+    """The session transcript plus its subagent transcripts, which Claude Code writes beside it."""
+    files = [(transcript, "main")]
+    files += [(path, "subagent") for path in sorted((transcript.parent / session_id / "subagents").glob("*.jsonl"))]
+    return files
+
+
+def _timestamp(value: object) -> float:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def ingest_transcript(store: Store, execution: Execution, transcript_path: str) -> int:
+    """Record model-token usage for the API calls appended to the transcript since the last read.
+
+    Only complete lines are read and the byte offset of each file is kept, so a Stop hook reads just the turn
+    that ended. A file read for the first time counts only calls made after this execution started.
+    """
+    transcript = Path(transcript_path) if transcript_path else None
+    if transcript is None or not transcript.is_file() or configured():
+        return 0  # the OTLP receiver already records these calls; reading both would count them twice
+    added = 0
+    for path, source in _transcript_files(transcript, execution.session_id):
+        key = f"transcript_offset:{os.path.normcase(str(path))}"
+        offset = int(store.get_meta(key, "-1") or -1)
+        try:
+            with path.open("rb") as handle:
+                # ponytail: a session OpenReflex meets mid-way is read from its last 8 MB, so the first Stop stays fast
+                # on transcripts of hundreds of MB; a single turn larger than that is under-counted once.
+                start = offset if offset >= 0 else max(0, handle.seek(0, os.SEEK_END) - FIRST_READ_BYTES)
+                handle.seek(start)
+                data = handle.read()
+        except OSError:
+            continue
+        if offset < 0 and start > 0:
+            skip = data.find(b"\n") + 1  # the window opened mid-line
+            data, start = data[skip:], start + skip
+        end = data.rfind(b"\n") + 1
+        usage: dict[str, tuple[dict, object]] = {}
+        for line in data[:end].splitlines():
+            if b'"assistant"' not in line or b'"usage"' not in line:
+                continue
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(entry, dict) or entry.get("type") != "assistant":
+                continue
+            message = entry.get("message")
+            if not isinstance(message, dict) or not isinstance(message.get("usage"), dict):
+                continue
+            if offset < 0 and _timestamp(entry.get("timestamp")) < execution.started_at:
+                continue
+            # One API response is written as several lines; the last carries the final output count.
+            usage[str(message.get("id") or entry.get("requestId") or entry.get("uuid"))] = (message, entry.get("timestamp"))
+        for message_id, (message, stamp) in usage.items():
+            counts = message["usage"]
+            if source == "main":
+                context = sum(int(counts.get(name) or 0) for name in
+                              ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+                store.set_meta(f"session_context_tokens:{execution.session_id}", str(context))
+            sample_id = "usage-" + hashlib.sha256(f"{execution.session_id}|{message_id}".encode()).hexdigest()[:24]
+            if store.usage_exists(sample_id):
+                continue
+            store.put_usage(UsageSample(
+                id=sample_id, execution_id=execution.id, session_id=execution.session_id,
+                request_id=message_id, model=str(message.get("model") or ""), query_source=source,
+                input_tokens=max(0, int(counts.get("input_tokens") or 0)),
+                output_tokens=max(0, int(counts.get("output_tokens") or 0)),
+                cache_read_tokens=max(0, int(counts.get("cache_read_input_tokens") or 0)),
+                cache_creation_tokens=max(0, int(counts.get("cache_creation_input_tokens") or 0)),
+                observed_at=_timestamp(stamp) or time.time(),
+            ))
+            added += 1
+        store.set_meta(key, str(start + end))
+    return added
+
+
 class _Handler(BaseHTTPRequestHandler):
     server_version = "OpenReflexTokens/0.5"
 
@@ -310,7 +397,7 @@ def ensure_receiver() -> bool:
 
 
 def _settings_path() -> Path:
-    return Path.home() / ".claude" / "settings.json"
+    return claude_settings_path()
 
 
 def _load_settings() -> dict:

@@ -23,7 +23,7 @@ from .project import approval, approve, log_error, project_root
 from .project_map import enrich_snapshot
 from .project_memory import ensure_background_refresh, load_snapshot, read_state, run_worker, update_state
 from .privacy import categorize, file_paths
-from .reflex_index import account_project_context, context_for_task, reinforce_latest_execution, sync_counts
+from .reflex_index import reinforce_latest_execution, session_facts, sync_counts
 from .tui import claude_project_from_stdin, dashboard, statusline
 
 PROMPT_EVENTS = {"UserPromptSubmit"}
@@ -352,7 +352,6 @@ def _stop_state(project: Path, agent: str, session: str, output: str, payload: d
 
 
 def _hook(argv: list[str]) -> int:
-    from .engine import is_substantial
     from .hooks import safe_handle
 
     agent = argv[1] if len(argv) > 1 else ""
@@ -404,18 +403,18 @@ def _hook(argv: list[str]) -> int:
 
     output = safe_handle(agent, event, raw)
 
+    # Project facts change rarely, so they are given once per session (and again after /clear or compaction)
+    # instead of with every prompt, where each copy would be re-read on every later API call.
+    if enabled and agent == "claude-code" and event in SESSION_EVENTS:
+        facts = _best_effort("project facts", lambda: session_facts(project), None)
+        if facts:
+            output = _merge_project_context(output, facts, event)
+
     if enabled and event in SESSION_EVENTS and phase in {"reflexing", "refreshing"}:
         verb = "understanding this project" if phase == "reflexing" else "refreshing project memory"
         output = _merge_notice(output, f"↺ OpenReflex v{__version__} · {phase.upper()}\n{verb} · work normally")
     elif enabled and agent == "claude-code" and event in PROMPT_EVENTS:
-        prompt = payload.get("prompt") if isinstance(payload.get("prompt"), str) else ""
-        project_context = (_best_effort("retrieve project memory", lambda: context_for_task(project, prompt), None)
-                           if is_substantial(prompt) else None)
-        if project_context:
-            output = _merge_project_context(output, project_context, event)
-            _best_effort("account project context",
-                         lambda: account_project_context(project, agent, session, project_context), None)
-        _best_effort("update prompt state", lambda: _prompt_state(project, output, project_context), None)
+        _best_effort("update prompt state", lambda: _prompt_state(project, output, None), None)
     elif enabled and event in TOOL_END_EVENTS:
         _best_effort("update tool state",
                      lambda: _tool_end_state(project, payload, failed=event == "PostToolUseFailure",
@@ -671,7 +670,7 @@ def _tokens(argv: list[str]) -> int:
     action = argv[0] if argv else "status"
     if action in {"-h", "--help"}:
         print("usage: openreflex tokens {enable,disable,status}\n")
-        print("  enable   Turn on local Claude Code token accounting (loopback receiver)")
+        print("  enable   Add estimated cost via Claude Code telemetry (loopback receiver); token counts need no setup")
         print("  disable  Turn off token accounting and stop the receiver")
         print("  status   Show whether tracking is configured and whether the receiver is running")
         return 0
@@ -699,9 +698,10 @@ def _tokens(argv: list[str]) -> int:
         return 0
     if action == "status":
         print("OPENREFLEX / TOKENS")
-        print(f"  configured  {configured()}")
-        print(f"  receiver    {'running' if receiver_running() else 'stopped'}")
-        print("  captures    input, output, cache read, cache creation, model, source, estimated cost")
+        print("  default     Claude Code token counts are read from the session transcript at each Stop")
+        print(f"  receiver    {'running' if receiver_running() else 'stopped'} (optional, adds estimated cost; "
+              f"configured: {configured()})")
+        print("  captures    input, output, cache read, cache creation, model, source")
         print("  content     prompts/responses/thinking/tool arguments are not collected")
         return 0
     print(f"Unknown tokens action: {action}")

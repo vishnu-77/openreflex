@@ -27,7 +27,14 @@ max_chars = 1400
 reflex_max_chars = 900
 chars_per_token = 4.0
 max_lessons = 4
-max_likely_files = 6
+# Suggest /clear (to the user, never the model) when a new, unrelated task starts in a session already carrying
+# this many context tokens: every API call re-reads the whole history.
+reset_hint_tokens = 150000
+
+[evaluation]
+# Share of substantial tasks where OpenReflex records everything but shows nothing. Comparing their model tokens
+# with the rest is the only unconfounded measure of what OpenReflex saves. 0 disables the holdout.
+holdout_percent = 20
 
 [routing]
 prior_weight = 4.0
@@ -234,7 +241,9 @@ stagnation_calls = 15
 stagnation_seconds = 600.0
 exploration_stagnation_multiplier = 2.0
 minimum_stagnation_calls_with_time = 5
-over_budget_tiers = [1.0, 1.5, 2.0]
+# Over-budget alerts are off by default: budgets come from strategy priors, not this project's history, and on
+# real sessions agents kept going a median of 10 calls after them. Set e.g. [1.0, 1.5, 2.0] to turn them on.
+over_budget_tiers = []
 over_budget_escalation = 0.20
 
 [detectors.severity]

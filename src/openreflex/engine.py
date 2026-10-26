@@ -1,5 +1,6 @@
 """The engine: lifecycle events become local execution memory and explainable decisions."""
 
+import hashlib
 import math
 import re
 import time
@@ -23,11 +24,18 @@ CONTEXTUAL_CONTINUATION = re.compile(
     re.IGNORECASE,
 )
 UNTRACKED = "(task started without a captured prompt)"
+# Harness messages delivered as prompts: a subagent hand-back or a background-task notification
+# returns work to the current task rather than starting a new one.
+HARNESS_MESSAGE = re.compile(r"^<(agent-message|task-notification)\b")
+# Lessons about a concrete failure seen in this project; the other kinds are generic advice.
+SPECIFIC_LESSONS = {"resolution", "failure-loop"}
+# Execution.alerts markers that are not alert kinds.
+MARKERS = ("retry:", "fix:")
 
 
 def is_substantial(prompt: str) -> bool:
     text = prompt.strip()
-    if not text or text.startswith("/"):
+    if not text or text.startswith("/") or HARNESS_MESSAGE.match(text):
         return False
     words = re.findall(r"\w+", text)
     if len(words) < 5:
@@ -93,6 +101,8 @@ class Engine:
 
     def _deliver(self, execution: Execution, message: str | None, deliverable: bool) -> str | None:
         """Hold context/alerts raised on events the agent cannot display; release them at the next one that can."""
+        if execution.holdout:
+            return None  # the comparison group: everything is recorded, nothing is shown
         if not deliverable:
             if message and message not in (execution.pending_alert or ""):
                 execution.pending_alert = "\n\n".join(part for part in (execution.pending_alert, message) if part)
@@ -139,7 +149,18 @@ class Engine:
                             files=file_paths(arguments, self.project), started_at=now)
             self.store.put(call)
             self.store.link(execution.id, "used", call.id)
-            return self._deliver(execution, self._retry_warning(execution, call), deliverable)
+            return self._deliver(execution, self._retry_warning(execution, call.name, fp, exclude=call.id), deliverable)
+
+    def blocked_retry(self, agent: str, session: str, name: str, arguments: object) -> str | None:
+        """Why a call should be refused before it runs: it already failed the same way and nothing changed since."""
+        with self.store.transaction():
+            execution = self.store.latest(agent, session)
+            if execution is None or execution.holdout:
+                return None
+            reason = self._retry_warning(execution, name[:100], fingerprint(name, arguments))
+            if reason:
+                self.store.increment_meta_int("blocked_retries")
+            return reason
 
     def tool_end(self, agent: str, session: str, tool_id: str | None, name: str, arguments: object,
                  success: bool, error: str | None = None, output_chars: int = 0,
@@ -172,7 +193,8 @@ class Engine:
             else:
                 for failed, resolver in learning.resolutions(calls):
                     self.store.link(failed.id, "resolved_by", resolver.id)
-            message = self._deliver(execution, self._alert(execution, calls, now), deliverable)
+            notes = (None if success else self._known_fix(execution, call), self._alert(execution, calls, now))
+            message = self._deliver(execution, " ".join(note for note in notes if note) or None, deliverable)
             self.store.put(execution)
             return message
 
@@ -183,20 +205,68 @@ class Engine:
                 execution.compactions += 1
                 self.store.put(execution)
 
-    def stop(self, agent: str, session: str, *, assistant_completed: bool = False) -> Outcome | None:
+    def stop(self, agent: str, session: str, *, assistant_completed: bool = False,
+             transcript: str = "") -> Outcome | None:
         with self.store.transaction():
             execution = self.store.active(agent, session)
-            return self._finalize(execution, assistant_completed=assistant_completed) if execution is not None else None
+            if execution is None:
+                return None
+            self._read_usage(execution, transcript)
+            return self._finalize(execution, assistant_completed=assistant_completed)
 
-    def wait(self, agent: str, session: str) -> Execution | None:
+    def wait(self, agent: str, session: str, transcript: str = "") -> Execution | None:
         """Keep an execution open when Claude reports scheduled/background work still pending."""
         with self.store.transaction():
             execution = self.store.active(agent, session)
             if execution is None:
                 return None
+            self._read_usage(execution, transcript)
             execution.waiting_for_future_work = True
             self.store.put(execution)
             return execution
+
+    def context_reset_hint(self, agent: str, session: str, prompt: str) -> str | None:
+        """A user-facing nudge to clear a large, unrelated history before a new task. The model never sees it.
+
+        Every API call re-reads the whole conversation, so history from finished, unrelated work is the largest
+        avoidable token cost in long sessions.
+        """
+        if not is_substantial(prompt) or is_contextual_continuation(prompt):
+            return None
+        with self.store.transaction():
+            carried = int(self.store.get_meta(f"session_context_tokens:{session}", "0") or 0)
+            shown = int(self.store.get_meta(f"reset_hint_shown:{session}", "0") or 0)
+            if carried < max(self.policy.number("context.reset_hint_tokens"), 2 * shown):
+                return None
+            current = self.store.latest(agent, session)
+            previous = self._task(current).description if current is not None else UNTRACKED
+            description = redact(prompt, 1000)
+            if previous == UNTRACKED or self._held_out(session, description) or \
+                    similarity(embed(description), embed(previous)) >= self.policy.number("novelty.similarity_threshold"):
+                return None
+            self.store.set_meta(f"reset_hint_shown:{session}", str(carried))
+            self.store.increment_meta_int("reset_hints")
+        return (f"↺ OpenReflex · CONTEXT\n~{carried // 1000}k tokens of earlier work are re-read on every call. "
+                "If this is a new task, run /clear first; OpenReflex hands the new session a short summary.")
+
+    def handoff(self, agent: str) -> str | None:
+        """After /clear: a short summary of the task just cleared away, from OpenReflex's own record of it."""
+        now = self.clock()
+        max_age = self.policy.number("engine.recent_execution_max_age_seconds")
+        for experience in sorted(self.store.list("Experience", limit=self.policy.integer("engine.recent_execution_limit")),
+                                 key=lambda item: -item.created_at):
+            if now - experience.created_at > max_age:
+                return None
+            task = self.store.get(experience.task_id) if self.store.exists(experience.task_id) else None
+            if experience.agent != agent or task is None or not task.substantial:
+                continue
+            outcome = self.store.get(experience.outcome_id) if self.store.exists(experience.outcome_id) else None
+            lines = [f"[OpenReflex] Context was cleared. Previous task: \"{redact(experience.description, 200)}\"",
+                     f"Outcome: {experience.status}" + (f" ({outcome.evidence})" if outcome and outcome.evidence else "") + "."]
+            if experience.files:
+                lines.append("Files involved: " + ", ".join(experience.files[:6]) + ".")
+            return "\n".join(lines)
+        return None
 
     # ------------------------------------------------------------------ explicit agent-facing operations
 
@@ -471,7 +541,8 @@ class Engine:
         paths = candidates(task.id, task.task_class, self._evidence(task.task_class, task.description), limits,
                            self.policy, task_mode_name=task.task_mode)
         execution = Execution(task_id=task.id, agent=agent, session_id=session, recommended_path_id=paths[0].id,
-                              started_at=now, last_progress_at=now, reflex_id=reflex.id if reflex else None)
+                              started_at=now, last_progress_at=now, reflex_id=reflex.id if reflex else None,
+                              holdout=substantial and self._held_out(session, task.description))
         retrieved, task.novelty = self._recall(task)
         self._set_budget(execution, self._widened(budget_for(paths[0], limits, self.policy), task.novelty))
         self.store.put(task)
@@ -480,7 +551,7 @@ class Engine:
             self.store.link(path.id, "recommended_for", task.id)
         self.store.put(execution)
         self.store.link(task.id, "caused", execution.id)
-        context = self._write_context(task, paths, self._budget(execution), reflex, retrieved)
+        context = self._write_context(task, paths, self._budget(execution), reflex, retrieved, execution.holdout)
         self.store.link(execution.id, "used", context.id)
         execution.context_tokens = self._injected_context_tokens(context)
         if substantial:
@@ -510,8 +581,9 @@ class Engine:
         execution.recommended_path_id = paths[0].id
         execution.chosen_path_id, execution.chosen_inferred = None, False
         execution.reflex_id = reflex.id if reflex else None
+        execution.holdout = task.substantial and self._held_out(execution.session_id, task.description)
         self._set_budget(execution, self._widened(budget_for(paths[0], limits, self.policy), task.novelty))
-        context = self._write_context(task, paths, self._budget(execution), reflex, retrieved)
+        context = self._write_context(task, paths, self._budget(execution), reflex, retrieved, execution.holdout)
         execution.context_tokens = self._injected_context_tokens(context)
         if task.substantial:
             self._record_decision(execution, "start", "recommend", paths[0], paths, now,
@@ -522,16 +594,19 @@ class Engine:
 
     def _write_context(self, task: Task, paths: list[CandidatePath], budget: Budget | None = None,
                        reflex: ProjectReflex | None = None,
-                       retrieved: list[tuple[Experience, float]] | None = None) -> Context:
+                       retrieved: list[tuple[Experience, float]] | None = None, holdout: bool = False) -> Context:
         if retrieved is None:
             retrieved = self.retrieve(task.description, task.task_class) if task.substantial else []
         experiences = [e for e, _ in retrieved]
         lessons = self.lessons(experiences)
         text = render_context(task, paths, retrieved, lessons, budget, self.policy, reflex)
+        # Injected text is re-read on every later API call, so inject only what is specific to this task: a matched
+        # Reflex or a lesson about a failure seen here. A similar-task count or novelty note gives nothing to act on.
+        specific = task.substantial and bool(reflex or any(lesson.kind in SPECIFIC_LESSONS for lesson, _, _ in lessons))
         context = Context(task_id=task.id, text=text, experience_ids=[e.id for e in experiences],
                           lesson_ids=[lesson.id for lesson, _, _ in lessons],
                           reflex_id=reflex.id if reflex else None,
-                          injected=task.substantial and bool(experiences or reflex or task.novelty == "novel"))
+                          injected=specific and not holdout, held_out=specific and holdout)
         self.store.put(context)
         for experience in experiences:
             self.store.link(context.id, "used", experience.id)
@@ -574,19 +649,48 @@ class Engine:
         self.store.put(execution)
         return snapshot
 
-    def _retry_warning(self, execution: Execution, call: ToolCall) -> str | None:
-        same = sorted((c for c in self.store.find("ToolCall", execution_id=execution.id, fingerprint=call.fingerprint)
-                       if c.id != call.id), key=lambda c: c.started_at)
+    def _retry_warning(self, execution: Execution, name: str, fp: str, exclude: str | None = None) -> str | None:
+        """An identical call that keeps failing, with no edit or passing check since its last failure, will fail again."""
+        same = sorted((c for c in self.store.find("ToolCall", execution_id=execution.id, fingerprint=fp)
+                       if c.id != exclude), key=lambda c: c.started_at)
         failures = [c for c in same if c.status == "failure"]
-        marker = "retry:" + call.fingerprint[:12]
-        threshold = self.policy.integer("detectors.retry_warning_failures")
-        if len(failures) >= threshold and not any(c.status == "success" for c in same) and marker not in execution.alerts:
+        if len(failures) < self.policy.integer("detectors.retry_warning_failures") \
+                or any(c.status == "success" for c in same) \
+                or (failures[-1].ended_at or failures[-1].started_at) < execution.last_progress_at:
+            return None
+        marker = "retry:" + fp[:12]
+        if marker not in execution.alerts:
             execution.alerts.append(marker)
             self.store.put(execution)
-            signature = failures[-1].error_signature or "an error"
-            return (f"OpenReflex: this exact {call.name} call already failed {len(failures)}x with "
-                    f"\"{signature}\". Change the input or approach before retrying.")
-        return None
+        signature = failures[-1].error_signature or "an error"
+        return (f"OpenReflex: this exact {name} call already failed {len(failures)}x with \"{signature}\" and nothing "
+                "has changed since. Change the input or approach before retrying.")
+
+    def _known_fix(self, execution: Execution, call: ToolCall) -> str | None:
+        """On the first failure with an error this project has resolved before, say what resolved it."""
+        signature = call.error_signature
+        if not signature or signature in {f"{call.category} failed", "no completion observed"}:
+            return None  # generic fallbacks match every failure of a kind, not this error
+        marker = "fix:" + hashlib.sha256(signature.encode()).hexdigest()[:12]
+        if marker in execution.alerts:
+            return None
+        known = next((item for item in self.store.list("Lesson", "kind", "resolution",
+                                                       limit=self.policy.integer("engine.max_store_scan"))
+                      if f"\"{signature}\"" in item.text), None)
+        if known is None:
+            return None
+        execution.alerts.append(marker)
+        return f"OpenReflex: this error was resolved before in this project: {known.text}"
+
+    def _held_out(self, session: str, description: str) -> bool:
+        """A stable share of tasks where OpenReflex records but stays silent: the comparison group for its effect."""
+        digest = hashlib.sha256(f"{session}|{description}".encode()).digest()
+        return int.from_bytes(digest[:4], "little") % 100 < self.policy.number("evaluation.holdout_percent")
+
+    def _read_usage(self, execution: Execution, transcript: str) -> None:
+        if transcript:
+            from .usage import ingest_transcript
+            ingest_transcript(self.store, execution, transcript)
 
     def _set_budget(self, execution: Execution, budget: Budget) -> None:
         execution.budget_seconds, execution.budget_tool_calls = round(budget.seconds, 1), round(budget.tool_calls, 1)
@@ -660,13 +764,6 @@ class Engine:
                          f"({verdict.summary()}).")
         else:
             parts.append(f"{advice}. Recommendation: continue on this path ({verdict.summary()}).")
-        signature = next((c.error_signature for c in reversed(calls) if c.status == "failure"), None)
-        if signature and alert.kind == "failure_loop":
-            known = [item for item in self.store.list("Lesson", "kind", "resolution",
-                                                     limit=self.policy.integer("engine.max_store_scan"))
-                     if signature in item.text]
-            if known:
-                parts.append(f"Previously: {known[0].text}")
 
         paths = self.store.list("CandidatePath", "task_id", execution.task_id)
         by_strategy = {path.strategy: path for path in paths}
@@ -754,9 +851,9 @@ class Engine:
             agent=execution.agent, description=task.description, task_class=task.task_class,
             strategy=outcome.chosen_strategy, status=status, elapsed_seconds=outcome.elapsed_seconds,
             tool_calls=outcome.tool_calls, output_tokens_estimate=outcome.output_tokens_estimate, files=files[:20],
-            benefited=bool(context and (context.experience_ids or context.reflex_id)),
+            benefited=bool(context and context.injected and (context.experience_ids or context.reflex_id)),
             estimated_regret=outcome.estimated_regret,
-            alerts=[a for a in execution.alerts if not a.startswith("retry:")], verdicts=list(execution.verdicts),
+            alerts=[a for a in execution.alerts if not a.startswith(MARKERS)], verdicts=list(execution.verdicts),
             embedding=embed(task.description), created_at=now, task_mode=task.task_mode, novelty=task.novelty,
             input_tokens=outcome.input_tokens, output_tokens=outcome.output_tokens,
             cache_read_tokens=outcome.cache_read_tokens, cache_creation_tokens=outcome.cache_creation_tokens,
@@ -809,10 +906,7 @@ def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple
         lines.append(f"Budget: ~{budget.tool_calls:.0f} tool calls, ~{budget.seconds / 60:.0f} min, "
                      f"~{budget.context_tokens / 1000:.0f}k tokens of tool output"
                      + (" (your limit)." if budget.source == "limit" else "."))
-    max_files = cfg.integer("context.max_likely_files")
-    files = Counter(f for e in experiences if e.status == "success" for f in e.files[:max_files])
-    if files:
-        lines.append("Likely relevant files: " + ", ".join(f for f, _ in files.most_common(max_files)))
+    # No "likely files": on real sessions 5% of suggested files were ever opened, and every line is re-read per call.
     # Strategy lessons remain internal routing evidence. Normal context presents project Reflexes,
     # not bootstrap strategy names such as inspect-first/test-first.
     shown = [item for item in lessons if item[0].kind not in {"files", "strategy"}]

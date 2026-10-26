@@ -26,12 +26,17 @@ def call(agent, event, payload, factory):
 def seed_experience(project, factory, clock, agent="claude-code"):
     base = {"session_id": "old", "cwd": str(project)}
     call(agent, "UserPromptSubmit", {**base, "prompt": "Fix the login bug where expired tokens are accepted"}, factory)
-    steps = [("Edit", {"file_path": "src/auth.py"}, None), ("Bash", {"command": "pytest -q"}, None)]
+    # A failing test fixed by an edit leaves a resolution lesson: specific evidence worth injecting next time.
+    steps = [("Bash", {"command": "pytest -q"}, "E   AssertionError: expired token accepted"),
+             ("Edit", {"file_path": "src/auth.py"}, None), ("Bash", {"command": "pytest -q"}, None)]
     for index, (tool, arguments, error) in enumerate(steps):
         clock.advance(10)
         payload = {**base, "tool_name": tool, "tool_input": arguments, "tool_use_id": f"old-{index}"}
         call(agent, "PreToolUse", payload, factory)
-        call(agent, "PostToolUse", {**payload, "tool_response": {"stdout": "ok"}}, factory)
+        if error:
+            call(agent, "PostToolUseFailure", {**payload, "error": error}, factory)
+        else:
+            call(agent, "PostToolUse", {**payload, "tool_response": {"stdout": "ok"}}, factory)
     call(agent, "Stop", base, factory)
     clock.advance(600)
 

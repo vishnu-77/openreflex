@@ -5,6 +5,7 @@ import json
 
 from openreflex import entrypoint
 from openreflex.engine import Engine
+from openreflex.policy import load_policy
 from openreflex.project import approve
 from openreflex.tui import statusline
 
@@ -33,9 +34,14 @@ def test_tool_output_over_the_token_budget_advises_targeted_reads(engine, clock)
     assert said and "tokens of tool output" in said[0] and "targeted reads" in said[0], said
 
 
-def test_over_budget_fires_while_still_editing_and_escalates(engine, clock, monkeypatch):
+def test_over_budget_is_off_by_default_and_escalates_when_enabled(engine, clock, project, monkeypatch):
     monkeypatch.setenv("OPENREFLEX_BUDGET", "calls=10")
     engine.prompt("claude-code", "s1", "Add rate limiting to the public search endpoint with tests")
+    assert not any("execution budget" in message for message in work(engine, clock, 25))
+
+    (project / ".openreflex.toml").write_text("[detectors]\nover_budget_tiers = [1.0, 1.5, 2.0]\n", encoding="utf-8")
+    engine.policy = load_policy(project)
+    engine.prompt("claude-code", "s1", "Add caching to the public search endpoint with tests")
     said = " | ".join(work(engine, clock, 25))  # every call is a successful edit: busy, but far past budget
     tiers = [said.find(text) for text in ("re-plan before continuing", "re-scope with the user", "double the budget")]
     assert -1 not in tiers and tiers == sorted(tiers), said
@@ -125,7 +131,7 @@ def test_novel_task_is_flagged_with_a_wider_budget(engine, clock):
     context = engine.prompt("claude-code", "s1", "Migrate the build pipeline from setuptools to hatch")
     execution = engine.store.latest("claude-code", "s1")
     assert engine._task(execution).novelty == "novel"
-    assert context and "Novel task for this project" in context
+    assert context is None, "a novelty note alone is not worth re-reading on every later call"
     assert execution.budget_tool_calls > routine_budget
 
     engine.prompt("claude-code", "s2", "Fix the login redirect loop when the session cookie expires")

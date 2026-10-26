@@ -63,10 +63,11 @@ def test_prompt_latency_with_thousands_of_experiences(tmp_path, project, clock):
                                         output_tokens_estimate=5000, files=["src/a.py"], embedding=embed(description),
                                         created_at=clock.now))
     start = time.perf_counter()
-    context = engine.prompt("claude-code", "big", "Fix auth token session issue in the login flow")
+    engine.prompt("claude-code", "big", "Fix auth token session issue in the login flow")
     elapsed = time.perf_counter() - start
+    retrieved = engine.store.list("Context")[0].experience_ids
     engine.close()
-    assert context is not None
+    assert retrieved, "retrieval ran over the 3000 experiences"
     assert elapsed < 5, f"prompt took {elapsed:.2f}s with 3000 experiences"
 
 

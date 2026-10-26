@@ -166,6 +166,13 @@ def cmd_status(args) -> int:
           f"{eff['without_prior_experience']['tool_calls']} (observational)")
     print(f"  model tokens with vs without prior experience: {eff['with_prior_experience']['model_tokens']} vs "
           f"{eff['without_prior_experience']['model_tokens']} (observational)")
+    holdout = data["holdout"]
+    print(f"  holdout ({holdout['percent']:.0f}% of tasks get no OpenReflex output): model tokens per task "
+          f"{holdout['shown']['model_tokens']} shown vs {holdout['held_out']['model_tokens']} held out "
+          f"(n={holdout['shown']['n']}/{holdout['held_out']['n']}, change {holdout['model_token_change']})")
+    prevented = data["prevented"]
+    print(f"  repeated failing calls refused: {prevented['blocked_retries']}   known fixes shown: "
+          f"{prevented['known_fixes_shown']}   /clear suggestions: {prevented['context_reset_hints']}")
     print(f"  path checks: {path_check['comparisons']}   better option found: {path_check['better_option_found']}   "
           f"routing agreement: {routing['agreement']}")
     overhead = data["openreflex_overhead"]
@@ -174,7 +181,8 @@ def cmd_status(args) -> int:
     print(f"  diagnostic MCP: {overhead['diagnostic_mcp_calls']} call(s), "
           f"{overhead['diagnostic_mcp_tokens_estimate']:,} estimated result tokens")
     if overhead["estimated_context_tax"] is not None:
-        print(f"  estimated context tax: {overhead['estimated_context_tax']:.2%} of observed model-token usage")
+        print(f"  estimated context tax: {overhead['estimated_context_tax']:.2%} of observed model-token usage "
+              "(lower bound: injected text times the API calls of the same task)")
     print(f"  live alerts: {data['live_alerts'] or '-'}")
     control = data["execution_control"]
     print(f"  verdicts: {control['verdicts'] or '-'}   tasks within tool-call budget: {control['tasks_within_tool_call_budget']}")

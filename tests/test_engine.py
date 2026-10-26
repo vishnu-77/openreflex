@@ -21,6 +21,8 @@ def test_substantial_prompt_detection():
     assert not is_substantial("yes please continue")
     assert not is_substantial("/compact")
     assert is_substantial("yes, and also refactor the payment module to use the new client")
+    assert not is_substantial('<agent-message from="a19ec8">\n[Subagent hand-back] The text below is the final report')
+    assert not is_substantial("<task-notification>\n<task-id>b9l3aez0u</task-id>\n<status>completed</status>")
 
 
 def test_first_task_captures_full_trajectory_without_injecting(engine, clock):

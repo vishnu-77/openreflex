@@ -94,6 +94,7 @@ class Context(Model):
     experience_ids: list[str] = field(default_factory=list)
     lesson_ids: list[str] = field(default_factory=list)
     injected: bool = False
+    held_out: bool = False  # would have been injected, but the task is in the holdout group
     reflex_id: str | None = None
     embedding_version: str = "hash-lexical-v1"
 
@@ -144,6 +145,7 @@ class Execution(Model):
     visible_decisions: int = 0
     waiting_for_future_work: bool = False
     reflex_id: str | None = None
+    holdout: bool = False  # OpenReflex records this task but shows nothing: the comparison group
 
 
 @dataclass(kw_only=True)

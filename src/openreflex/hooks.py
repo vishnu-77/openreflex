@@ -43,6 +43,8 @@ class Event:
     assistant_response_substantial: bool = False
     pending_background: int = 0
     pending_crons: int = 0
+    transcript: str = ""
+    source: str = ""
 
 
 CLAUDE_KINDS = {"SessionStart": "session_start", "UserPromptSubmit": "prompt", "PreToolUse": "tool_start",
@@ -141,7 +143,8 @@ def normalize(agent: str, name: str, payload: dict) -> Event:
         name = name or _text(payload, "hook_event_name")
         event = Event(CLAUDE_KINDS.get(name, "ignored"), _ident(payload.get("session_id")), _text(payload, "cwd") or None,
                       prompt=_text(payload, "prompt"), tool=_text(payload, "tool_name"),
-                      tool_id=_ident(payload.get("tool_use_id")) or None, arguments=_arguments(payload.get("tool_input")))
+                      tool_id=_ident(payload.get("tool_use_id")) or None, arguments=_arguments(payload.get("tool_input")),
+                      transcript=_text(payload, "transcript_path"), source=_text(payload, "source"))
         if name == "PostToolUseFailure":
             event.success = False
             interrupted = payload.get("is_interrupt") is True
@@ -207,6 +210,12 @@ CONTEXT_EVENTS = {"claude-code": _CLAUDE_CONTEXT, "codex": _CLAUDE_CONTEXT,
                   "cursor": {"sessionStart", "postToolUse"}, "opencode": {"chat.message", "tool.after"}}
 
 
+def render_deny(reason: str) -> str:
+    """Claude Code PreToolUse: refuse the call before it runs; the reason is shown to the model instead."""
+    return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                              "permissionDecisionReason": reason}})
+
+
 def render(agent: str, name: str, context: str | None, notice: str | None = None) -> str:
     if agent in ("claude-code", "codex"):
         output: dict = {}
@@ -253,11 +262,19 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
     try:
         context = None
         notice = None
-        if event.kind == "prompt":
+        if event.kind == "session_start":
+            # /clear starts a new session: hand it the cleared task's summary instead of its full history.
+            context = engine.handoff(agent) if event.source == "clear" else None
+        elif event.kind == "prompt":
+            hint = engine.context_reset_hint(agent, event.session, event.prompt) if agent == "claude-code" else None
             context = engine.prompt(agent, event.session, event.prompt, can_inject=agent != "cursor")
             if agent == "claude-code":
-                notice = engine.take_notice(agent, event.session)
+                notice = "\n\n".join(part for part in (hint, engine.take_notice(agent, event.session)) if part) or None
         elif event.kind == "tool_start":
+            if agent == "claude-code" and name == "PreToolUse":
+                reason = engine.blocked_retry(agent, event.session, event.tool, event.arguments)
+                if reason:
+                    return render_deny(reason)
             context = engine.tool_start(agent, event.session, event.tool_id, event.tool, event.arguments,
                                         deliverable=name in CONTEXT_EVENTS.get(agent, ()))
         elif event.kind == "tool_end":
@@ -270,7 +287,7 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
             engine.compaction(agent, event.session)
         elif event.kind == "stop":
             if name == "Stop" and (event.pending_background or event.pending_crons):
-                engine.wait(agent, event.session)
+                engine.wait(agent, event.session, event.transcript)
                 total = event.pending_background + event.pending_crons
                 detail = []
                 if event.pending_background:
@@ -279,7 +296,8 @@ def handle(agent: str, name: str, payload: dict, engine_factory=Engine) -> str:
                     detail.append(f"{event.pending_crons} scheduled")
                 notice = f"↺ OpenReflex · WAITING\n{total} pending · " + " · ".join(detail)
             else:
-                engine.stop(agent, event.session, assistant_completed=event.assistant_response_substantial)
+                engine.stop(agent, event.session, assistant_completed=event.assistant_response_substantial,
+                            transcript=event.transcript)
                 # Missing verification is retained as internal evidence state. Ambient Stop never
                 # nags the agent or user merely because OpenReflex did not observe a post-change check.
                 if agent == "claude-code":

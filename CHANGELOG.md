@@ -2,7 +2,39 @@
 
 All notable changes to OpenReflex are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.10.0 (2026-10-26)
+
+Measured on 2,880 real Claude Code API calls: 56% of context tokens were history carried over from earlier prompts,
+25% the fixed system prompt and tools, 19% the current task. OpenReflex's own injected text cost 0.75% (it is re-read
+by every later call), with no measurable saving. These changes measure the effect and move OpenReflex toward removing
+tokens rather than adding them.
+
+- Claude Code token counts are read from the session transcript at each Stop, including subagent transcripts, with no
+  setup. Only counts are stored; each file is read incrementally from a saved offset. `tokens enable` now only adds
+  estimated cost, and both paths never count the same call twice.
+- Holdout: by default one substantial task in five (`evaluation.holdout_percent`) gets no OpenReflex output while still
+  being recorded. `openreflex status` compares model tokens and tool calls per task with and without OpenReflex.
+- Context is injected only when it is specific: a matched Reflex, or a lesson about a failure seen in this project. A
+  similar-task count or a novelty note alone no longer triggers injection, and "Likely relevant files" was removed
+  (5% of suggested files were ever opened).
+- A Reflex no longer matches on one family keyword. It needs similar wording, the same project area, or a family
+  carried over from the task being continued.
+- Project facts (kind and verification commands) are given once per session start, not with every prompt; prompt-time
+  file guesses were removed.
+- Claude Code: when a new, unrelated task starts in a session carrying more than `context.reset_hint_tokens` (150k)
+  of history, OpenReflex suggests `/clear` to the user (the model never sees it). After `/clear`, the new session
+  receives a short summary of the cleared task.
+- Claude Code: an identical tool call that already failed twice, with no edit or passing check since, is refused
+  before it runs. The retry warning for other agents now also requires that nothing changed since the last failure,
+  instead of firing after an edit that may have fixed the cause.
+- The first failure with an error the project resolved before shows what resolved it, once per error per task.
+- Over-budget alerts are off by default (`detectors.over_budget_tiers = []`): budgets come from strategy priors, and
+  agents continued a median of 10 calls after them.
+- Subagent hand-backs and background-task notifications continue the current task instead of starting a new one, and
+  "token"/"tokens" no longer mark a prompt as authentication work.
+- `tokens enable` writes the active Claude profile's settings (`CLAUDE_CONFIG_DIR`) instead of always `~/.claude`.
+- `status` reports the context tax as injected text times the API calls of the same task (a lower bound), plus refused
+  repeats, known fixes shown, and `/clear` suggestions.
 
 ## 0.9.10 (2026-09-24)
 

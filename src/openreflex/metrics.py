@@ -9,7 +9,7 @@ import time
 from collections import Counter, defaultdict
 from statistics import mean
 
-from .engine import Engine
+from .engine import MARKERS, Engine
 from .learning import realized_utility
 from .reflexes import reflex_summary
 
@@ -91,8 +91,9 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
         if task and task.substantial and task.task_class in best and store.exists(execution.recommended_path_id):
             agreements.append(store.get(execution.recommended_path_id).strategy == best[task.task_class])
 
-    alerts = Counter(a for e in executions for a in e.alerts if not a.startswith("retry:"))
+    alerts = Counter(a for e in executions for a in e.alerts if not a.startswith(MARKERS))
     alerts["retry_warning"] = sum(1 for e in executions for a in e.alerts if a.startswith("retry:"))
+    alerts["known_fix"] = sum(1 for e in executions for a in e.alerts if a.startswith("fix:"))
     verdicts = Counter(v.split(":")[0].split("@")[0] for e in executions for v in e.verdicts)
     # After a pivot or stop, did the task still reach a verified success? (observational)
     advised = [x for x in known if any(v.startswith(("pivot", "stop")) for v in x.verdicts)]
@@ -115,10 +116,23 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
     diagnostic_mcp_calls = int(store.get_meta("diagnostic_mcp_calls", "0") or 0)
     diagnostic_mcp_tokens = int(store.get_meta("diagnostic_mcp_tokens_estimate", "0") or 0)
     estimated_context_tokens = sum(context_values)
+    # Injected text stays in the conversation and is re-read by every later API call, so its cost is its size times
+    # the calls that follow. Counting only the calls of the same task makes this a lower bound.
+    reread_tokens = sum(int(e.context_tokens or 0) * len(store.usage_for_execution(e.id))
+                        for e in executions if e.context_tokens)
     estimated_context_tax = (
-        round(estimated_context_tokens / observed_model_tokens, 4)
+        round(reread_tokens / observed_model_tokens, 4)
         if observed_model_tokens > 0 else None
     )
+
+    # The holdout is the only unconfounded comparison: the same kinds of task, assigned by hash, with OpenReflex
+    # silent. Only tasks since the holdout began are compared, so older history cannot bias the "shown" side.
+    holdout_start = min((e.started_at for e in executions if e.holdout), default=None)
+    holdout_by_execution = {e.id: e.holdout for e in executions if holdout_start is not None and e.started_at >= holdout_start}
+    compared = [x for x in experiences if x.execution_id in holdout_by_execution
+                and getattr(task_by_id.get(x.task_id), "substantial", False)]
+    shown_profile = profile([x for x in compared if not holdout_by_execution[x.execution_id]])
+    held_profile = profile([x for x in compared if holdout_by_execution[x.execution_id]])
 
     return {
         "project": str(engine.project),
@@ -143,6 +157,7 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
             "diagnostic_mcp_calls": diagnostic_mcp_calls,
             "diagnostic_mcp_tokens_estimate": diagnostic_mcp_tokens,
             "observed_model_tokens": observed_model_tokens,
+            "estimated_context_reread_tokens": reread_tokens,
             "estimated_context_tax": estimated_context_tax,
             "context_token_method": "estimated from injected characters / configured chars_per_token",
             "diagnostic_token_method": "estimated from MCP result characters / configured chars_per_token",
@@ -154,6 +169,17 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
             "tool_call_change": _change(without_prior_profile["tool_calls"], with_prior_profile["tool_calls"]),
             "model_token_change": _change(without_prior_profile["model_tokens"], with_prior_profile["model_tokens"]),
             "time_change": _change(without_prior_profile["minutes"], with_prior_profile["minutes"]),
+        },
+        "holdout": {
+            "percent": engine.policy.number("evaluation.holdout_percent"),
+            "shown": shown_profile, "held_out": held_profile,
+            "model_token_change": _change(held_profile["model_tokens"], shown_profile["model_tokens"]),
+            "tool_call_change": _change(held_profile["tool_calls"], shown_profile["tool_calls"]),
+        },
+        "prevented": {
+            "blocked_retries": int(store.get_meta("blocked_retries", "0") or 0),
+            "known_fixes_shown": alerts["known_fix"],
+            "context_reset_hints": int(store.get_meta("reset_hints", "0") or 0),
         },
         "path_check": {"comparisons": len(comparisons), "better_option_found": len(better_options),
                        "by_class": dict(comparison_by_class)},

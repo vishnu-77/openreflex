@@ -22,6 +22,9 @@ class Clock:
 def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENREFLEX_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude-user"))
+    # Behaviour tests need every task to receive OpenReflex output; holdout tests opt back in.
+    (tmp_path / "home").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "home" / "config.toml").write_text("[evaluation]\nholdout_percent = 0\n", encoding="utf-8")
     for name in ("OPENREFLEX_PROJECT", "CLAUDE_PROJECT_DIR", "OPENREFLEX_AUTO_APPROVE", "OPENREFLEX_DISABLE"):
         monkeypatch.delenv(name, raising=False)
     return tmp_path / "home"

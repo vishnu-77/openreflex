@@ -193,7 +193,8 @@ def test_cli_end_to_end_capture_via_subprocess(isolated_home, project):
     assert data["engagement"]["experiences"] == 1 and data["outcomes"]["success_rate"] == 1.0
     assert data["activation"]["first_session_captured"] is True
     preview = _run(["context", "Fix unicode filename handling in uploads", "--project", str(project)], env_home=isolated_home)
-    assert "src/upload.py" in preview.stdout.decode()
+    assert "1 similar past task(s) here" in preview.stdout.decode()
+    assert "Likely relevant files" not in preview.stdout.decode()
     assert not (isolated_home / "logs" / "errors.log").exists()
 
 

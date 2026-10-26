@@ -28,8 +28,9 @@ and inject only the relevant project procedure into new tasks. The model does no
 and MCP diagnostics are opt-in rather than loaded into normal agent context.
 
 You install it once and keep working normally. Core memory stays on your machine in a local SQLite database.
-There is no OpenReflex account or hosted service. Optional Claude token accounting uses Claude Code's local
-OpenTelemetry export to a loopback-only OpenReflex receiver and stores counts only.
+There is no OpenReflex account or hosted service. Claude Code token counts are read from the session transcript
+Claude Code already writes locally, and only counts are stored. `openreflex tokens enable` optionally adds estimated
+cost through Claude Code's OpenTelemetry export to a loopback-only receiver.
 
 <p align="center">
   <a href="docs/walkthrough.md">
@@ -141,9 +142,18 @@ Execution -caused-> Outcome -caused-> Experience -caused-> Lesson
   uses `inspect-first`, `test-first`, and `incremental`; **INVESTIGATE** uses `source-first`,
   `cross-check`, and `broad-then-deep`; **THINK** uses `reason-first`, `compare-options`, and
   `evidence-first`. Paths are ranked using past evidence, estimated cost, risk, uncertainty and reversibility.
-  A compact context is injected only when relevant experience exists.
-- **During a task:** when a detector finds a failure loop, repeated calls, stalled progress, context growth,
-  or work past the budget, OpenReflex estimates the marginal value of more work. The current path's success
+  Injected text is re-read by every later API call, so context is injected only when it is specific to the task:
+  a matched Reflex, or a lesson about a failure already seen in this project. One substantial task in five (the
+  `evaluation.holdout_percent` policy value) is a holdout: OpenReflex records it but shows nothing, so
+  `openreflex status` can compare model tokens per task with and without OpenReflex.
+- **Between tasks (Claude Code):** when a new, unrelated task starts in a session already carrying a large history
+  (`context.reset_hint_tokens`), OpenReflex suggests `/clear` to you; the model never sees the suggestion. After
+  `/clear`, the new session gets a short summary of the cleared task instead of its full history.
+- **During a task:** an identical call that already failed twice, with no edit or passing check since, is refused
+  before it runs (Claude Code) or flagged (other agents). The first failure with an error this project has resolved
+  before shows what resolved it. When a detector finds a failure loop, repeated calls, stalled progress or context
+  growth, OpenReflex estimates the marginal value of more work. Over-budget alerts are off by default; set
+  `detectors.over_budget_tiers` to turn them on. The current path's success
   estimate is updated with each call that makes no progress or fails, and compared with the cost of the work
   left and with the best untried alternative. The alert ends with a recommendation to **continue**, **pivot**
   to another strategy, or **stop** and ask the user. Each problem, pivot, or stop is raised once, with a cooldown
@@ -204,7 +214,7 @@ deliberately install OpenReflex as an MCP server.
 | `why` / `trace` | Explain the latest recommendation, or show the decision timeline |
 | `doctor` | Installation, project resolution, and recent hook activity checks |
 | `forget --yes` | Delete the project's data |
-| `tokens enable` / `tokens status` / `tokens disable` | Opt in to local Claude Code token accounting, inspect it, or remove OpenReflex-owned telemetry settings |
+| `tokens enable` / `tokens status` / `tokens disable` | Token counts need no setup; opt in to estimated cost via local Claude Code telemetry, inspect it, or remove OpenReflex-owned telemetry settings |
 | `benchmark` | Run the simulated benchmark |
 | `hook <agent> <event>` | Used by ambient agent integrations |
 | `mcp` | Run the optional diagnostics/admin MCP server explicitly |
@@ -217,7 +227,7 @@ deliberately install OpenReflex as an MCP server.
 | A fingerprint of the arguments | Command text |
 | Project-relative file paths | Tool output |
 | Pass or fail, duration, output size | Transcripts and model output |
-| Optional model-token counts, model/source label, estimated cost | Prompt/response/tool contents from Claude telemetry |
+| Model-token counts per API call, read from the local Claude transcript; model/source label; optional estimated cost | Prompt/response/tool contents from the transcript or Claude telemetry |
 | A masked one-line error signature | Paths outside the project |
 | The prompt as a task description (up to 1,000 characters, secrets redacted) | Anything sent to an OpenReflex-hosted service: there is none |
 

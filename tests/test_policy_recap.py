@@ -4,7 +4,7 @@ from openreflex import hooks
 from openreflex.cli import build_parser
 from openreflex.decision import render_recap
 from openreflex.engine import Engine
-from openreflex.models import Experience
+from openreflex.models import Experience, Lesson
 from openreflex.policy import load_policy
 from openreflex.project import approve
 from openreflex.routing import classify, embed
@@ -69,6 +69,9 @@ def test_recap_reports_retrieved_experience_and_context_cost(engine, clock):
         created_at=clock(),
     )
     engine.store.put(prior)
+    engine.store.put(Lesson(experience_id=prior.id, key="resolution|debug|expired", kind="resolution", task_class="debug",
+                            text="\"AssertionError: expired token\" (from test) was resolved by an edit in src/auth.py.",
+                            confidence=0.6, evidence_ids=[prior.id]))
 
     context = engine.prompt("claude-code", "new", description)
     assert context and "src/auth.py" in context

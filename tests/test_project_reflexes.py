@@ -378,12 +378,16 @@ def test_novel_task_reuses_project_family_without_repeating_a_previous_task(tmp_
                 store.put(call)
             compile_for_experience(store, experience, now=200 + index)
 
-        matched = match_reflex(store, "Rotate sessions after privilege escalation", "build", "refactor")
+        # A family keyword alone ("sessions") is not enough evidence; the same project area is.
+        assert match_reflex(store, "Rotate sessions after privilege escalation", "build", "refactor") is None
+        matched = match_reflex(store, "Rotate sessions after privilege escalation in auth", "build", "refactor")
         assert matched is not None
         reflex, score = matched
         assert reflex.family == "authentication"
         assert reflex.name == "Authentication change"
         assert score >= 0.28
+        # "token" in an agent prompt means model tokens, not credentials.
+        assert match_reflex(store, "give me a detailed token saving report for this run", "build", "build") is None
     finally:
         store.close()
 

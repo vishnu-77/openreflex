@@ -280,6 +280,17 @@ def _relationship_expansion(project_map: dict, selected: list[dict], by_path: di
     return additions, evidence
 
 
+def session_facts(project: Path, max_commands: int = 4) -> str | None:
+    """What is worth knowing once per session: the kind of project and how it is verified. File guesses are
+    left out; matched by prompt words, 5% of them were ever opened on real sessions."""
+    snapshot = load_snapshot(project)
+    commands = [item["command"] for item in (snapshot or {}).get("commands", []) if item.get("state") == "active"]
+    if not commands:
+        return None
+    return (f"[OpenReflex] Project memory: {snapshot.get('project_kind', 'software repository')}. "
+            f"Observed project verification: {', '.join(commands[:max_commands])}.")
+
+
 def context_for_task(project: Path, description: str, *, max_files: int = 6, max_commands: int = 4) -> str | None:
     """Hybrid retrieval: source map + dependencies + Git structure + accumulated execution support."""
     snapshot = load_snapshot(project)

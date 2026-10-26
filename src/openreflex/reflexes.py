@@ -35,8 +35,9 @@ def _words(text: str) -> set[str]:
 def _family_hints(text: str) -> set[str]:
     words = _words(text)
     families = {
+        # No "token"/"tokens": in agent prompts they almost always mean model tokens, not credentials.
         "authentication": {
-            "auth", "authentication", "login", "logout", "token", "tokens", "oauth", "jwt",
+            "auth", "authentication", "login", "logout", "oauth", "jwt",
             "session", "sessions", "permission", "permissions", "authorisation", "authorization",
             "role", "roles",
         },
@@ -679,7 +680,9 @@ def match_reflex(store: Store, description: str, task_mode: str, task_class: str
         class_score = 1.0 if reflex.task_class == task_class else 0.55
         evidence = reflex.confidence
 
-        if semantic < 0.20 and family_score == 0.0 and locality < 0.34:
+        # One keyword ("token", "deploy") is not enough evidence to inject a Reflex; it needs similar wording, the
+        # same project area, or a family carried over from the task this prompt continues.
+        if semantic < 0.20 and locality < 0.34 and family not in (family_hints or ()):
             continue
 
         score = (
