@@ -74,8 +74,9 @@ jobs:
 
       # https://openrouter.ai/docs/guides/guides/claude-code-integration: the key travels as the bearer token
       # and ANTHROPIC_API_KEY must be empty, or Claude Code treats it as a direct Anthropic credential.
+      # A direct Claude credential wins; OpenRouter is the fallback.
       - name: Route Claude Code through OpenRouter
-        if: env.OPENROUTER_API_KEY != ''
+        if: env.OPENROUTER_API_KEY != '' && env.CLAUDE_CODE_OAUTH_TOKEN == '' && env.ANTHROPIC_API_KEY == ''
         shell: bash
         run: |
           {
