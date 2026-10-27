@@ -144,8 +144,9 @@ def _release_state_lock(path: Path) -> None:
         pass
 
 
-def update_state(project: Path, phase: str | None = None, **fields) -> dict:
-    lock = _acquire_state_lock(project)
+def update_state(project: Path, phase: str | None = None, *, lock_timeout: float = STATE_LOCK_TIMEOUT_SECONDS,
+                 **fields) -> dict:
+    lock = _acquire_state_lock(project, lock_timeout)
     try:
         state = read_state(project)
         state.setdefault("schema_version", STATE_SCHEMA)

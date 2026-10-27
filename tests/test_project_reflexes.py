@@ -217,6 +217,25 @@ def test_existing_experiences_backfill_project_root_without_new_task(tmp_path):
         store.close()
 
 
+def test_matching_backfills_a_missing_root_once_and_never_rebuilds_it_per_prompt(tmp_path, monkeypatch):
+    from openreflex import reflexes
+
+    store = Store(tmp_path / "root-once.sqlite3")
+    try:
+        experience, outcome, calls = _experience(1)
+        for node in (outcome, experience, *calls):
+            store.put(node)
+        match_reflex(store, "Change the Helm values for worker resources", "build", "build")
+        assert any(item.id == reflexes.ROOT_REFLEX_ID for item in store.list_reflexes(limit=100)), "backfilled"
+
+        def rebuilt(*_args, **_kwargs):
+            raise AssertionError("root Reflex rebuilt from the whole history on a prompt")
+        monkeypatch.setattr(reflexes, "ensure_project_reflex", rebuilt)
+        match_reflex(store, "Change the Helm values for worker resources", "build", "build")
+    finally:
+        store.close()
+
+
 def test_matching_reflex_is_project_specific_and_similarity_gated(tmp_path):
     store = Store(tmp_path / "matching.sqlite3")
     try:

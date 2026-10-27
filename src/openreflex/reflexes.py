@@ -16,6 +16,7 @@ from .store import Store
 
 _VISIBLE_STATES = ("learned", "proven")
 PROJECT_ROOT_FAMILY = "project-root"
+ROOT_REFLEX_ID = "reflex-" + hashlib.sha1(f"project|{PROJECT_ROOT_FAMILY}".encode()).hexdigest()[:16]  # as _compile_family
 CREDIT_MODEL_VERSION = 2
 CREDIT_SPINE_MIN_KNOWN = 4
 CREDIT_SPINE_MIN_SUPPORT = 2
@@ -663,7 +664,12 @@ def _locality(description: str, reflex: ProjectReflex) -> float:
 def match_reflex(store: Store, description: str, task_mode: str, task_class: str,
                  threshold: float = 0.28, family_hints: set[str] | None = None) -> tuple[ProjectReflex, float] | None:
     """Resolve the strongest project Reflex using intent, family, locality and execution evidence."""
-    ensure_project_reflex(store)
+    # Every new Experience already recompiles the root Reflex (compile_for_experience); rebuilding it from the
+    # whole history on every prompt cost seconds once a project had thousands of experiences.
+    try:
+        store.get_reflex(ROOT_REFLEX_ID)
+    except ValueError:
+        ensure_project_reflex(store)  # backfill for databases written before the root Reflex existed
     query = embed(description)
     hints = _query_hints(description) | set(family_hints or ())
     # The project root is a baseline, not an intent hint; specific area/procedure Reflexes should win.

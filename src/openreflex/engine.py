@@ -556,7 +556,7 @@ class Engine:
         execution.context_tokens = self._injected_context_tokens(context)
         if substantial:
             self._record_decision(execution, "start", "recommend", paths[0], paths, now,
-                                  context_tokens=execution.context_tokens)
+                                  context_tokens=execution.context_tokens, experiences=retrieved)
         self.store.put(execution)
         self.store.bind_session(agent, session, execution.id)
         return execution, context
@@ -587,7 +587,7 @@ class Engine:
         execution.context_tokens = self._injected_context_tokens(context)
         if task.substantial:
             self._record_decision(execution, "start", "recommend", paths[0], paths, now,
-                                  context_tokens=execution.context_tokens)
+                                  context_tokens=execution.context_tokens, experiences=retrieved)
         self.store.put(execution)
         self.store.link(execution.id, "used", context.id)
         return context
@@ -626,9 +626,11 @@ class Engine:
                          actual_tokens: int | None = None, elapsed_seconds: float | None = None,
                          outcome: str | None = None, expected_regret: float | None = None,
                          model_tokens: int | None = None,
-                         token_usage: dict[str, int | float] | None = None) -> DecisionSnapshot:
+                         token_usage: dict[str, int | float] | None = None,
+                         experiences: list[tuple[Experience, float]] | None = None) -> DecisionSnapshot:
         task = self._task(execution)
-        experiences = self.retrieve(task.description, task.task_class) if task.substantial else []
+        if experiences is None:  # task start passes what it just retrieved instead of scanning the store again
+            experiences = self.retrieve(task.description, task.task_class) if task.substantial else []
         reflex_name = None
         if execution.reflex_id:
             try:

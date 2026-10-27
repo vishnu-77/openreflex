@@ -90,6 +90,21 @@ def test_default_timeout_reaches_stale_lock_reclaim(project):
         _release_state_lock(acquired)
 
 
+def test_status_line_update_skips_a_busy_lock_quickly_and_silently(project, isolated_home):
+    from openreflex import entrypoint
+
+    path = state_lock_path(project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{os.getpid()} {time.time()}\n", encoding="utf-8")
+    try:
+        started = time.monotonic()
+        entrypoint._tool_start_state(project, {"tool_name": "Read", "tool_input": {"file_path": "src/app.py"}})
+        assert time.monotonic() - started < 1, "a parallel hook must not stall on the status-line lock"
+    finally:
+        path.unlink(missing_ok=True)
+    assert not (isolated_home / "logs" / "errors.log").exists()
+
+
 def test_stale_reclaim_never_fires_for_a_freshly_held_lock(project):
     """Normal, briefly-held contention must not be mistaken for an abandoned lock."""
     path = state_lock_path(project)

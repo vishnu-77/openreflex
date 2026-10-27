@@ -283,8 +283,17 @@ def _tool_start_state(project: Path, payload: dict) -> None:
     mode = str((state.get("task") or {}).get("mode") or "build")
     phase = ("verify" if activity["category"] in {"test", "lint", "build"} else
              "investigate" if mode == "investigate" else "think" if mode == "think" else "watch")
-    update_state(project, phase, execution=execution, activity=activity,
-                 verification=activity["label"].lower() if phase == "verify" else None)
+    _live_state(project, phase, execution=execution, activity=activity,
+                verification=activity["label"].lower() if phase == "verify" else None)
+
+
+def _live_state(project: Path, phase: str, **fields) -> None:
+    """Status-line activity only: under parallel tool calls another hook holds the lock and its update
+    overwrites this one anyway, so skip quickly instead of stalling the tool call (and logging) for seconds."""
+    try:
+        update_state(project, phase, lock_timeout=0.2, **fields)
+    except TimeoutError:
+        pass
 
 
 def _runtime_status(project: Path, agent: str, session: str) -> dict | None:
@@ -310,8 +319,8 @@ def _tool_end_state(project: Path, payload: dict, *, failed: bool = False, agent
         execution["budget_used"] = status["budget_used"]
         if status["advice"] in {"pivot", "stop"}:
             phase = "pivot"
-    update_state(project, phase, execution=execution, activity=activity,
-                 verification=activity["label"].lower() if phase == "verify" else None)
+    _live_state(project, phase, execution=execution, activity=activity,
+                verification=activity["label"].lower() if phase == "verify" else None)
 
 
 def _needs_verification(output: str) -> bool:

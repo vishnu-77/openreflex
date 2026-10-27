@@ -2,6 +2,14 @@
 
 All notable changes to OpenReflex are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- The prompt hook no longer rebuilds the project Reflex from the whole history on every prompt (each new
+  experience already updates it), and task start reuses the experiences it just retrieved. At 3,000 stored
+  experiences a prompt now takes about 0.7 s instead of 2 to 2.5 s; replaying 13 real sessions, p50 fell from 83 ms to 27 ms.
+- Status-line activity updates wait at most 0.2 s for the state lock and skip quietly when another hook holds it,
+  instead of stalling the tool call for up to 2 s and logging an error. 64 parallel hook processes now log no errors.
+
 ## 0.10.0 (2026-10-26)
 
 Measured on 2,880 real Claude Code API calls: 56% of context tokens were history carried over from earlier prompts,
