@@ -203,7 +203,8 @@ def run_condition(harness: Harness, seed: Path, task: dict, condition: str, work
         "openreflex_context_delivered": bool(delivered),
         "target_rank_in_context": _target_rank(delivered, task["target"]),
         "tracked_files_in_project_map": tracked_files,
-        "stderr_tail": run["stderr"][-500:] if run["code"] != 0 else "",
+        # API errors (auth, unknown model) arrive as the result text with an empty stderr.
+        "stderr_tail": (run["stderr"] + str(run["result"].get("result") or ""))[-500:] if run["code"] != 0 else "",
     }
     shutil.rmtree(repo, ignore_errors=True)
     shutil.rmtree(home, ignore_errors=True)
@@ -344,6 +345,7 @@ def main() -> int:
                         f"found target: {report['found_correct_file']}, "
                         f"rank: {report['target_rank_in_context']}, "
                         f"{report['seconds']}s, cost ${report['total_cost_usd']}"
+                        + (f"\n    {report['stderr_tail'].strip()}" if report["stderr_tail"] else "")
                     )
 
         summary = _paired_summary(results, manifest, model)
