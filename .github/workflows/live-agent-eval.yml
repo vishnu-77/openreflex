@@ -25,8 +25,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Job-level `if` cannot read secrets, so a tiny job reports whether a credential exists.
+  # Without one the eval is skipped with a notice instead of failing every scheduled run.
+  credential:
+    runs-on: ubuntu-latest
+    outputs:
+      present: ${{ steps.check.outputs.present }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Live eval skipped: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN as a repository secret to enable it."
+          fi
+
   click-cold-start:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    needs: credential
+    if: >-
+      needs.credential.outputs.present == 'true' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     name: real Claude A/B · Click cold start
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -47,14 +69,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Require live-eval credential
-        shell: bash
-        run: |
-          if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
-            echo "Set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN as a repository secret for the live-agent evaluation." >&2
-            exit 1
-          fi
 
       - id: corpus
         name: Read pinned evaluation contract
