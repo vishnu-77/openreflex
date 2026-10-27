@@ -70,8 +70,9 @@ with sufficient repetitions and a predeclared quality/non-inferiority criterion.
 
 ## CI/CD
 
-`.github/workflows/live-agent-eval.yml` runs after successful Release workflows, weekly, and on manual dispatch. It requires either the repository
-secret `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`; without one the eval job is skipped with a notice. The workflow installs the pinned Claude Code version, checks out the exact corpus commit, runs the
+`.github/workflows/live-agent-eval.yml` runs after successful Release workflows, weekly, and on manual dispatch. It requires one of the repository
+secrets `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`; without one the eval job is skipped with a notice.
+With `OPENROUTER_API_KEY` set, Claude Code is routed through OpenRouter and the model is mapped to its `anthropic/...` name. The workflow installs the pinned Claude Code version, checks out the exact corpus commit, runs the
 paired evaluation, publishes a GitHub Actions job summary, and retains the raw JSON results as an artifact for 30 days.
 
 The normal `CI` workflow does not spend model tokens. It validates the evaluation manifest and summarisation logic
