@@ -2,7 +2,7 @@
 
 All notable changes to OpenReflex are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.10.1 (2026-10-27)
 
 - The prompt hook no longer rebuilds the project Reflex from the whole history on every prompt (each new
   experience already updates it), and task start reuses the experiences it just retrieved. At 3,000 stored
