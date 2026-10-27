@@ -46,7 +46,7 @@ def main() -> int:
         run("hook", "claude-code", event, stdin=json.dumps(payload))
     status = json.loads(run("status", "--json", "--project", str(project)))
     assert status["engagement"]["experiences"] == 1 and status["outcomes"]["success_rate"] == 1.0, status
-    assert "src/app.py" in run("context", "Fix date parsing in the importer", "--project", str(project))
+    assert "1 similar past task(s) here, 1 succeeded" in run("context", "Fix date parsing in the importer", "--project", str(project))
 
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
