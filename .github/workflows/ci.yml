@@ -28,6 +28,23 @@ jobs:
       - run: python -m ruff check src tests scripts
       - run: python -m pytest -q
 
+  plugin:
+    # The Claude Code pane (plugins/openreflex/hooks/pane.tsx) and the plugin manifest, as Claude Code loads them.
+    name: claude plugin validate + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate the plugin
+        run: pnpm dlx @anthropic-ai/claude-code@2.1.325 plugin validate plugins/openreflex
+      - name: Run the pane tests
+        run: pnpm dlx @anthropic-ai/claude-code@2.1.325 plugin test plugins/openreflex
+
   package:
     name: wheel smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

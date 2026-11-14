@@ -15,7 +15,10 @@ from openreflex.project_memory import build_snapshot, read_state, update_state
 from openreflex.tui import dashboard, statusline
 
 
-def test_statusline_uses_openreflex_brand_states_and_colours(project):
+def test_statusline_uses_openreflex_brand_states_and_colours(project, monkeypatch):
+    # A developer's NO_COLOR or TERM=dumb would turn the colours this test checks off.
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
     (project / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
     build_snapshot(project)
     update_state(project, "reflexing", memory="building")
