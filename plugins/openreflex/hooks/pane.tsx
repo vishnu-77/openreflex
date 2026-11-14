@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Capture, Recall, ReflexState } from '../types'
+import type { Capture, Evidence, Recall, ReflexState } from '../types'
 
 const PANE = 'openreflex'
 const TAG = '[OpenReflex]'
@@ -31,6 +31,29 @@ export function pickState(files: readonly ReflexState[], names: readonly string[
 
 /** OpenReflex is on for a project once it has learned or mapped anything there. */
 export const isOn = (s: ReflexState | null): boolean => s !== null && (s.project_enabled === true || s.phase !== undefined)
+
+const pct = (part: number, whole: number): string => (whole > 0 ? ` (${Math.round((100 * part) / whole)}%)` : '')
+
+/**
+ * Whether memory is used and checked, in words that claim no more than the data: "used" is never "helped",
+ * and the holdout gives no figure until both sides are large enough to read.
+ */
+export function evidenceRows(ev: Evidence | undefined): [string, string][] {
+  if (ev === undefined) return [['Evidence', 'updates at the next session start']]
+  const o = ev.outcomes ?? {}
+  const r = ev.recall ?? {}
+  const h = ev.holdout ?? {}
+  const tasks = ev.tasks ?? 0
+  const checked = `${n(o.verified)} verified · ${n(o.inferred)} inferred · ${n(o.unknown)} unknown of ${tasks} tasks`
+  const recall = (r.shown ?? 0) === 0
+    ? 'no past task recalled yet'
+    : `shown on ${n(r.shown)} tasks · used on ${n(r.used)}${pct(r.used ?? 0, r.shown ?? 0)}`
+  const change = h.tool_call_change
+  const holdout = change === null || change === undefined
+    ? `${n(h.held_out)} held out · ${n(h.shown)} shown · needs ${n(h.min_side)} each to compare`
+    : `tool calls ${change > 0 ? '+' : '−'}${Math.round(Math.abs(change) * 100)}% with OpenReflex (${n(h.shown)} vs ${n(h.held_out)} held out)`
+  return [['Checked', checked], ['Recall', recall], ['Holdout', holdout]]
+}
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 const ago = (ms: number): string => (ms < 60000 ? `${Math.max(0, Math.round(ms / 1000))} s` : `${Math.floor(ms / 60000)} min`)
@@ -133,6 +156,7 @@ export const register: Register = on => {
         row('Reflexes', `${n(st.reflexes_proven)} proven · ${n(st.reflexes_learning)} learning${st.project_reflex_state ? ` · project ${st.project_reflex_state}` : ''}`),
         row('Verify', `${st.verification ?? '—'} · ${n(st.verified)} verified`),
         row('Now', live),
+        ...evidenceRows(st.evidence).map(([label, text]) => row(label, text)),
       )
     }
 

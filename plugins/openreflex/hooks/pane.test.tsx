@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { isOn, pickState, reflexLines } from './pane'
+import { evidenceRows, isOn, pickState, reflexLines } from './pane'
 
 const PANE = {
   plugin: 'openreflex',
@@ -9,7 +9,8 @@ const PANE = {
   props: { title: 'OpenReflex', isFocused: false, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },
 } as const
 
-const ON = { project: 'opentrajectory', phase: 'ready', project_enabled: true, experiences: 15, lessons: 16, map_files: 115, updated_at: 20 }
+const ON = { project: 'opentrajectory', phase: 'ready', project_enabled: true, experiences: 15, lessons: 16, map_files: 115, updated_at: 20,
+  evidence: { tasks: 17, outcomes: { verified: 2, inferred: 6, unknown: 7 }, recall: { shown: 9, used: 2 }, holdout: { shown: 14, held_out: 0, min_side: 30, tool_call_change: null } } }
 
 test('only OpenReflex lines are kept, without the tag', () => {
   expect(reflexLines(['other hook', '[OpenReflex] Reflex: run tests · active.\n  [OpenReflex] Project memory: app.'])).toEqual([
@@ -57,6 +58,8 @@ test('the pane shows OpenReflex live: state, recall and each capture', async ($,
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Text', text: /● ready/ }))?.text).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /15 experiences/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /2 verified · 6 inferred/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /used on 2 \(22%\)/ }))?.text).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /run tests/ }))?.text).toBe('Reflex: run tests · active.')
   expect((await ui.find({ type: 'Text', text: /PostToolUse\s+Bash/ }))?.text).toBeDefined()
   await ui.unmount()
@@ -113,4 +116,27 @@ test('events OpenReflex does not capture leave no row', async ($, on) => {
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Text', text: /Nothing captured yet/ }))?.text).toBeDefined()
   await ui.unmount()
+})
+
+test('evidence says what was checked and used, never that memory helped', () => {
+  const rows = Object.fromEntries(evidenceRows({
+    tasks: 115,
+    outcomes: { verified: 0, inferred: 31, unknown: 84 },
+    recall: { shown: 18, used: 1 },
+    holdout: { shown: 115, held_out: 0, min_side: 30, tool_call_change: null },
+  }))
+  expect(rows.Checked).toBe('0 verified · 31 inferred · 84 unknown of 115 tasks')
+  expect(rows.Recall).toBe('shown on 18 tasks · used on 1 (6%)')
+  expect(rows.Holdout).toBe('0 held out · 115 shown · needs 30 each to compare')
+  expect(Object.values(rows).join(' ')).not.toMatch(/help|benefit|saved/i)
+})
+
+test('the holdout gives a figure only once both sides are large enough', () => {
+  const rows = Object.fromEntries(evidenceRows({ holdout: { shown: 40, held_out: 31, min_side: 30, tool_call_change: -0.124 } }))
+  expect(rows.Holdout).toBe('tool calls −12% with OpenReflex (40 vs 31 held out)')
+  expect(Object.fromEntries(evidenceRows({ recall: { shown: 0, used: 0 } })).Recall).toBe('no past task recalled yet')
+})
+
+test('a state file from before evidence existed says when it will appear', () => {
+  expect(evidenceRows(undefined)).toEqual([['Evidence', 'updates at the next session start']])
 })

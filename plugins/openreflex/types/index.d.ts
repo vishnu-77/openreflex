@@ -4,6 +4,14 @@ export type Recall = { at: number; when: string; lines: string[] }
 /** One hook event OpenReflex captured, as the pane saw it. */
 export type Capture = { at: number; event: string; tool?: string; failed?: boolean }
 
+/** Whether memory is used and checked (metrics.evidence): observations, not proof of benefit. */
+export type Evidence = {
+  tasks?: number
+  outcomes?: { verified?: number; inferred?: number; unknown?: number }
+  recall?: { shown?: number; used?: number }
+  holdout?: { shown?: number; held_out?: number; min_side?: number; tool_call_change?: number | null }
+}
+
 /** The fields of OpenReflex's own state.json the pane reads: its status-line cache. */
 export type ReflexState = {
   project?: string
@@ -28,6 +36,7 @@ export type ReflexState = {
   task?: { active?: boolean; mode?: string }
   activity?: { label?: string; status?: string; target?: string }
   execution?: { calls?: number }
+  evidence?: Evidence
   updated_at?: number
 }
 
