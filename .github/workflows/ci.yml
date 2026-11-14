@@ -79,3 +79,32 @@ jobs:
           path: |
             benchmark-results.json
             cold-start-results.json
+
+  nexus-eval:
+    # Measures how well Nexus-MCP code search finds the right file in this repo, against Grep and Read.
+    # Offline after a one-time ~130 MB model download, no LLM calls. Informational: never fails CI.
+    name: nexus-mcp-ci eval
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: nexus-mcp-model-v1
+      - run: python -m pip install "nexus-mcp-ci==2.4.6"
+      - name: Evaluate
+        shell: bash
+        run: |
+          set -o pipefail
+          nexus-mcp-ci eval . 2>&1 | tee nexus-eval.txt
+          cat nexus-eval.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nexus-eval
+          path: nexus-eval.txt
