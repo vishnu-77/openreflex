@@ -7,10 +7,17 @@ This is an audit artefact, NOT a security regression test to merge unchanged.
 
 import json
 import os
+import stat
 import tempfile
+import threading
+import urllib.request
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from openreflex.engine import Engine
+from openreflex.privacy import redact
+from openreflex.store import database_path
+from openreflex.usage import _Handler
 
 
 def main():
@@ -23,6 +30,28 @@ def main():
         project = root / "project"
         (project / ".git").mkdir(parents=True)
         engine = Engine(project)
+        # Permission bits alone do not establish another user's effective access:
+        # the TemporaryDirectory parent is mode 0700, but project DB policy matters.
+        db_mode = stat.S_IMODE(database_path(project).stat().st_mode)
+        # This alias is deliberately absent from the current minimal redaction regex.
+        passwd_fixture = "passwd=" + "SyntheticAuditValue9!"
+        passwd_redaction_missed = redact(passwd_fixture) == passwd_fixture
+
+        # Exercise only a disposable, loopback-bound HTTP server on an ephemeral port.
+        receiver = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        thread = threading.Thread(target=receiver.serve_forever, daemon=True)
+        thread.start()
+        try:
+            endpoint = "http://127.0.0.1:{}/shutdown".format(receiver.server_address[1])
+            with urllib.request.urlopen(
+                urllib.request.Request(endpoint, method="POST"), timeout=3
+            ) as response:
+                shutdown_without_auth = response.status == 200
+        finally:
+            receiver.shutdown()
+            receiver.server_close()
+            thread.join(timeout=3)
+
         try:
             engine.prompt(
                 "claude-code", "self-assert",
@@ -83,6 +112,10 @@ def main():
             report = {
                 "probe_version": "2026-11-14",
                 "model_calls": 0,
+                "database_permission_mode_octal": oct(db_mode),
+                "database_mode_grants_other_read": bool(db_mode & stat.S_IROTH),
+                "synthetic_passwd_assignment_not_redacted": passwd_redaction_missed,
+                "local_telemetry_shutdown_without_auth": shutdown_without_auth,
                 "self_reported_outcome_marked_verified_without_tool_calls": assertion_without_tools,
                 "deleted_experience_still_in_derived_reflex": deletion_left_stale_derived_reflex,
                 "reflex_support_before_deletion": original_support,
