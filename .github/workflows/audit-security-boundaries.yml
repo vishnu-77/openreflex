@@ -1,0 +1,28 @@
+name: Security boundary audit probes
+on:
+  pull_request:
+    paths:
+      - "scripts/audit_security_boundaries.py"
+      - ".github/workflows/audit-security-boundaries.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install OpenReflex for isolated tests
+        run: python -m pip install -e ".[dev]"
+      - name: Reproduce verification/retraction semantics
+        run: python scripts/audit_security_boundaries.py
+      - name: Publish audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-security-boundaries
+          path: audit-security-probe-results.json
+          if-no-files-found: warn
