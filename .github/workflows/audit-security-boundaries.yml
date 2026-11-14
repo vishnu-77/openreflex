@@ -50,6 +50,65 @@ jobs:
           p.unlink()
           print(json.dumps(sanitized, indent=2, sort_keys=True))
           PY
+      - name: Probe SecChecker AST and LLM analysis boundaries
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from tempfile import TemporaryDirectory
+          from secchecker.ast_scanner import scan_file_ast
+          from secchecker.llm_scanner import scan_file_llm
+
+          with TemporaryDirectory(prefix="secchecker-logic-audit-") as temp:
+              source = Path(temp) / "case.py"
+
+              source.write_text(
+                  "def first():\n"
+                  "    value = input()\n"
+                  "def second():\n"
+                  "    value = 'literal'\n"
+                  "    os.system(value)\n",
+                  encoding="utf-8",
+              )
+              wrong_cross_function_taint = (
+                  "AST - Tainted Input to Dangerous Sink" in scan_file_ast(str(source))
+              )
+
+              source.write_text(
+                  "def main():\n"
+                  "    first = input()\n"
+                  "    alias = first\n"
+                  "    os.system(alias)\n",
+                  encoding="utf-8",
+              )
+              missing_alias_propagation = (
+                  "AST - Tainted Input to Dangerous Sink" not in scan_file_ast(str(source))
+              )
+
+              source.write_text(
+                  "prompt = secret\n"
+                  "def ordinary():\n"
+                  "    return prompt\n"
+                  "def unrelated():\n"
+                  "    return client.chat.completions.create(model='x', messages=[])\n",
+                  encoding="utf-8",
+              )
+              unrelated_llm_sink_satisfies_file_guard = (
+                  "LLM - Secret Passed to LLM" in scan_file_llm(str(source))
+              )
+
+          report = {
+              "scope": "isolated deterministic parser/scanner behaviour, not exploitability",
+              "ast_cross_function_false_positive": wrong_cross_function_taint,
+              "ast_missing_alias_taint_propagation": missing_alias_propagation,
+              "llm_file_wide_sink_guard_false_positive": unrelated_llm_sink_satisfies_file_guard,
+          }
+          print(json.dumps(report, indent=2, sort_keys=True))
+          Path("audit-secchecker-logic.json").write_text(
+              json.dumps(report, indent=2), encoding="utf-8"
+          )
+          PY
       - name: Publish audit report
         if: always()
         uses: actions/upload-artifact@v4
@@ -58,4 +117,5 @@ jobs:
           path: |
             audit-security-probe-results.json
             audit-secchecker-summary.json
+            audit-secchecker-logic.json
           if-no-files-found: warn
