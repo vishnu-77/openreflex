@@ -9,7 +9,7 @@ import time
 from collections import Counter, defaultdict
 from statistics import mean
 
-from .engine import MARKERS, Engine
+from .engine import HARNESS_MESSAGE, MARKERS, Engine
 from .learning import realized_utility
 from .reflexes import reflex_summary
 
@@ -44,9 +44,14 @@ def retrospective_best(experiences) -> dict[str, str]:
 
 def project_metrics(engine: Engine, approval_record: dict | None = None, now: float | None = None) -> dict:
     store, now = engine.store, now or time.time()
-    tasks = store.list("Task", limit=100_000)
-    executions = store.list("Execution", limit=100_000)
-    experiences = sorted(store.list("Experience", limit=100_000), key=lambda x: x.created_at)
+    # Versions before 0.10.0 stored task notifications and subagent hand-backs as tasks of their own. They are not
+    # work a person asked for, so every count below leaves them out, judged by the rule new tasks already follow.
+    every_task = store.list("Task", limit=100_000)
+    machine = {t.id for t in every_task if HARNESS_MESSAGE.match((t.description or "").strip())}
+    tasks = [t for t in every_task if t.id not in machine]
+    executions = [e for e in store.list("Execution", limit=100_000) if e.task_id not in machine]
+    experiences = sorted((x for x in store.list("Experience", limit=100_000) if x.task_id not in machine),
+                         key=lambda x: x.created_at)
     contexts = {c.task_id: c for c in store.list("Context", limit=100_000)}
     reflexes = reflex_summary(store)
     task_by_id = {t.id: t for t in tasks}
@@ -162,7 +167,7 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
             "context_token_method": "estimated from injected characters / configured chars_per_token",
             "diagnostic_token_method": "estimated from MCP result characters / configured chars_per_token",
         },
-        "outcomes": {"known": len(known), "verified": sum(1 for o in store.list("Outcome", limit=100_000) if o.verified),
+        "outcomes": {"known": len(known), "verified": sum(1 for e in executions if getattr(outcomes_by_execution.get(e.id), "verified", False)),
                      "success_rate": _avg(x.status == "success" for x in known)},
         "efficiency_observational": {
             "with_prior_experience": with_prior_profile, "without_prior_experience": without_prior_profile,
