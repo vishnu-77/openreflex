@@ -49,7 +49,7 @@ async function refresh($: EngineInterface, force = false): Promise<void> {
   const dirs = await $.fs.list(`${home}/projects`).catch(() => [])
   const files: ReflexState[] = []
   for (const dir of dirs) {
-    if (dir.type !== 'dir') continue
+    if (dir.kind !== 'dir') continue
     const text = await $.fs.read(`${home}/projects/${dir.name}/state.json`).catch(() => '')
     try {
       if (text !== '') files.push(JSON.parse(text) as ReflexState)
