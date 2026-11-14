@@ -36,7 +36,8 @@ function engine(on: Parameters<Parameters<typeof test>[1]>[1], root: string, sta
   on('session.repo', () => ({ value: null }))
   on('fs.list', () => {
     if (listFails) throw new Error('EACCES: no such folder')
-    return { value: [{ name: 'abc', type: 'dir' }] }
+    // The shape the engine really returns (checked against Claude Code 2.1.325): a file beside the folder must be skipped.
+    return { value: [{ name: 'notes.txt', kind: 'file', size: 4, mtimeMs: 0, isLink: false }, { name: 'abc', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }
   })
   on('fs.read', () => ({ value: stateText }))
   on('command.register', () => ({ value: { command: 'openreflex-map' } }))
