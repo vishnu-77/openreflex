@@ -19,10 +19,43 @@ jobs:
         run: python -m pip install -e ".[dev]"
       - name: Reproduce verification/retraction semantics
         run: python scripts/audit_security_boundaries.py
+      - name: Run SecChecker static scan against OpenReflex
+        shell: bash
+        run: |
+          python -m pip install "git+https://github.com/vishnu-77/secchecker.git@71b9e3c704aa78d9cf425a4c6c2832d7d5ff523a"
+          rc=0
+          secchecker . --type all --format json --output audit-openreflex-raw.json --severity-threshold LOW || rc=$?
+          if [ "$rc" -ge 2 ]; then
+            echo "::error::SecChecker encountered a runtime error ($rc)"
+            exit "$rc"
+          fi
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("audit-openreflex-raw.json")
+          data = json.loads(p.read_text(encoding="utf-8"))
+          sanitized = {
+              "tool": "secchecker",
+              "source_revision": "71b9e3c704aa78d9cf425a4c6c2832d7d5ff523a",
+              "summary": data.get("summary"),
+              "finding_categories_by_file": {
+                  path: list(items.keys())
+                  for path, items in data.get("findings", {}).items()
+              },
+              "limitations": "Static matches require human triage; raw matches not retained in artifact",
+          }
+          Path("audit-secchecker-summary.json").write_text(
+              json.dumps(sanitized, indent=2, sort_keys=True), encoding="utf-8"
+          )
+          p.unlink()
+          print(json.dumps(sanitized, indent=2, sort_keys=True))
+          PY
       - name: Publish audit report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: audit-security-boundaries
-          path: audit-security-probe-results.json
+          path: |
+            audit-security-probe-results.json
+            audit-secchecker-summary.json
           if-no-files-found: warn
