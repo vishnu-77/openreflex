@@ -2,6 +2,14 @@
 
 All notable changes to OpenReflex are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 0.10.2 (2026-11-14)
+
+- Claude Code: a live OpenReflex pane opens beside the chat (`/openreflex-map` reopens it). It shows the project's
+  phase, memory, map, Reflexes, verification and current activity from the status-line cache, the latest recall, and
+  each prompt and tool call OpenReflex captures. In a project OpenReflex is not enabled for, it says so and shows
+  `openreflex approve`. Codex and Cursor are unaffected.
+- CI: an informational `nexus-mcp-ci eval` job measures code-search fit on this repository.
+
 ## 0.10.1 (2026-10-27)
 
 - The prompt hook no longer rebuilds the project Reflex from the whole history on every prompt (each new
