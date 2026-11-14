@@ -16,5 +16,6 @@
   ],
   "homepage": "https://github.com/vishnu-77/openreflex",
   "repository": "https://github.com/vishnu-77/openreflex",
-  "license": "MIT"
+  "license": "MIT",
+  "types": "./types/index.d.ts"
 }
