@@ -168,3 +168,12 @@ test('reflexes are counted as reflexes, without the proven/learned split', () =>
     .toBe('1 reflex · 2 learning · project reflex learning')
   expect(reflexText({})).toBe('0 reflexes · 0 learning')
 })
+
+test('pointers say how often they were used, against held-out tasks touching the files anyway', () => {
+  const rows = (pointers: object) => Object.fromEntries(evidenceRows({ pointers }))
+  expect(rows({}).Pointers).toBe('none yet: they fire on the first file a task touches')
+  expect(rows({ shown: 7, used: 4, held_out: 0, held_out_used: 0 }).Pointers).toBe('7 shown · used 4 (57%)')
+  expect(rows({ shown: 7, used: 4, held_out: 2, held_out_used: 1 }).Pointers)
+    .toBe('7 shown · used 4 (57%) · held out 2, touched anyway 1')
+  expect(Object.values(rows({ shown: 3, used: 3 })).join(' ')).not.toMatch(/help|benefit|saved/i)
+})

@@ -9,6 +9,7 @@ export type Evidence = {
   tasks?: number
   outcomes?: { independently_verified?: number; check_passed?: number; agent_reported?: number; inferred?: number; unknown?: number }
   recall?: { shown?: number; checkable?: number; used?: number; chance?: number | null }
+  pointers?: { shown?: number; used?: number; held_out?: number; held_out_used?: number }
   holdout?: { shown?: number; held_out?: number; min_side?: number; tool_call_change?: number | null; low?: number | null; high?: number | null }
 }
 

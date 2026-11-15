@@ -10,7 +10,7 @@ from pathlib import Path
 from . import control, detect, learning
 from .decision import DecisionSnapshot, make_snapshot, render_paths, render_recap, render_trace, render_why
 from .models import (HARNESS_MESSAGE, VERIFIED_LEVELS, CandidatePath, Context, Execution, Experience, Lesson, Outcome,
-                     ProjectReflex, Status, Task, ToolCall, evidence_level_of, is_harness_message, uid)
+                     ProjectReflex, Status, Task, ToolCall, ambient_text, evidence_level_of, is_harness_message, uid)
 from .policy import load_policy
 from .privacy import PROGRESS, categorize, error_signature, file_paths, fingerprint, redact
 from .routing import Budget, Limits, budget_for, candidates, classify, embed, limits_from_env, similarity, task_mode
@@ -30,7 +30,7 @@ UNTRACKED = "(task started without a captured prompt)"
 # Lessons about a concrete failure seen in this project; the other kinds are generic advice.
 SPECIFIC_LESSONS = {"resolution", "failure-loop"}
 # Execution.alerts markers that are not alert kinds.
-MARKERS = ("retry:", "fix:")
+MARKERS = ("retry:", "fix:", "pointer:")
 
 
 def is_substantial(prompt: str) -> bool:
@@ -92,7 +92,7 @@ class Engine:
                 )
             execution.pending_context = context.injected and not can_inject
             self.store.put(execution)
-        return context.text if context.injected and can_inject else None
+        return ambient_text(context) if context.injected and can_inject else None
 
     def take_pending_context(self, agent: str, session: str) -> str | None:
         with self.store.transaction():
@@ -112,7 +112,7 @@ class Engine:
         if execution.pending_context:
             context = next(iter(self.store.list("Context", "task_id", execution.task_id, limit=1)), None)
             if context is not None and context.injected:
-                parts.append(context.text)
+                parts.append(ambient_text(context))
         if execution.pending_alert:
             parts.append(execution.pending_alert)
         if execution.pending_context or execution.pending_alert:
@@ -193,7 +193,8 @@ class Engine:
             else:
                 for failed, resolver in learning.resolutions(calls):
                     self.store.link(failed.id, "resolved_by", resolver.id)
-            notes = (None if success else self._known_fix(execution, call), self._alert(execution, calls, now))
+            notes = (self._pointer(execution, call) if success else self._known_fix(execution, call),
+                     self._alert(execution, calls, now))
             message = self._deliver(execution, " ".join(note for note in notes if note) or None, deliverable)
             self.store.put(execution)
             return message
@@ -623,11 +624,14 @@ class Engine:
             retrieved = self.retrieve(task.description, task.task_class) if task.substantial else []
         experiences = [e for e, _ in retrieved]
         lessons = self.lessons(experiences)
+        # Injected text is re-read on every later API call, so inject only what is specific to this task: a lesson
+        # about a failure seen here. A matched Reflex stays internal (ADR 0001, Phase B): its procedure is a generic
+        # sequence of tool categories, and recall by prompt wording named the wrong files on real projects.
         text = render_context(task, paths, retrieved, lessons, budget, self.policy, reflex)
-        # Injected text is re-read on every later API call, so inject only what is specific to this task: a matched
-        # Reflex or a lesson about a failure seen here. A similar-task count or novelty note gives nothing to act on.
-        specific = task.substantial and bool(reflex or any(lesson.kind in SPECIFIC_LESSONS for lesson, _, _ in lessons))
-        context = Context(task_id=task.id, text=text, experience_ids=[e.id for e in experiences],
+        injected_text = render_context(task, paths, retrieved, lessons, budget, self.policy, procedure=False)
+        specific = task.substantial and any(lesson.kind in SPECIFIC_LESSONS for lesson, _, _ in lessons)
+        context = Context(task_id=task.id, text=text, injected_text=injected_text,
+                          experience_ids=[e.id for e in experiences],
                           lesson_ids=[lesson.id for lesson, _, _ in lessons],
                           reflex_id=reflex.id if reflex else None,
                           injected=specific and not holdout, held_out=specific and holdout)
@@ -642,7 +646,7 @@ class Engine:
     def _injected_context_tokens(self, context: Context) -> int:
         if not context.injected:
             return 0
-        return round(len(context.text) / self.policy.number("context.chars_per_token"))
+        return round(len(ambient_text(context)) / self.policy.number("context.chars_per_token"))
 
     def _record_decision(self, execution: Execution, phase: str, action: str, best: CandidatePath | None,
                          paths: list[CandidatePath], now: float, *, context_tokens: int = 0,
@@ -707,6 +711,30 @@ class Engine:
             return None
         execution.alerts.append(marker)
         return f"OpenReflex: this error was resolved before in this project: {known.text}"
+
+    def _pointer(self, execution: Execution, call: ToolCall) -> str | None:
+        """After the first file a task touches, the files earlier tasks worked on together with it (ADR 0001, Phase B).
+
+        A situation trigger: on real projects these hit 4 of 7 times where pointers recalled by prompt wording hit
+        0 of 11. Fires once per task; the marker records what was pointed at, so use can be measured.
+        """
+        if not call.files or any(a.startswith("pointer:") for a in execution.alerts):
+            return None
+        task = self._task(execution)
+        if not task.substantial:
+            return None
+        first = call.files[0]
+        together: Counter = Counter()
+        for experience in self.store.list("Experience", limit=self.policy.integer("engine.max_store_scan")):
+            if experience.execution_id == execution.id or is_harness_message(experience.description)                     or first not in experience.files:
+                continue
+            together.update(f for f in set(experience.files) if f != first)
+        pointed = [(path, count) for path, count in together.most_common(3)]
+        execution.alerts.append("pointer:" + "|".join(path for path, _ in pointed))
+        if not pointed:
+            return None
+        listed = ", ".join(f"{path} ({count} task{'s' if count != 1 else ''})" for path, count in pointed)
+        return f"[OpenReflex] Earlier tasks that touched {first} also worked on: {listed}."
 
     def _held_out(self, session: str, description: str) -> bool:
         """A stable share of tasks where OpenReflex records but stays silent: the comparison group for its effect."""
@@ -913,7 +941,8 @@ class Engine:
 
 def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple[Experience, float]],
                    lessons: list[tuple[Lesson, float, int]], budget: Budget | None = None, policy=None,
-                   reflex: ProjectReflex | None = None) -> str:
+                   reflex: ProjectReflex | None = None, procedure: bool = True) -> str:
+    """The context text. procedure=False leaves out the generic working approach (what the model is handed)."""
     cfg = policy or load_policy()
     experiences = [e for e, _ in retrieved]
     succeeded = sum(e.status == "success" for e in experiences)
@@ -940,7 +969,8 @@ def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple
                   if task.novelty == "novel" else
                   f"{len(experiences)} similar past task(s) here, {succeeded} succeeded.")
         lines = [f"[OpenReflex] {task.task_mode.upper()} · {task.task_class} | {recall}"]
-        lines.append("Working approach: " + " -> ".join(best.steps))
+        if procedure:
+            lines.append("Working approach: " + " -> ".join(best.steps))
     if budget is not None:
         lines.append(f"Budget: ~{budget.tool_calls:.0f} tool calls, ~{budget.seconds / 60:.0f} min, "
                      f"~{budget.context_tokens / 1000:.0f}k tokens of tool output"

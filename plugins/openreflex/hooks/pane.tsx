@@ -65,7 +65,13 @@ export function evidenceRows(ev: Evidence | undefined): [string, string][] {
     h.high === null || h.high === undefined
     ? `${n(h.held_out)} held out · ${n(h.shown)} shown · needs ${n(h.min_side)} each to compare`
     : `calls ${signed(change)} (95%: ${signed(h.low)} to ${signed(h.high)}) · ${n(h.shown)} vs ${n(h.held_out)} held out`
-  return [['Checked', checked], ['Recall', recall], ['Holdout', holdout]]
+  // First-file pointers: used when shown, set against how often held-out tasks touched those files anyway.
+  const p = ev.pointers ?? {}
+  const pointers = (p.shown ?? 0) === 0 && (p.held_out ?? 0) === 0
+    ? 'none yet: they fire on the first file a task touches'
+    : `${n(p.shown)} shown · used ${n(p.used)}${pct(p.used ?? 0, p.shown ?? 0)}` +
+      ((p.held_out ?? 0) > 0 ? ` · held out ${n(p.held_out)}, touched anyway ${n(p.held_out_used)}` : '')
+  return [['Checked', checked], ['Recall', recall], ['Pointers', pointers], ['Holdout', holdout]]
 }
 
 /** Every Reflex OpenReflex has learned is a Reflex: the proven/learned split stays inside OpenReflex, not on screen. */

@@ -104,7 +104,10 @@ class Task(Model):
 @dataclass(kw_only=True)
 class Context(Model):
     task_id: str
-    text: str
+    text: str  # the full plan, as an explicit request (MCP get_execution_context) shows it
+    # What is handed to the model unasked, when injected: specific lessons, no procedure (ADR 0001, Phase B).
+    # "" on rows written before it existed; read through ambient_text().
+    injected_text: str = ""
     experience_ids: list[str] = field(default_factory=list)
     lesson_ids: list[str] = field(default_factory=list)
     injected: bool = False
@@ -214,6 +217,11 @@ def evidence_level_of(outcome: "Outcome | None") -> str:
     if outcome.evidence_level:
         return outcome.evidence_level
     return "agent_reported" if outcome.verified else "observed"
+
+
+def ambient_text(context: "Context") -> str:
+    """The text OpenReflex hands the model without being asked; older rows only have the full text."""
+    return context.injected_text or context.text
 
 
 def is_verified(outcome: "Outcome | None") -> bool:

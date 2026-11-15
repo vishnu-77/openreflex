@@ -596,14 +596,18 @@ def test_contextual_followup_reuses_shared_runner_area_without_mcp(engine, clock
     assert len(learned) == 1
 
     clock.advance(20)
-    context = engine.prompt(
+    injected = engine.prompt(
         "claude-code",
         first_session,
         "Where is the implementation plan committed?",
     )
-    assert context is not None
-    assert "Reflex: Bitbucket runner work" in context
-    assert "Project-area memory:" in context
-    assert "Procedure:" not in context
-    assert "test-first" not in context
-    assert "inspect-first" not in context
+    # ADR 0001, Phase B: matched, kept internal; the full plan (explicit requests) still names the area Reflex.
+    assert injected is None
+    follow_up = engine.store.latest("claude-code", first_session)
+    context = engine.store.list("Context", "task_id", follow_up.task_id, limit=1)[0]
+    assert context.reflex_id == learned[0].id and not context.injected
+    assert "Reflex: Bitbucket runner work" in context.text
+    assert "Project-area memory:" in context.text
+    assert "Procedure:" not in context.text
+    assert "test-first" not in context.text
+    assert "inspect-first" not in context.text
