@@ -23,7 +23,7 @@ from .project import approval, approve, log_error, project_root
 from .project_map import enrich_snapshot
 from .project_memory import ensure_background_refresh, load_snapshot, read_state, run_worker, update_state
 from .privacy import categorize, file_paths
-from .reflex_index import reinforce_latest_execution, session_facts, sync_counts
+from .reflex_index import refresh_evidence, reinforce_latest_execution, session_facts, sync_counts
 from .tui import claude_project_from_stdin, dashboard, statusline
 
 PROMPT_EVENTS = {"UserPromptSubmit"}
@@ -430,6 +430,7 @@ def _hook(argv: list[str]) -> int:
                                              agent=agent, session=session), None)
     elif enabled and event in STOP_EVENTS:
         _best_effort("reinforce outcome", lambda: _stop_state(project, agent, session, output, payload), None)
+        _best_effort("refresh evidence", lambda: refresh_evidence(project), False)
 
     if output:
         sys.stdout.write(output)

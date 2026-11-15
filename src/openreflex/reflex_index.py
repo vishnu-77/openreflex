@@ -116,12 +116,31 @@ def _evidence(engine: Engine) -> dict:
     return evidence(engine)
 
 
+# The pane's evidence is refreshed at most this often by Stop; a full count refresh is too slow for every Stop.
+EVIDENCE_REFRESH_SECONDS = 300
+
+
+def refresh_evidence(project: Path, now: float | None = None) -> bool:
+    """Recompute only the pane's evidence after a task ends, throttled. Returns whether it was recomputed."""
+    from .project_memory import read_state
+
+    at = time.time() if now is None else now
+    if at - float(read_state(project).get("evidence_at") or 0) < EVIDENCE_REFRESH_SECONDS:
+        return False
+    engine = Engine(project)
+    try:
+        update_state(project, evidence=_evidence(engine), evidence_at=round(at, 3))
+        return True
+    finally:
+        engine.close()
+
+
 def sync_counts(project: Path) -> dict[str, object]:
     """Refresh lightweight UI counts from the local Experience Graph."""
     engine = Engine(project)
     try:
         counts = _counts(engine)
-        update_state(project, **counts)
+        update_state(project, **counts, evidence_at=round(time.time(), 3))
         return counts
     finally:
         engine.close()

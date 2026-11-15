@@ -8,8 +8,8 @@ export type Capture = { at: number; event: string; tool?: string; failed?: boole
 export type Evidence = {
   tasks?: number
   outcomes?: { verified?: number; inferred?: number; unknown?: number }
-  recall?: { shown?: number; used?: number }
-  holdout?: { shown?: number; held_out?: number; min_side?: number; tool_call_change?: number | null }
+  recall?: { shown?: number; checkable?: number; used?: number; chance?: number | null }
+  holdout?: { shown?: number; held_out?: number; min_side?: number; tool_call_change?: number | null; low?: number | null; high?: number | null }
 }
 
 /** The fields of OpenReflex's own state.json the pane reads: its status-line cache. */

@@ -5,9 +5,10 @@ did and did not receive prior experience are observational and confounded by tas
 module provides the controlled (simulated) comparison.
 """
 
+import math
 import time
 from collections import Counter, defaultdict
-from statistics import mean
+from statistics import mean, variance
 
 from .engine import HARNESS_MESSAGE, MARKERS, Engine
 from .learning import realized_utility
@@ -86,28 +87,52 @@ def evidence(engine: Engine) -> dict:
 
     contexts = {c.task_id: c for c in store.list("Context", limit=100_000)}
     files_of = {x.id: set(x.files) for x in experiences}
-    shown = used = 0
-    for x in experiences:
+    mine = [x for x in experiences if x.task_id in substantial]
+    recalled_of, sources_of = {}, {}
+    for x in mine:
         context = contexts.get(x.task_id)
-        if x.task_id not in substantial or context is None or not context.injected or not context.experience_ids:
-            continue
-        shown += 1
-        recalled = set().union(*(files_of.get(i, set()) for i in context.experience_ids))
-        used += bool(recalled & set(x.files))
+        if context is not None and context.injected and context.experience_ids:
+            sources_of[x.id] = set(context.experience_ids)
+            recalled_of[x.id] = set().union(*(files_of.get(i, set()) for i in context.experience_ids))
+    # Use is judged by files, so it can be judged only when the recall named files and the task touched some.
+    checkable = [x for x in mine if recalled_of.get(x.id) and x.files]
+    used = sum(1 for x in checkable if recalled_of[x.id] & set(x.files))
+    # Chance: how often a task shown nothing touched the files a recall named anyway, averaged over recalls. The
+    # recalled experiences themselves are left out: their own tasks touched those files by definition.
+    unshown = [x for x in mine if x.id not in recalled_of and x.files]
+    rates = []
+    for x in checkable:
+        others = [set(u.files) for u in unshown if u.id not in sources_of[x.id]]
+        if others:
+            rates.append(sum(1 for files in others if recalled_of[x.id] & files) / len(others))
+    chance = round(mean(rates), 3) if rates else None
 
     holdout_of = {e.id: e.holdout for e in executions if e.task_id in substantial}
     sides = {True: [], False: []}
-    for x in experiences:
+    for x in mine:
         if x.execution_id in holdout_of:
             sides[holdout_of[x.execution_id]].append(x.tool_calls)
-    enough = min(len(sides[True]), len(sides[False])) >= MIN_HOLDOUT_SIDE
     return {
         "tasks": len(substantial),
         "outcomes": {"verified": verified, "inferred": inferred, "unknown": unknown},
-        "recall": {"shown": shown, "used": used},
+        "recall": {"shown": len(recalled_of), "checkable": len(checkable), "used": used, "chance": chance},
         "holdout": {"shown": len(sides[False]), "held_out": len(sides[True]), "min_side": MIN_HOLDOUT_SIDE,
-                    "tool_call_change": _change(_avg(sides[True]), _avg(sides[False])) if enough else None},
+                    **_typical_change(sides[False], sides[True])},
     }
+
+
+def _typical_change(shown: list[int], held: list[int]) -> dict:
+    """Change in typical tool calls, shown against held out, with a 95% interval; none until both sides are large.
+
+    Tool calls are skewed, so the comparison is of means of log(1 + calls): a change in the geometric mean.
+    """
+    if min(len(shown), len(held)) < MIN_HOLDOUT_SIDE:
+        return {"tool_call_change": None, "low": None, "high": None}
+    a, b = [math.log1p(v) for v in shown], [math.log1p(v) for v in held]
+    diff = mean(a) - mean(b)
+    spread = 1.96 * math.sqrt(variance(a) / len(a) + variance(b) / len(b))
+    return {"tool_call_change": round(math.expm1(diff), 3), "low": round(math.expm1(diff - spread), 3),
+            "high": round(math.expm1(diff + spread), 3)}
 
 
 def project_metrics(engine: Engine, approval_record: dict | None = None, now: float | None = None) -> dict:

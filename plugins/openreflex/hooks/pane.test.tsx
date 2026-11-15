@@ -10,7 +10,7 @@ const PANE = {
 } as const
 
 const ON = { project: 'opentrajectory', phase: 'ready', project_enabled: true, experiences: 15, lessons: 16, map_files: 115, updated_at: 20,
-  evidence: { tasks: 17, outcomes: { verified: 2, inferred: 6, unknown: 7 }, recall: { shown: 9, used: 2 }, holdout: { shown: 14, held_out: 0, min_side: 30, tool_call_change: null } } }
+  evidence: { tasks: 17, outcomes: { verified: 2, inferred: 6, unknown: 7 }, recall: { shown: 9, checkable: 3, used: 2, chance: 0.556 }, holdout: { shown: 14, held_out: 0, min_side: 30, tool_call_change: null, low: null, high: null } } }
 
 test('only OpenReflex lines are kept, without the tag', () => {
   expect(reflexLines(['other hook', '[OpenReflex] Reflex: run tests · active.\n  [OpenReflex] Project memory: app.'])).toEqual([
@@ -57,9 +57,9 @@ test('the pane shows OpenReflex live: state, recall and each capture', async ($,
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Text', text: /● ready/ }))?.text).toBeDefined()
-  expect((await ui.find({ type: 'Text', text: /15 experiences/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /15 stored experiences/ }))?.text).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /2 verified · 6 inferred/ }))?.text).toBeDefined()
-  expect((await ui.find({ type: 'Text', text: /used on 2 \(22%\)/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /used 2 \(67%\) · chance 56%/ }))?.text).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /run tests/ }))?.text).toBe('Reflex: run tests · active.')
   expect((await ui.find({ type: 'Text', text: /PostToolUse\s+Bash/ }))?.text).toBeDefined()
   await ui.unmount()
@@ -122,19 +122,28 @@ test('evidence says what was checked and used, never that memory helped', () => 
   const rows = Object.fromEntries(evidenceRows({
     tasks: 115,
     outcomes: { verified: 0, inferred: 31, unknown: 84 },
-    recall: { shown: 18, used: 1 },
-    holdout: { shown: 115, held_out: 0, min_side: 30, tool_call_change: null },
+    recall: { shown: 18, checkable: 4, used: 1, chance: 0.088 },
+    holdout: { shown: 115, held_out: 0, min_side: 30, tool_call_change: null, low: null, high: null },
   }))
   expect(rows.Checked).toBe('0 verified · 31 inferred · 84 unknown of 115 tasks')
-  expect(rows.Recall).toBe('shown on 18 tasks · used on 1 (6%)')
+  // Use is a share of the recalls that can be judged, set against chance: never of every recall.
+  expect(rows.Recall).toBe('18 shown · 4 checkable · used 1 (25%) · chance 9%')
   expect(rows.Holdout).toBe('0 held out · 115 shown · needs 30 each to compare')
   expect(Object.values(rows).join(' ')).not.toMatch(/help|benefit|saved/i)
 })
 
-test('the holdout gives a figure only once both sides are large enough', () => {
-  const rows = Object.fromEntries(evidenceRows({ holdout: { shown: 40, held_out: 31, min_side: 30, tool_call_change: -0.124 } }))
-  expect(rows.Holdout).toBe('tool calls −12% with OpenReflex (40 vs 31 held out)')
+test('a recall that cannot be judged is not counted as unused', () => {
+  const rows = Object.fromEntries(evidenceRows({ recall: { shown: 1, checkable: 0, used: 0, chance: null } }))
+  expect(rows.Recall).toBe('1 shown · none checkable yet (no files on both sides)')
   expect(Object.fromEntries(evidenceRows({ recall: { shown: 0, used: 0 } })).Recall).toBe('no past task recalled yet')
+})
+
+test('the holdout gives a change only with its 95% range', () => {
+  const full = { shown: 40, held_out: 35, min_side: 30, tool_call_change: -0.357, low: -0.495, high: -0.18 }
+  expect(Object.fromEntries(evidenceRows({ holdout: full })).Holdout).toBe('calls −36% (95%: −50% to −18%) · 40 vs 35 held out')
+  // A change without its range is never shown on its own.
+  const bare = { ...full, low: null, high: null }
+  expect(Object.fromEntries(evidenceRows({ holdout: bare })).Holdout).toBe('35 held out · 40 shown · needs 30 each to compare')
 })
 
 test('a state file from before evidence existed says when it will appear', () => {
