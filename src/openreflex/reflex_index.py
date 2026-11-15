@@ -106,7 +106,14 @@ def _counts(engine: Engine) -> dict[str, object]:
         "reflexes_learning": reflexes["learning"],
         "reflexes_learned": reflexes["learned"],
         "reflexes_proven": reflexes["proven"],
+        "evidence": _evidence(engine),
     }
+
+
+def _evidence(engine: Engine) -> dict:
+    from .metrics import evidence  # metrics imports the reflex modules; import late to keep the graph acyclic
+
+    return evidence(engine)
 
 
 def sync_counts(project: Path) -> dict[str, object]:

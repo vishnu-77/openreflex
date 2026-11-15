@@ -9,7 +9,7 @@ import time
 from collections import Counter, defaultdict
 from statistics import mean
 
-from .engine import MARKERS, Engine
+from .engine import HARNESS_MESSAGE, MARKERS, Engine
 from .learning import realized_utility
 from .reflexes import reflex_summary
 
@@ -42,11 +42,77 @@ def retrospective_best(experiences) -> dict[str, str]:
     return best
 
 
+def _counted(store):
+    """Tasks, executions and experiences of work a person asked for.
+
+    Versions before 0.10.0 stored task notifications and subagent hand-backs as tasks of their own; they are left
+    out by the rule new tasks already follow, so status and the pane count the same tasks.
+    """
+    every_task = store.list("Task", limit=100_000)
+    machine = {t.id for t in every_task if HARNESS_MESSAGE.match((t.description or "").strip())}
+    tasks = [t for t in every_task if t.id not in machine]
+    executions = [e for e in store.list("Execution", limit=100_000) if e.task_id not in machine]
+    experiences = sorted((x for x in store.list("Experience", limit=100_000) if x.task_id not in machine),
+                         key=lambda x: x.created_at)
+    return tasks, executions, experiences
+
+
+# Fewer held-out tasks than this per side and the pane says the comparison has too little data to read.
+MIN_HOLDOUT_SIDE = 30
+
+
+def evidence(engine: Engine) -> dict:
+    """Whether OpenReflex's memory is being used and checked, for the pane: observations, not proof of benefit.
+
+    - outcomes: verified (a check passed) against inferred (the task ended) and unknown.
+    - recall: tasks shown past experiences, and of those, tasks that then touched a file those experiences touched.
+    - holdout: shown against held-out substantial tasks, and the tool-call change once both sides are large enough.
+    """
+    store = engine.store
+    tasks, executions, experiences = _counted(store)
+    substantial = {t.id for t in tasks if t.substantial}
+    outcomes = {o.execution_id: o for o in store.list("Outcome", limit=100_000)}
+    verified = inferred = unknown = 0
+    for execution in executions:
+        outcome = outcomes.get(execution.id)
+        if execution.task_id not in substantial or outcome is None:
+            continue
+        if outcome.verified:
+            verified += 1
+        elif outcome.status == "unknown":
+            unknown += 1
+        else:
+            inferred += 1
+
+    contexts = {c.task_id: c for c in store.list("Context", limit=100_000)}
+    files_of = {x.id: set(x.files) for x in experiences}
+    shown = used = 0
+    for x in experiences:
+        context = contexts.get(x.task_id)
+        if x.task_id not in substantial or context is None or not context.injected or not context.experience_ids:
+            continue
+        shown += 1
+        recalled = set().union(*(files_of.get(i, set()) for i in context.experience_ids))
+        used += bool(recalled & set(x.files))
+
+    holdout_of = {e.id: e.holdout for e in executions if e.task_id in substantial}
+    sides = {True: [], False: []}
+    for x in experiences:
+        if x.execution_id in holdout_of:
+            sides[holdout_of[x.execution_id]].append(x.tool_calls)
+    enough = min(len(sides[True]), len(sides[False])) >= MIN_HOLDOUT_SIDE
+    return {
+        "tasks": len(substantial),
+        "outcomes": {"verified": verified, "inferred": inferred, "unknown": unknown},
+        "recall": {"shown": shown, "used": used},
+        "holdout": {"shown": len(sides[False]), "held_out": len(sides[True]), "min_side": MIN_HOLDOUT_SIDE,
+                    "tool_call_change": _change(_avg(sides[True]), _avg(sides[False])) if enough else None},
+    }
+
+
 def project_metrics(engine: Engine, approval_record: dict | None = None, now: float | None = None) -> dict:
     store, now = engine.store, now or time.time()
-    tasks = store.list("Task", limit=100_000)
-    executions = store.list("Execution", limit=100_000)
-    experiences = sorted(store.list("Experience", limit=100_000), key=lambda x: x.created_at)
+    tasks, executions, experiences = _counted(store)
     contexts = {c.task_id: c for c in store.list("Context", limit=100_000)}
     reflexes = reflex_summary(store)
     task_by_id = {t.id: t for t in tasks}
@@ -162,7 +228,7 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
             "context_token_method": "estimated from injected characters / configured chars_per_token",
             "diagnostic_token_method": "estimated from MCP result characters / configured chars_per_token",
         },
-        "outcomes": {"known": len(known), "verified": sum(1 for o in store.list("Outcome", limit=100_000) if o.verified),
+        "outcomes": {"known": len(known), "verified": sum(1 for e in executions if getattr(outcomes_by_execution.get(e.id), "verified", False)),
                      "success_rate": _avg(x.status == "success" for x in known)},
         "efficiency_observational": {
             "with_prior_experience": with_prior_profile, "without_prior_experience": without_prior_profile,
