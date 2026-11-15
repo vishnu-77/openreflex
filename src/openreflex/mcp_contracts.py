@@ -103,7 +103,8 @@ class ExperienceReuseMetrics(BaseModel):
 
 class OutcomeMetrics(BaseModel):
     known: int = Field(ge=0, description="Experiences whose outcome is success or failure rather than unknown.")
-    verified: int = Field(ge=0, description="Outcomes explicitly verified by the agent or user.")
+    verified: int = Field(ge=0, description="Outcomes with a check seen passing after the last edit, or independently "
+                                            "verified. An agent's own report does not count.")
     success_rate: float | None = Field(description="Success rate among experiences with known outcomes.")
 
 
@@ -152,7 +153,7 @@ class ProjectReflexMetrics(BaseModel):
     specialised_total: int = Field(ge=0, description="Number of specialised area/procedure Reflexes.")
     learning: int = Field(ge=0, description="Specialised Reflexes still accumulating evidence.")
     learned: int = Field(ge=0, description="Specialised Reflexes promoted after repeated successful executions.")
-    proven: int = Field(ge=0, description="Specialised Reflexes backed by repeated explicitly verified evidence.")
+    proven: int = Field(ge=0, description="Specialised Reflexes backed by repeated checks seen passing.")
     stale: int = Field(ge=0, description="Previously learned Reflexes contradicted by newer evidence.")
     credit_signals: int = Field(ge=0, description="Action-level execution-credit signals stored across surfaced Reflexes.")
     credit_spine_actions: int = Field(

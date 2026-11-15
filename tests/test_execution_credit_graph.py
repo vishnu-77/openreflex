@@ -13,6 +13,7 @@ def _record(store, index, categories, *, verified=True, status="success", repeat
         status=status,
         evidence="verification observed" if verified else "inferred",
         verified=verified,
+        evidence_level="check_passed" if verified else "observed",
         elapsed_seconds=30,
         tool_calls=len(categories),
         failures=0 if status == "success" else 1,

@@ -12,7 +12,7 @@ const PANE = {
 const ON = { project: 'opentrajectory', phase: 'ready', project_enabled: true, experiences: 15, lessons: 16, map_files: 115, updated_at: 20,
   // verified here is the unfiltered store count; the pane must show only evidence.outcomes.verified.
   reflexes_proven: 0, reflexes_learned: 22, reflexes_learning: 90, verification: 'test', verified: 1,
-  evidence: { tasks: 17, outcomes: { verified: 2, inferred: 6, unknown: 7 }, recall: { shown: 9, checkable: 3, used: 2, chance: 0.556 }, holdout: { shown: 14, held_out: 0, min_side: 30, tool_call_change: null, low: null, high: null } } }
+  evidence: { tasks: 17, outcomes: { independently_verified: 0, check_passed: 2, agent_reported: 1, inferred: 5, unknown: 7 }, recall: { shown: 9, checkable: 3, used: 2, chance: 0.556 }, holdout: { shown: 14, held_out: 0, min_side: 30, tool_call_change: null, low: null, high: null } } }
 
 test('only OpenReflex lines are kept, without the tag', () => {
   expect(reflexLines(['other hook', '[OpenReflex] Reflex: run tests · active.\n  [OpenReflex] Project memory: app.'])).toEqual([
@@ -60,14 +60,14 @@ test('the pane shows OpenReflex live: state, recall and each capture', async ($,
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Text', text: /● ready/ }))?.text).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /15 stored experiences/ }))?.text).toBeDefined()
-  expect((await ui.find({ type: 'Text', text: /2 verified · 6 inferred/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /2 check passed · 1 agent said · 5 inferred · 7 unknown$/ }))?.text).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /used 2 \(67%\) · chance 56%/ }))?.text).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /22 reflexes · 90 learning/ }))?.text).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /proven/ })).toBeUndefined()
   expect((await ui.find({ type: 'Text', text: /last check: test/ }))?.text).toBeDefined()
-  // One verified count on screen, the filtered one: never a second that disagrees with it.
-  const verifiedCounts = (await ui.findAll({ type: 'Text', text: /\d+ verified/ })).map(t => t.text.match(/(\d+) verified/)?.[1])
-  expect(new Set(verifiedCounts)).toEqual(new Set(['2']))
+  // No bare "verified" on screen: the old store count (verified: 1) must not reappear, and a passing check is not
+  // called verified. Only independently verified outcomes would say so, and there are none here.
+  expect(await ui.find({ type: 'Text', text: /verified/ })).toBeUndefined()
   expect((await ui.find({ type: 'Text', text: /run tests/ }))?.text).toBe('Reflex: run tests · active.')
   expect((await ui.find({ type: 'Text', text: /PostToolUse\s+Bash/ }))?.text).toBeDefined()
   await ui.unmount()
@@ -129,11 +129,14 @@ test('events OpenReflex does not capture leave no row', async ($, on) => {
 test('evidence says what was checked and used, never that memory helped', () => {
   const rows = Object.fromEntries(evidenceRows({
     tasks: 115,
-    outcomes: { verified: 0, inferred: 31, unknown: 84 },
+    outcomes: { independently_verified: 0, check_passed: 0, agent_reported: 0, inferred: 31, unknown: 84 },
     recall: { shown: 18, checkable: 4, used: 1, chance: 0.088 },
     holdout: { shown: 115, held_out: 0, min_side: 30, tool_call_change: null, low: null, high: null },
   }))
-  expect(rows.Checked).toBe('0 verified · 31 inferred · 84 unknown of 115 tasks')
+  expect(rows.Checked).toBe('0 check passed · 0 agent said · 31 inferred · 84 unknown')
+  // Independently verified outcomes are named only when there are some: no source produces them yet.
+  const external = Object.fromEntries(evidenceRows({ tasks: 3, outcomes: { independently_verified: 1, check_passed: 2 } }))
+  expect(external.Checked).toBe('1 independently verified · 2 check passed · 0 agent said · 0 inferred · 0 unknown')
   // Use is a share of the recalls that can be judged, set against chance: never of every recall.
   expect(rows.Recall).toBe('18 shown · 4 checkable · used 1 (25%) · chance 9%')
   expect(rows.Holdout).toBe('0 held out · 115 shown · needs 30 each to compare')

@@ -10,7 +10,7 @@ from collections import Counter
 from pathlib import PurePosixPath
 
 from .learning import resolutions
-from .models import Experience, ProjectReflex, ToolCall
+from .models import Experience, ProjectReflex, ToolCall, is_verified
 from .routing import embed, similarity
 from .store import Store
 
@@ -308,7 +308,7 @@ def execution_credit_graph(
         resolver_categories = {fixed.category for _, fixed in resolutions(calls)}
         verified = bool(
             item.status == "success"
-            and getattr(outcomes_by_id.get(item.outcome_id), "verified", False)
+            and is_verified(outcomes_by_id.get(item.outcome_id))
         )
         records.append({
             "experience": item,
@@ -506,7 +506,7 @@ def _compile_family(
         outcomes_by_id = outcomes_by_id or cached_outcomes
 
     verified = sum(
-        int(bool(getattr(outcomes_by_id.get(item.outcome_id), "verified", False)))
+        int(is_verified(outcomes_by_id.get(item.outcome_id)))
         for item in successes
     )
 

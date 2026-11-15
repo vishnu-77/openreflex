@@ -41,14 +41,27 @@ def infer_status(calls: list[ToolCall], task_mode: str = "build",
             return "failure", "evidence gathering failed (inferred)"
         return "unknown", "analysis ended without enough observable completion evidence"
 
-    last_edit = max((i for i, c in enumerate(calls) if c.category == "edit" and c.status == "success"), default=-1)
-    checks = [c for c in calls[last_edit + 1:] if c.category in VERIFICATION and c.status != "running"]
-    if not checks:
+    last = _last_check(calls)
+    if last is None:
         return "unknown", "no verification observed after the last edit"
-    last = checks[-1]
     if last.status == "success":
         return "success", f"{last.category} passed after the last edit (inferred)"
     return "failure", f"last {last.category} after the last edit failed (inferred)"
+
+
+def _last_check(calls: list[ToolCall]) -> ToolCall | None:
+    """The last finished test, lint or build call after the last successful edit, if any."""
+    last_edit = max((i for i, c in enumerate(calls) if c.category == "edit" and c.status == "success"), default=-1)
+    checks = [c for c in calls[last_edit + 1:] if c.category in VERIFICATION and c.status != "running"]
+    return checks[-1] if checks else None
+
+
+def observed_level(calls: list[ToolCall], task_mode: str = "build") -> str:
+    """Evidence level of an inferred outcome: check_passed when a check passed after the last edit of build work."""
+    if task_mode != "build":
+        return "observed"
+    last = _last_check(calls)
+    return "check_passed" if last is not None and last.status == "success" else "observed"
 
 
 def infer_strategy(calls: list[ToolCall], task_mode: str = "build") -> str | None:

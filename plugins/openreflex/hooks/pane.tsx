@@ -44,7 +44,14 @@ export function evidenceRows(ev: Evidence | undefined): [string, string][] {
   const o = ev.outcomes ?? {}
   const r = ev.recall ?? {}
   const h = ev.holdout ?? {}
-  const checked = `${n(o.verified)} verified · ${n(o.inferred)} inferred · ${n(o.unknown)} unknown of ${n(ev.tasks)} tasks`
+  // Each evidence level by its own name (ADR 0001): a passing check is "check passed", never "verified" or "correct".
+  const checked = [
+    ...((o.independently_verified ?? 0) > 0 ? [`${n(o.independently_verified)} independently verified`] : []),
+    `${n(o.check_passed)} check passed`,
+    `${n(o.agent_reported)} agent said`,
+    `${n(o.inferred)} inferred`,
+    `${n(o.unknown)} unknown`,  // the parts add up to the task count; saying it again overflows a panel line
+  ].join(' · ')
   const shown = r.shown ?? 0
   const checkable = r.checkable ?? 0
   const recall = shown === 0

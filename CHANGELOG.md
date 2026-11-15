@@ -2,6 +2,28 @@
 
 All notable changes to OpenReflex are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Evidence levels (ADR 0001, decision 1): every outcome records `observed`, `agent_reported`, `check_passed` or
+  `independently_verified` (reserved, no source yet). A test, lint or build seen passing after the last edit is
+  `check_passed`. That is now what "verified" means in `status`, Reflex maturity and file support. An agent's
+  `record_outcome` report is `agent_reported` and is never verified on its own. It still survives later inference,
+  keeps stronger evidence it agrees with, wins when it reports failure despite a passing check, and is upgraded
+  when a check later passes for the success it reported.
+- The pane's Checked row names each level: check passed, agent said, inferred, unknown.
+
+### Migration
+
+- Nothing is rewritten. Outcomes stored before levels are read conservatively: `verified=true` from older versions
+  only ever came from the agent's own report, so it now reads as `agent_reported`, not verified. Projects can show
+  fewer verified outcomes and fewer proven Reflexes until checks are seen passing again. That is the intended
+  correction, not data loss.
+- The stored `verified` field is still written (as check passed or stronger) for anything reading it directly.
+- Outcomes written by this version carry `evidence_level`. Older versions refuse unknown fields, so downgrading
+  after upgrading is not supported (as with 0.10.0's token fields).
+- MCP: `record_outcome` keeps its signature; its description now says it records the agent's report.
+  `get_project_insights` `outcomes.verified` counts checks seen passing, not reports.
+
 ## 0.10.2 (2026-11-14)
 
 - Claude Code: a live OpenReflex pane opens beside the chat (`/openreflex-map` reopens it). It shows the project's

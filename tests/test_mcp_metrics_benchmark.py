@@ -43,7 +43,8 @@ def test_mcp_tools_require_approval_then_work(project, clock):
     outcome = tool_text(server, "record_outcome", {"status": "success", "evidence": "pytest passed"})
     assert outcome.startswith("Outcome recorded: success")
     insights = json.loads(tool_text(server, "get_project_insights", {}))
-    assert insights["outcomes"]["verified"] == 1
+    # record_outcome is the agent's own report: recorded, but not verified (ADR 0001).
+    assert insights["outcomes"]["verified"] == 0
     # A task with real tool activity becomes an experience that can be searched for and forgotten.
     engine = Engine(project, clock=clock)
     try:

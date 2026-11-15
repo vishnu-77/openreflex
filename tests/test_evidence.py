@@ -26,16 +26,18 @@ def factory(tmp_path, clock):
     return lambda project: Engine(project, Store(database), clock=clock)
 
 
-def test_outcomes_separate_verified_from_inferred(project, factory, clock):
+def test_outcomes_are_counted_per_evidence_level(project, factory, clock):
     approve(project)
-    run_task(project, factory, clock, "inferred")
-    run_task(project, factory, clock, "checked")
-    engine = factory(project)
-    latest = engine.store.latest("claude-code", "checked")
-    engine.record_outcome("success", "pytest -q: 12 passed", latest.id)
+    run_task(project, factory, clock, "checked")  # edits, then a passing check: check_passed
+    base = {"session_id": "said", "cwd": str(project)}
+    call("claude-code", "UserPromptSubmit", {**base, "prompt": "Rename the billing helper to match the new API"}, factory)
+    payload = {**base, "tool_name": "Edit", "tool_input": {"file_path": "src/billing.py"}, "tool_use_id": "b1"}
+    call("claude-code", "PreToolUse", payload, factory)
+    call("claude-code", "PostToolUse", {**payload, "tool_response": {"stdout": "ok"}}, factory)
+    factory(project).record_outcome("success", "renamed")  # no check after the edit: only the agent's word
     outcomes = evidence(factory(project))["outcomes"]
-    assert outcomes["verified"] == 1
-    assert outcomes["verified"] + outcomes["inferred"] + outcomes["unknown"] == 2
+    assert outcomes == {"independently_verified": 0, "check_passed": 1, "agent_reported": 1, "inferred": 0,
+                        "unknown": 0}
 
 
 def test_recall_counts_shown_and_used_separately(project, factory, clock):

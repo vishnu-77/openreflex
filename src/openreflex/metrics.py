@@ -11,6 +11,7 @@ from collections import Counter, defaultdict
 from statistics import mean, variance
 
 from .engine import HARNESS_MESSAGE, MARKERS, Engine
+from .models import evidence_level_of, is_verified
 from .learning import realized_utility
 from .reflexes import reflex_summary
 
@@ -65,7 +66,8 @@ MIN_HOLDOUT_SIDE = 30
 def evidence(engine: Engine) -> dict:
     """Whether OpenReflex's memory is being used and checked, for the pane: observations, not proof of benefit.
 
-    - outcomes: verified (a check passed) against inferred (the task ended) and unknown.
+    - outcomes: by evidence level (ADR 0001), never merged: independently verified, check passed, agent reported,
+      inferred (the task ended with a known status and nothing stronger) and unknown.
     - recall: tasks shown past experiences, and of those, tasks that then touched a file those experiences touched.
     - holdout: shown against held-out substantial tasks, and the tool-call change once both sides are large enough.
     """
@@ -73,17 +75,14 @@ def evidence(engine: Engine) -> dict:
     tasks, executions, experiences = _counted(store)
     substantial = {t.id for t in tasks if t.substantial}
     outcomes = {o.execution_id: o for o in store.list("Outcome", limit=100_000)}
-    verified = inferred = unknown = 0
+    levels = Counter()
     for execution in executions:
         outcome = outcomes.get(execution.id)
         if execution.task_id not in substantial or outcome is None:
             continue
-        if outcome.verified:
-            verified += 1
-        elif outcome.status == "unknown":
-            unknown += 1
-        else:
-            inferred += 1
+        level = evidence_level_of(outcome)
+        levels["unknown" if level == "observed" and outcome.status == "unknown" else
+               "inferred" if level == "observed" else level] += 1
 
     contexts = {c.task_id: c for c in store.list("Context", limit=100_000)}
     files_of = {x.id: set(x.files) for x in experiences}
@@ -114,7 +113,8 @@ def evidence(engine: Engine) -> dict:
             sides[holdout_of[x.execution_id]].append(x.tool_calls)
     return {
         "tasks": len(substantial),
-        "outcomes": {"verified": verified, "inferred": inferred, "unknown": unknown},
+        "outcomes": {key: levels[key] for key in
+                     ("independently_verified", "check_passed", "agent_reported", "inferred", "unknown")},
         "recall": {"shown": len(recalled_of), "checkable": len(checkable), "used": used, "chance": chance},
         "holdout": {"shown": len(sides[False]), "held_out": len(sides[True]), "min_side": MIN_HOLDOUT_SIDE,
                     **_typical_change(sides[False], sides[True])},
@@ -253,7 +253,7 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
             "context_token_method": "estimated from injected characters / configured chars_per_token",
             "diagnostic_token_method": "estimated from MCP result characters / configured chars_per_token",
         },
-        "outcomes": {"known": len(known), "verified": sum(1 for e in executions if getattr(outcomes_by_execution.get(e.id), "verified", False)),
+        "outcomes": {"known": len(known), "verified": sum(1 for e in executions if is_verified(outcomes_by_execution.get(e.id))),
                      "success_rate": _avg(x.status == "success" for x in known)},
         "efficiency_observational": {
             "with_prior_experience": with_prior_profile, "without_prior_experience": without_prior_profile,

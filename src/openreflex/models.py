@@ -36,6 +36,11 @@ def one_of(choices: tuple[str, ...], default: str | None = None):
 Status = Literal["success", "failure", "unknown"]
 STATUSES = get_args(Status)
 
+# How strong an outcome's evidence is, weakest first (ADR 0001, decision 1). A passing check proves the check
+# passed, not that the task is correct; an agent's own report is never verified on its own.
+EVIDENCE_LEVELS = ("observed", "agent_reported", "check_passed", "independently_verified")
+VERIFIED_LEVELS = frozenset({"check_passed", "independently_verified"})
+
 
 @dataclass(kw_only=True)
 class Model:
@@ -170,7 +175,9 @@ class Outcome(Model):
     execution_id: str
     status: str = one_of(STATUSES)
     evidence: str
-    verified: bool = False
+    verified: bool = False  # kept for older readers; written as is_verified(self), never set directly
+    # "" = written before evidence levels existed; read through evidence_level_of().
+    evidence_level: str = one_of(("",) + EVIDENCE_LEVELS, "")
     elapsed_seconds: float
     tool_calls: int
     failures: int
@@ -188,6 +195,21 @@ class Outcome(Model):
     @property
     def model_tokens(self) -> int:
         return self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_creation_tokens
+
+
+def evidence_level_of(outcome: "Outcome | None") -> str:
+    """The outcome's evidence level. Outcomes stored before levels existed are read conservatively: only the agent's
+    own record_outcome call ever set verified=True then, so that becomes agent_reported, anything else observed."""
+    if outcome is None:
+        return "observed"
+    if outcome.evidence_level:
+        return outcome.evidence_level
+    return "agent_reported" if outcome.verified else "observed"
+
+
+def is_verified(outcome: "Outcome | None") -> bool:
+    """Verified means a check was seen passing or stronger; an agent's report alone never is."""
+    return evidence_level_of(outcome) in VERIFIED_LEVELS
 
 
 @dataclass(kw_only=True)

@@ -83,6 +83,7 @@ def _experience(index: int, *, verified: bool = True) -> tuple[Experience, Outco
         status="success",
         evidence="helm lint passed",
         verified=verified,
+        evidence_level="check_passed" if verified else "observed",
         elapsed_seconds=90,
         tool_calls=3,
         failures=0,

@@ -109,25 +109,36 @@ def test_repeated_stop_and_session_end_do_not_double_count_execution_evidence(pr
     assert auth["verified_successes"] == 1
 
 
-def test_explicit_verification_upgrades_existing_observation_without_counting_a_second_execution(project, clock):
+def test_a_check_passing_after_an_agent_report_upgrades_without_counting_a_second_execution(project, clock):
+    # ADR 0001: an agent's report is not verification, so the upgrade that remains is a check seen passing later
+    # in the same execution. It strengthens the evidence of the one observation; it is not a second execution.
     _project_with_auth(project)
+    edit, test = FIX_SCRIPT[3], FIX_SCRIPT[4]
 
     engine = Engine(project, clock=clock)
     try:
-        outcome, _ = run_task(engine, clock, "s1", "Fix the login bug where expired tokens are accepted", FIX_SCRIPT)
+        engine.prompt("claude-code", "s1", "Fix the login bug where expired tokens are accepted")
+        engine.tool_start("claude-code", "s1", "t1", edit[0], edit[1])
+        engine.tool_end("claude-code", "s1", "t1", edit[0], edit[1], True)
+        outcome = engine.record_outcome("success", "looks fixed")
     finally:
         engine.close()
 
-    assert outcome.status == "success" and not outcome.verified
+    assert outcome.status == "success" and outcome.evidence_level == "agent_reported" and not outcome.verified
     reinforce_latest_execution(project, "claude-code", "s1")
     observed = _auth_memory(project)
     assert observed["observations"] == 1 and observed["verified_successes"] == 0
 
     engine = Engine(project, clock=clock)
     try:
-        engine.record_outcome("success", "pytest passed", execution_id=outcome.execution_id)
+        clock.advance(30)
+        engine.tool_start("claude-code", "s1", "t2", test[0], test[1])
+        engine.tool_end("claude-code", "s1", "t2", test[0], test[1], True)
+        engine.stop("claude-code", "s1")
+        stored = engine.store.get("out-" + outcome.execution_id)
     finally:
         engine.close()
+    assert stored.evidence_level == "check_passed" and stored.verified
     reinforce_latest_execution(project, "claude-code", "s1")
 
     verified = _auth_memory(project)
