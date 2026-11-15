@@ -9,7 +9,8 @@ from pathlib import Path
 
 from . import control, detect, learning
 from .decision import DecisionSnapshot, make_snapshot, render_paths, render_recap, render_trace, render_why
-from .models import CandidatePath, Context, Execution, Experience, Lesson, Outcome, ProjectReflex, Status, Task, ToolCall, uid
+from .models import (VERIFIED_LEVELS, CandidatePath, Context, Execution, Experience, Lesson, Outcome, ProjectReflex, Status,
+                     Task, ToolCall, evidence_level_of, uid)
 from .policy import load_policy
 from .privacy import PROGRESS, categorize, error_signature, file_paths, fingerprint, redact
 from .routing import Budget, Limits, budget_for, candidates, classify, embed, limits_from_env, similarity, task_mode
@@ -346,7 +347,7 @@ class Engine:
             execution = self.store.get(execution_id) if execution_id else self.current_execution()
             if execution is None:
                 raise ValueError("No execution to record an outcome for")
-            return self._finalize(execution, status=status, evidence=redact(evidence, 500), verified=True)
+            return self._finalize(execution, status=status, evidence=redact(evidence, 500))
 
     def forget_experience(self, experience_id: str) -> dict[str, int]:
         """Delete one past task and everything learned from it; returns how many nodes of each kind were removed."""
@@ -778,7 +779,9 @@ class Engine:
         return " ".join(parts)
 
     def _finalize(self, execution: Execution, status: Status | None = None, evidence: str | None = None,
-                  verified: bool = False, assistant_completed: bool = False) -> Outcome:
+                  assistant_completed: bool = False) -> Outcome:
+        """Record the outcome. An explicit status is the agent's own report (record_outcome); without one, the
+        status is inferred from the calls seen, at check_passed when a check passed after the last edit."""
         now = self.clock()
         calls = self._calls(execution.id)
         stale = self.policy.number("engine.stale_running_call_seconds")
@@ -791,11 +794,21 @@ class Engine:
         task = self._task(execution)
         outcome_id = "out-" + execution.id
         existing = self.store.get(outcome_id) if self.store.exists(outcome_id) else None
+        kept = evidence_level_of(existing) if existing is not None else None
         if status is None:
-            if existing is not None and existing.verified:
-                status, evidence, verified = existing.status, existing.evidence, True
-            else:
-                status, evidence = learning.infer_status(calls, task.task_mode, assistant_completed)
+            status, evidence = learning.infer_status(calls, task.task_mode, assistant_completed)
+            level = learning.observed_level(calls, task.task_mode)
+            # A later Stop keeps an explicit report, unless a check then passed for the success it reported. An
+            # inferred check_passed is recomputed instead: an edit after the check means it no longer covers the work.
+            upgraded = kept == "agent_reported" and level == "check_passed" and existing.status == status == "success"
+            if kept in {"agent_reported", "independently_verified"} and not upgraded:
+                status, evidence, level = existing.status, existing.evidence, kept
+        else:
+            level = "agent_reported"
+            # An agent report agreeing with stronger evidence keeps it; one that disagrees (the check passed but the
+            # agent says the task failed) wins, because a passing check does not prove the task is done.
+            if kept in VERIFIED_LEVELS and status == existing.status:
+                level, evidence = kept, existing.evidence
         paths = self.store.list("CandidatePath", "task_id", task.id)
         chosen = self.store.get(execution.chosen_path_id) if execution.chosen_path_id and not execution.chosen_inferred else None
         if chosen is None:
@@ -805,7 +818,8 @@ class Engine:
         from .usage import usage_totals
         usage = usage_totals(self.store, execution.id)
         outcome = Outcome(id=outcome_id, execution_id=execution.id, status=status, evidence=evidence or "",
-                          verified=verified, elapsed_seconds=round(learning.active_seconds(execution, calls, now), 1),
+                          verified=level in VERIFIED_LEVELS, evidence_level=level,
+                          elapsed_seconds=round(learning.active_seconds(execution, calls, now), 1),
                           tool_calls=len(calls), failures=sum(c.status == "failure" for c in calls),
                           output_tokens_estimate=execution.output_tokens_estimate,
                           chosen_strategy=chosen.strategy if chosen else None,
@@ -894,7 +908,7 @@ def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple
                     + " -> ".join(str(signal["action"]) for signal in spine[:5])
                     + "."
                 )
-        lines.append(f"Evidence: {reflex.success_count} successful / {reflex.verified_count} verified project run(s).")
+        lines.append(f"Evidence: {reflex.success_count} successful / {reflex.verified_count} with a check seen passing.")
         text = "\n".join(lines)
         max_chars = cfg.integer("context.reflex_max_chars")
         return text if len(text) <= max_chars else text[: max_chars - 1] + "..."

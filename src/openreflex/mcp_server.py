@@ -307,7 +307,9 @@ def build_server(project: Path) -> FastMCP:
                                        description="Short proof of the result, e.g. 'pytest tests/test_auth.py "
                                                    "passed' or 'user confirmed the fix'. Secrets are redacted.")],
     ) -> str:
-        """Record the verified outcome of the most recent task and learn from it.
+        """Record your reported outcome of the most recent task and learn from it.
+        Evidence: stored as agent_reported. A report never counts as verified on its own; a test, lint or build seen
+        passing after the last edit does, and an agreeing report keeps that stronger evidence.
         Returns: the recorded status plus a plain-language Path check. A better path is only named when comparable
         completed tasks provide evidence; otherwise the result says that no better option is proven.
         Use when: the result is confirmed: tests/lint/build passed, research was cross-checked against relevant

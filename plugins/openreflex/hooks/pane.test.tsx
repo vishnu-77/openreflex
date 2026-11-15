@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { evidenceRows, isOn, pickState, reflexLines } from './pane'
+import { evidenceRows, isOn, pickState, reflexLines, reflexText } from './pane'
 
 const PANE = {
   plugin: 'openreflex',
@@ -10,7 +10,9 @@ const PANE = {
 } as const
 
 const ON = { project: 'opentrajectory', phase: 'ready', project_enabled: true, experiences: 15, lessons: 16, map_files: 115, updated_at: 20,
-  evidence: { tasks: 17, outcomes: { verified: 2, inferred: 6, unknown: 7 }, recall: { shown: 9, used: 2 }, holdout: { shown: 14, held_out: 0, min_side: 30, tool_call_change: null } } }
+  // verified here is the unfiltered store count; the pane must show only evidence.outcomes.verified.
+  reflexes_proven: 0, reflexes_learned: 22, reflexes_learning: 90, verification: 'test', verified: 1,
+  evidence: { tasks: 17, outcomes: { independently_verified: 0, check_passed: 2, agent_reported: 1, inferred: 5, unknown: 7 }, recall: { shown: 9, checkable: 3, used: 2, chance: 0.556 }, holdout: { shown: 14, held_out: 0, min_side: 30, tool_call_change: null, low: null, high: null } } }
 
 test('only OpenReflex lines are kept, without the tag', () => {
   expect(reflexLines(['other hook', '[OpenReflex] Reflex: run tests · active.\n  [OpenReflex] Project memory: app.'])).toEqual([
@@ -57,9 +59,15 @@ test('the pane shows OpenReflex live: state, recall and each capture', async ($,
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Text', text: /● ready/ }))?.text).toBeDefined()
-  expect((await ui.find({ type: 'Text', text: /15 experiences/ }))?.text).toBeDefined()
-  expect((await ui.find({ type: 'Text', text: /2 verified · 6 inferred/ }))?.text).toBeDefined()
-  expect((await ui.find({ type: 'Text', text: /used on 2 \(22%\)/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /15 stored experiences/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /2 check passed · 1 agent said · 5 inferred · 7 unknown$/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /used 2 \(67%\) · chance 56%/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /22 reflexes · 90 learning/ }))?.text).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /proven/ })).toBeUndefined()
+  expect((await ui.find({ type: 'Text', text: /last check: test/ }))?.text).toBeDefined()
+  // No bare "verified" on screen: the old store count (verified: 1) must not reappear, and a passing check is not
+  // called verified. Only independently verified outcomes would say so, and there are none here.
+  expect(await ui.find({ type: 'Text', text: /verified/ })).toBeUndefined()
   expect((await ui.find({ type: 'Text', text: /run tests/ }))?.text).toBe('Reflex: run tests · active.')
   expect((await ui.find({ type: 'Text', text: /PostToolUse\s+Bash/ }))?.text).toBeDefined()
   await ui.unmount()
@@ -121,22 +129,42 @@ test('events OpenReflex does not capture leave no row', async ($, on) => {
 test('evidence says what was checked and used, never that memory helped', () => {
   const rows = Object.fromEntries(evidenceRows({
     tasks: 115,
-    outcomes: { verified: 0, inferred: 31, unknown: 84 },
-    recall: { shown: 18, used: 1 },
-    holdout: { shown: 115, held_out: 0, min_side: 30, tool_call_change: null },
+    outcomes: { independently_verified: 0, check_passed: 0, agent_reported: 0, inferred: 31, unknown: 84 },
+    recall: { shown: 18, checkable: 4, used: 1, chance: 0.088 },
+    holdout: { shown: 115, held_out: 0, min_side: 30, tool_call_change: null, low: null, high: null },
   }))
-  expect(rows.Checked).toBe('0 verified · 31 inferred · 84 unknown of 115 tasks')
-  expect(rows.Recall).toBe('shown on 18 tasks · used on 1 (6%)')
+  expect(rows.Checked).toBe('0 check passed · 0 agent said · 31 inferred · 84 unknown')
+  // Independently verified outcomes are named only when there are some: no source produces them yet.
+  const external = Object.fromEntries(evidenceRows({ tasks: 3, outcomes: { independently_verified: 1, check_passed: 2 } }))
+  expect(external.Checked).toBe('1 independently verified · 2 check passed · 0 agent said · 0 inferred · 0 unknown')
+  // Use is a share of the recalls that can be judged, set against chance: never of every recall.
+  expect(rows.Recall).toBe('18 shown · 4 checkable · used 1 (25%) · chance 9%')
   expect(rows.Holdout).toBe('0 held out · 115 shown · needs 30 each to compare')
   expect(Object.values(rows).join(' ')).not.toMatch(/help|benefit|saved/i)
 })
 
-test('the holdout gives a figure only once both sides are large enough', () => {
-  const rows = Object.fromEntries(evidenceRows({ holdout: { shown: 40, held_out: 31, min_side: 30, tool_call_change: -0.124 } }))
-  expect(rows.Holdout).toBe('tool calls −12% with OpenReflex (40 vs 31 held out)')
+test('a recall that cannot be judged is not counted as unused', () => {
+  const rows = Object.fromEntries(evidenceRows({ recall: { shown: 1, checkable: 0, used: 0, chance: null } }))
+  expect(rows.Recall).toBe('1 shown · none checkable yet (no files on both sides)')
   expect(Object.fromEntries(evidenceRows({ recall: { shown: 0, used: 0 } })).Recall).toBe('no past task recalled yet')
+})
+
+test('the holdout gives a change only with its 95% range', () => {
+  const full = { shown: 40, held_out: 35, min_side: 30, tool_call_change: -0.357, low: -0.495, high: -0.18 }
+  expect(Object.fromEntries(evidenceRows({ holdout: full })).Holdout).toBe('calls −36% (95%: −50% to −18%) · 40 vs 35 held out')
+  // A change without its range is never shown on its own.
+  const bare = { ...full, low: null, high: null }
+  expect(Object.fromEntries(evidenceRows({ holdout: bare })).Holdout).toBe('35 held out · 40 shown · needs 30 each to compare')
 })
 
 test('a state file from before evidence existed says when it will appear', () => {
   expect(evidenceRows(undefined)).toEqual([['Evidence', 'updates at the next session start']])
+})
+
+test('reflexes are counted as reflexes, without the proven/learned split', () => {
+  expect(reflexText({ reflexes_proven: 2, reflexes_learned: 20, reflexes_learning: 90, project_reflex_state: 'learned' }))
+    .toBe('22 reflexes · 90 learning · project reflex ready')
+  expect(reflexText({ reflexes_learned: 1, reflexes_learning: 2, project_reflex_state: 'candidate' }))
+    .toBe('1 reflex · 2 learning · project reflex learning')
+  expect(reflexText({})).toBe('0 reflexes · 0 learning')
 })

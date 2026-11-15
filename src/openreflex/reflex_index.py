@@ -17,6 +17,7 @@ from collections import Counter
 from pathlib import Path
 
 from .engine import Engine
+from .models import VERIFIED_LEVELS, is_verified
 from .project_memory import load_snapshot, snapshot_path, update_state
 from .reflexes import reflex_summary
 
@@ -98,7 +99,8 @@ def _counts(engine: Engine) -> dict[str, object]:
     reflexes = reflex_summary(engine.store)
     return {
         "experiences": engine.store.count("Experience"),
-        "verified": engine.store.count("Outcome", "verified", True),
+        # Rows written before evidence levels have none, so an agent's old self-report is not counted here.
+        "verified": sum(engine.store.count("Outcome", "evidence_level", level) for level in sorted(VERIFIED_LEVELS)),
         "known_outcomes": outcomes - unknown,
         "lessons": engine.store.count("Lesson"),
         "project_reflex_state": reflexes["project_state"],
@@ -116,12 +118,31 @@ def _evidence(engine: Engine) -> dict:
     return evidence(engine)
 
 
+# The pane's evidence is refreshed at most this often by Stop; a full count refresh is too slow for every Stop.
+EVIDENCE_REFRESH_SECONDS = 300
+
+
+def refresh_evidence(project: Path, now: float | None = None) -> bool:
+    """Recompute only the pane's evidence after a task ends, throttled. Returns whether it was recomputed."""
+    from .project_memory import read_state
+
+    at = time.time() if now is None else now
+    if at - float(read_state(project).get("evidence_at") or 0) < EVIDENCE_REFRESH_SECONDS:
+        return False
+    engine = Engine(project)
+    try:
+        update_state(project, evidence=_evidence(engine), evidence_at=round(at, 3))
+        return True
+    finally:
+        engine.close()
+
+
 def sync_counts(project: Path) -> dict[str, object]:
     """Refresh lightweight UI counts from the local Experience Graph."""
     engine = Engine(project)
     try:
         counts = _counts(engine)
-        update_state(project, **counts)
+        update_state(project, **counts, evidence_at=round(time.time(), 3))
         return counts
     finally:
         engine.close()
@@ -192,15 +213,16 @@ def reinforce_latest_execution(project: Path, agent: str, session: str) -> dict:
         experience = experiences[0] if experiences else None
         if outcome is not None and experience is not None and outcome.status != "unknown":
             marker = f"reflex-index-evidence:{execution.id}"
-            current = f"{outcome.status}:{int(outcome.verified)}"
+            verified = is_verified(outcome)
+            current = f"{outcome.status}:{int(verified)}"
             previous = engine.store.get_meta(marker)
             if previous != current:
-                verification_upgrade = previous == f"{outcome.status}:0" and outcome.verified
+                verification_upgrade = previous == f"{outcome.status}:0" and verified
                 reinforce_files(
                     project,
                     experience.files,
                     status=outcome.status,
-                    verified=outcome.verified,
+                    verified=verified,
                     now=outcome.elapsed_seconds + execution.started_at,
                     verification_upgrade=verification_upgrade,
                 )

@@ -5,11 +5,13 @@ did and did not receive prior experience are observational and confounded by tas
 module provides the controlled (simulated) comparison.
 """
 
+import math
 import time
 from collections import Counter, defaultdict
-from statistics import mean
+from statistics import mean, variance
 
 from .engine import HARNESS_MESSAGE, MARKERS, Engine
+from .models import evidence_level_of, is_verified
 from .learning import realized_utility
 from .reflexes import reflex_summary
 
@@ -64,7 +66,8 @@ MIN_HOLDOUT_SIDE = 30
 def evidence(engine: Engine) -> dict:
     """Whether OpenReflex's memory is being used and checked, for the pane: observations, not proof of benefit.
 
-    - outcomes: verified (a check passed) against inferred (the task ended) and unknown.
+    - outcomes: by evidence level (ADR 0001), never merged: independently verified, check passed, agent reported,
+      inferred (the task ended with a known status and nothing stronger) and unknown.
     - recall: tasks shown past experiences, and of those, tasks that then touched a file those experiences touched.
     - holdout: shown against held-out substantial tasks, and the tool-call change once both sides are large enough.
     """
@@ -72,42 +75,64 @@ def evidence(engine: Engine) -> dict:
     tasks, executions, experiences = _counted(store)
     substantial = {t.id for t in tasks if t.substantial}
     outcomes = {o.execution_id: o for o in store.list("Outcome", limit=100_000)}
-    verified = inferred = unknown = 0
+    levels = Counter()
     for execution in executions:
         outcome = outcomes.get(execution.id)
         if execution.task_id not in substantial or outcome is None:
             continue
-        if outcome.verified:
-            verified += 1
-        elif outcome.status == "unknown":
-            unknown += 1
-        else:
-            inferred += 1
+        level = evidence_level_of(outcome)
+        levels["unknown" if level == "observed" and outcome.status == "unknown" else
+               "inferred" if level == "observed" else level] += 1
 
     contexts = {c.task_id: c for c in store.list("Context", limit=100_000)}
     files_of = {x.id: set(x.files) for x in experiences}
-    shown = used = 0
-    for x in experiences:
+    mine = [x for x in experiences if x.task_id in substantial]
+    recalled_of, sources_of = {}, {}
+    for x in mine:
         context = contexts.get(x.task_id)
-        if x.task_id not in substantial or context is None or not context.injected or not context.experience_ids:
-            continue
-        shown += 1
-        recalled = set().union(*(files_of.get(i, set()) for i in context.experience_ids))
-        used += bool(recalled & set(x.files))
+        if context is not None and context.injected and context.experience_ids:
+            sources_of[x.id] = set(context.experience_ids)
+            recalled_of[x.id] = set().union(*(files_of.get(i, set()) for i in context.experience_ids))
+    # Use is judged by files, so it can be judged only when the recall named files and the task touched some.
+    checkable = [x for x in mine if recalled_of.get(x.id) and x.files]
+    used = sum(1 for x in checkable if recalled_of[x.id] & set(x.files))
+    # Chance: how often a task shown nothing touched the files a recall named anyway, averaged over recalls. The
+    # recalled experiences themselves are left out: their own tasks touched those files by definition.
+    unshown = [x for x in mine if x.id not in recalled_of and x.files]
+    rates = []
+    for x in checkable:
+        others = [set(u.files) for u in unshown if u.id not in sources_of[x.id]]
+        if others:
+            rates.append(sum(1 for files in others if recalled_of[x.id] & files) / len(others))
+    chance = round(mean(rates), 3) if rates else None
 
     holdout_of = {e.id: e.holdout for e in executions if e.task_id in substantial}
     sides = {True: [], False: []}
-    for x in experiences:
+    for x in mine:
         if x.execution_id in holdout_of:
             sides[holdout_of[x.execution_id]].append(x.tool_calls)
-    enough = min(len(sides[True]), len(sides[False])) >= MIN_HOLDOUT_SIDE
     return {
         "tasks": len(substantial),
-        "outcomes": {"verified": verified, "inferred": inferred, "unknown": unknown},
-        "recall": {"shown": shown, "used": used},
+        "outcomes": {key: levels[key] for key in
+                     ("independently_verified", "check_passed", "agent_reported", "inferred", "unknown")},
+        "recall": {"shown": len(recalled_of), "checkable": len(checkable), "used": used, "chance": chance},
         "holdout": {"shown": len(sides[False]), "held_out": len(sides[True]), "min_side": MIN_HOLDOUT_SIDE,
-                    "tool_call_change": _change(_avg(sides[True]), _avg(sides[False])) if enough else None},
+                    **_typical_change(sides[False], sides[True])},
     }
+
+
+def _typical_change(shown: list[int], held: list[int]) -> dict:
+    """Change in typical tool calls, shown against held out, with a 95% interval; none until both sides are large.
+
+    Tool calls are skewed, so the comparison is of means of log(1 + calls): a change in the geometric mean.
+    """
+    if min(len(shown), len(held)) < MIN_HOLDOUT_SIDE:
+        return {"tool_call_change": None, "low": None, "high": None}
+    a, b = [math.log1p(v) for v in shown], [math.log1p(v) for v in held]
+    diff = mean(a) - mean(b)
+    spread = 1.96 * math.sqrt(variance(a) / len(a) + variance(b) / len(b))
+    return {"tool_call_change": round(math.expm1(diff), 3), "low": round(math.expm1(diff - spread), 3),
+            "high": round(math.expm1(diff + spread), 3)}
 
 
 def project_metrics(engine: Engine, approval_record: dict | None = None, now: float | None = None) -> dict:
@@ -228,7 +253,7 @@ def project_metrics(engine: Engine, approval_record: dict | None = None, now: fl
             "context_token_method": "estimated from injected characters / configured chars_per_token",
             "diagnostic_token_method": "estimated from MCP result characters / configured chars_per_token",
         },
-        "outcomes": {"known": len(known), "verified": sum(1 for e in executions if getattr(outcomes_by_execution.get(e.id), "verified", False)),
+        "outcomes": {"known": len(known), "verified": sum(1 for e in executions if is_verified(outcomes_by_execution.get(e.id))),
                      "success_rate": _avg(x.status == "success" for x in known)},
         "efficiency_observational": {
             "with_prior_experience": with_prior_profile, "without_prior_experience": without_prior_profile,

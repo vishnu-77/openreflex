@@ -28,7 +28,8 @@ def test_substantial_prompt_detection():
 def test_first_task_captures_full_trajectory_without_injecting(engine, clock):
     outcome, messages = run_task(engine, clock, "s1", "Fix the login bug where expired tokens are accepted", FIX_SCRIPT)
     assert messages[0] is None, "nothing to inject without prior experience"
-    assert outcome.status == "success" and not outcome.verified
+    # The last test passed after the last edit: a check seen passing (ADR 0001), not merely inferred.
+    assert outcome.status == "success" and outcome.verified and outcome.evidence_level == "check_passed"
     assert outcome.tool_calls == 5 and outcome.failures == 1
     assert outcome.chosen_strategy == "test-first"
     experience = engine.store.get("exp-" + outcome.execution_id)
@@ -68,14 +69,16 @@ def test_follow_up_prompt_continues_and_refinalizes_same_execution(engine, clock
     assert len(engine.store.list("Experience")) == 1
 
 
-def test_verified_outcome_survives_later_inference(engine, clock):
+def test_agent_reported_outcome_survives_later_inference(engine, clock):
     engine.prompt("claude-code", "s1", "Add pagination to the orders listing endpoint")
     engine.tool_start("claude-code", "s1", "t1", *EDIT)
     engine.tool_end("claude-code", "s1", "t1", *EDIT, True)
     engine.record_outcome("success", "manually verified in browser")
     outcome = engine.stop("claude-code", "s1")
     stored = engine.store.get("out-" + engine.store.latest("claude-code", "s1").id)
-    assert stored.verified and stored.status == "success" and stored.evidence == "manually verified in browser"
+    # The agent's report is kept against weaker inference, but it is the agent's word: not verified (ADR 0001).
+    assert stored.evidence_level == "agent_reported" and not stored.verified
+    assert stored.status == "success" and stored.evidence == "manually verified in browser"
     assert outcome is None or outcome.status == "success"
 
 

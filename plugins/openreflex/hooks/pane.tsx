@@ -33,26 +33,48 @@ export function pickState(files: readonly ReflexState[], names: readonly string[
 export const isOn = (s: ReflexState | null): boolean => s !== null && (s.project_enabled === true || s.phase !== undefined)
 
 const pct = (part: number, whole: number): string => (whole > 0 ? ` (${Math.round((100 * part) / whole)}%)` : '')
+const signed = (value: number): string => `${value > 0 ? '+' : value < 0 ? '−' : ''}${Math.round(Math.abs(value) * 100)}%`
 
 /**
  * Whether memory is used and checked, in words that claim no more than the data: "used" is never "helped",
- * and the holdout gives no figure until both sides are large enough to read.
+ * use is set against chance, and the holdout gives a change only with its 95% range once both sides are large.
  */
 export function evidenceRows(ev: Evidence | undefined): [string, string][] {
   if (ev === undefined) return [['Evidence', 'updates at the next session start']]
   const o = ev.outcomes ?? {}
   const r = ev.recall ?? {}
   const h = ev.holdout ?? {}
-  const tasks = ev.tasks ?? 0
-  const checked = `${n(o.verified)} verified · ${n(o.inferred)} inferred · ${n(o.unknown)} unknown of ${tasks} tasks`
-  const recall = (r.shown ?? 0) === 0
+  // Each evidence level by its own name (ADR 0001): a passing check is "check passed", never "verified" or "correct".
+  const checked = [
+    ...((o.independently_verified ?? 0) > 0 ? [`${n(o.independently_verified)} independently verified`] : []),
+    `${n(o.check_passed)} check passed`,
+    `${n(o.agent_reported)} agent said`,
+    `${n(o.inferred)} inferred`,
+    `${n(o.unknown)} unknown`,  // the parts add up to the task count; saying it again overflows a panel line
+  ].join(' · ')
+  const shown = r.shown ?? 0
+  const checkable = r.checkable ?? 0
+  const recall = shown === 0
     ? 'no past task recalled yet'
-    : `shown on ${n(r.shown)} tasks · used on ${n(r.used)}${pct(r.used ?? 0, r.shown ?? 0)}`
+    : checkable === 0
+      ? `${shown} shown · none checkable yet (no files on both sides)`
+      : `${shown} shown · ${checkable} checkable · used ${n(r.used)}${pct(r.used ?? 0, checkable)}` +
+        (r.chance === null || r.chance === undefined ? '' : ` · chance ${Math.round(r.chance * 100)}%`)
   const change = h.tool_call_change
-  const holdout = change === null || change === undefined
+  const holdout = change === null || change === undefined || h.low === null || h.low === undefined ||
+    h.high === null || h.high === undefined
     ? `${n(h.held_out)} held out · ${n(h.shown)} shown · needs ${n(h.min_side)} each to compare`
-    : `tool calls ${change > 0 ? '+' : '−'}${Math.round(Math.abs(change) * 100)}% with OpenReflex (${n(h.shown)} vs ${n(h.held_out)} held out)`
+    : `calls ${signed(change)} (95%: ${signed(h.low)} to ${signed(h.high)}) · ${n(h.shown)} vs ${n(h.held_out)} held out`
   return [['Checked', checked], ['Recall', recall], ['Holdout', holdout]]
+}
+
+/** Every Reflex OpenReflex has learned is a Reflex: the proven/learned split stays inside OpenReflex, not on screen. */
+export function reflexText(st: ReflexState): string {
+  const ready = (st.reflexes_proven ?? 0) + (st.reflexes_learned ?? 0)
+  const project = st.project_reflex_state === 'learned' || st.project_reflex_state === 'proven'
+    ? 'project reflex ready'
+    : st.project_reflex_state === 'stale' ? 'project reflex stale' : st.project_reflex_state ? 'project reflex learning' : ''
+  return [`${ready} reflex${ready === 1 ? '' : 'es'}`, `${n(st.reflexes_learning)} learning`, project].filter(Boolean).join(' · ')
 }
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
@@ -151,10 +173,11 @@ export const register: Register = on => {
           <Text color="green">{`  ● ${st.phase ?? 'ready'}`}</Text>
           <Text dimColor>{`${st.task?.mode ? ` · ${st.task.mode}` : ''}${st.plugin_version ? `  v${st.plugin_version}` : ''}`}</Text>
         </Text>,
-        row('Memory', `${n(st.experiences)} experiences · ${n(st.lessons)} lessons · ${n(st.facts)} facts`),
+        row('Memory', `${n(st.experiences)} stored experiences · ${n(st.lessons)} lessons · ${n(st.facts)} facts`),
         row('Map', `${n(st.map_files)} files · ${n(st.relationships)} links · ${n(st.indexed_files)} indexed`),
-        row('Reflexes', `${n(st.reflexes_proven)} proven · ${n(st.reflexes_learning)} learning${st.project_reflex_state ? ` · project ${st.project_reflex_state}` : ''}`),
-        row('Verify', `${st.verification ?? '—'} · ${n(st.verified)} verified`),
+        row('Reflexes', reflexText(st)),
+        // Counts of verified outcomes live under Checked, from the same tasks status counts; this row names the check.
+        row('Verify', `last check: ${st.verification ?? '—'}`),
         row('Now', live),
         ...evidenceRows(st.evidence).map(([label, text]) => row(label, text)),
       )
