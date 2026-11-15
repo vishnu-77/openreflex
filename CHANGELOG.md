@@ -4,6 +4,14 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+- Phase B (ADR 0001, revised by evidence): prompt-time context is injected only for specific lessons (known fixes,
+  failure loops). A matched Reflex stays internal: its procedure was a generic sequence of tool categories. On the
+  largest local project, ambient injection drops from 113 tasks to 9. MCP `get_execution_context` still returns
+  the full plan.
+- First-file pointers: after the first file a task touches, OpenReflex names up to 3 files earlier tasks worked on
+  together with it, once per task, never for held-out tasks. In a replay these hit 4 of 7 times, against 0 of 11
+  for pointers recalled by prompt wording (preliminary, small sample). The pane's new Pointers row shows how often
+  they are used, against how often held-out tasks touched those files anyway.
 - Evidence levels (ADR 0001, decision 1): every outcome records `observed`, `agent_reported`, `check_passed` or
   `independently_verified` (reserved, no source yet). A test, lint or build seen passing after the last edit is
   `check_passed`. That is now what "verified" means in `status`, Reflex maturity and file support. An agent's
@@ -27,6 +35,8 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 - The stored `verified` field is still written (as check passed or stronger) for anything reading it directly.
 - Outcomes written by this version carry `evidence_level`. Older versions refuse unknown fields, so downgrading
   after upgrading is not supported (as with 0.10.0's token fields).
+- Contexts written by this version carry `injected_text` (what was handed to the model); older rows fall back to
+  `text`. As with `evidence_level`, downgrading after upgrading is not supported.
 - MCP: `record_outcome` keeps its signature; its description now says it records the agent's report.
   `get_project_insights` `outcomes.verified` counts checks seen passing, not reports.
 

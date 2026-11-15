@@ -106,9 +106,30 @@ release without maintainer approval.
 | Phase | Scope | Depends on |
 |---|---|---|
 | **A** | Evidence levels (1); machine messages out of learning; dependency-aware deletion (2) | — |
-| **B** | Specific, sourced recall (file pointers and their check); no generic procedure injection | A |
+| **B** | No generic procedure injection; file pointers triggered by the first file a task touches (revised, below) | A |
 | **C** | Integrity and drift: revision and hash binding, invalidation, decay on non-use, contradiction handling (2, 3) | A, B |
 | **D** | Advisory-by-default enforcement (4); four-condition live evaluation: baseline, map only, memory only, full | A–C |
+
+### Phase B, revised by evidence (2026-11-15)
+
+Before building Phase B as first written (file pointers recalled at prompt time by matching the prompt's wording),
+it was replayed on real history, using only the tasks before each task:
+
+| Pointer source | Largest project (`togro.co`) | All projects |
+|---|---|---|
+| Files from tasks with similar wording (as first planned) | 0 of 11 hit | 2 of 15 |
+| Most-touched files so far (no memory; the bar to beat) | 1 of 30 hit | 3 of 34 |
+| Files worked on together with the first file the task touches | 2 of 5 hit | **4 of 7** (preliminary: n = 7) |
+
+The wording-based recall picks the wrong past tasks. That is also why 0.10.0 removed "likely files", after 5% of
+them were opened. A trigger based on what the agent is actually doing works better. So Phase B became:
+
+- **Prompt time:** inject only specific lessons (known fixes, failure loops). A matched Reflex stays internal; its
+  procedure is a generic sequence of tool categories. Explicit plan requests (MCP) still get the full text.
+  On `togro.co`, ambient injection drops from 113 tasks to 9.
+- **Tool time:** after the first file a task touches, point to the files earlier tasks worked on together with it,
+  once per task. Held-out tasks record what they would have been shown, so "used" can be compared with "touched
+  anyway".
 
 ## Consequences
 

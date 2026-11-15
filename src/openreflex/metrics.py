@@ -111,11 +111,28 @@ def evidence(engine: Engine) -> dict:
     for x in mine:
         if x.execution_id in holdout_of:
             sides[holdout_of[x.execution_id]].append(x.tool_calls)
+
+    # First-file pointers (Phase B): "used" = the task then touched a pointed file. Held-out tasks record what they
+    # would have been shown, so their rate of touching those files anyway is the comparison.
+    files_of_execution = {x.execution_id: set(x.files) for x in mine}
+    pointers = {"shown": 0, "used": 0, "held_out": 0, "held_out_used": 0}
+    for execution in executions:
+        if execution.task_id not in substantial:
+            continue
+        marker = next((a for a in execution.alerts if a.startswith("pointer:")), "pointer:")
+        pointed = {p for p in marker[len("pointer:"):].split("|") if p}
+        if not pointed:
+            continue
+        side = "held_out" if execution.holdout else "shown"
+        pointers[side] += 1
+        pointers[side + "_used" if side == "held_out" else "used"] += bool(
+            pointed & files_of_execution.get(execution.id, set()))
     return {
         "tasks": len(substantial),
         "outcomes": {key: levels[key] for key in
                      ("independently_verified", "check_passed", "agent_reported", "inferred", "unknown")},
         "recall": {"shown": len(recalled_of), "checkable": len(checkable), "used": used, "chance": chance},
+        "pointers": pointers,
         "holdout": {"shown": len(sides[False]), "held_out": len(sides[True]), "min_side": MIN_HOLDOUT_SIDE,
                     **_typical_change(sides[False], sides[True])},
     }

@@ -261,14 +261,19 @@ def test_claude_hooks_reuse_runner_project_area_across_implementation_plan_and_f
     assert "COMPLETE" in second_stop["systemMessage"]
 
     clock.advance(20)
-    third = json.loads(call(
+    third = call(
         "claude-code",
         "UserPromptSubmit",
         {**base, "prompt": "Where is the implementation plan committed?"},
         factory,
-    ))
-    context = third["hookSpecificOutput"]["additionalContext"]
-    assert "Reflex: Bitbucket runner work" in context
-    assert "Project-area memory:" in context
-    assert "inspect-first" not in context
-    assert "test-first" not in context
+    )
+    # ADR 0001, Phase B: the area Reflex is still matched for the follow-up, but its generic "related work seen
+    # here" text is no longer handed to the model unasked; an explicit plan request (the full text) still shows it.
+    assert "additionalContext" not in third
+    engine = factory(project)
+    follow_up = engine.store.latest("claude-code", base["session_id"])
+    context = engine.store.list("Context", "task_id", follow_up.task_id, limit=1)[0]
+    assert engine.store.get_reflex(context.reflex_id).name == "Bitbucket runner work" and not context.injected
+    assert "Project-area memory:" in context.text
+    assert "inspect-first" not in context.text
+    assert "test-first" not in context.text
