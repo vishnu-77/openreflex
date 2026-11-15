@@ -9,12 +9,12 @@ from pathlib import Path
 
 from . import control, detect, learning
 from .decision import DecisionSnapshot, make_snapshot, render_paths, render_recap, render_trace, render_why
-from .models import (VERIFIED_LEVELS, CandidatePath, Context, Execution, Experience, Lesson, Outcome, ProjectReflex, Status,
-                     Task, ToolCall, evidence_level_of, uid)
+from .models import (HARNESS_MESSAGE, VERIFIED_LEVELS, CandidatePath, Context, Execution, Experience, Lesson, Outcome,
+                     ProjectReflex, Status, Task, ToolCall, evidence_level_of, is_harness_message, uid)
 from .policy import load_policy
 from .privacy import PROGRESS, categorize, error_signature, file_paths, fingerprint, redact
 from .routing import Budget, Limits, budget_for, candidates, classify, embed, limits_from_env, similarity, task_mode
-from .reflexes import compile_for_experience, families_for_experience, match_reflex
+from .reflexes import compile_for_experience, families_for_experience, match_reflex, recompile_families
 from .store import Store, database_path
 
 FOLLOW_UP = re.compile(r"^\s*(yes|no|ok(ay)?|thanks|thank you|continue|go on|go ahead|proceed|sure|lgtm|do it|"
@@ -27,7 +27,6 @@ CONTEXTUAL_CONTINUATION = re.compile(
 UNTRACKED = "(task started without a captured prompt)"
 # Harness messages delivered as prompts: a subagent hand-back or a background-task notification
 # returns work to the current task rather than starting a new one.
-HARNESS_MESSAGE = re.compile(r"^<(agent-message|task-notification)\b")
 # Lessons about a concrete failure seen in this project; the other kinds are generic advice.
 SPECIFIC_LESSONS = {"resolution", "failure-loop"}
 # Execution.alerts markers that are not alert kinds.
@@ -258,6 +257,8 @@ class Engine:
                                  key=lambda item: -item.created_at):
             if now - experience.created_at > max_age:
                 return None
+            if is_harness_message(experience.description):
+                continue
             task = self.store.get(experience.task_id) if self.store.exists(experience.task_id) else None
             if experience.agent != agent or task is None or not task.substantial:
                 continue
@@ -350,12 +351,19 @@ class Engine:
             return self._finalize(execution, status=status, evidence=redact(evidence, 500))
 
     def forget_experience(self, experience_id: str) -> dict[str, int]:
-        """Delete one past task and everything learned from it; returns how many nodes of each kind were removed."""
+        """Delete one past task and everything learned from it; returns how many nodes of each kind were removed.
+
+        Derived memory is recomputed from what remains (ADR 0001, deletion): the Reflexes of the task's families,
+        other tasks' recall records that pointed at it, and the Project Map's file support. Forgetting an id that
+        is already gone raises and changes nothing.
+        """
         with self.store.transaction():
             experience = self.store.get(experience_id) if self.store.exists(experience_id) else None
             if not isinstance(experience, Experience):
                 raise ValueError("Unknown experience id")
             removed: Counter = Counter()
+            families: set[str] = set()
+            forgotten: set[str] = set()
 
             def drop(node) -> None:
                 removed[type(node).__name__] += 1
@@ -367,6 +375,8 @@ class Engine:
                 for outcome in self.store.find("Outcome", execution_id=execution.id):
                     drop(outcome)
                 for item in self.store.find("Experience", execution_id=execution.id):
+                    families.update(families_for_experience(item))
+                    forgotten.add(item.id)
                     for lesson in self.store.list("Lesson", "experience_id", item.id):
                         drop(lesson)
                     drop(item)
@@ -377,7 +387,18 @@ class Engine:
                     drop(node)
             if self.store.exists(experience.task_id):
                 drop(self.store.get(experience.task_id))
-            return dict(removed)
+            # Later tasks that were shown this experience no longer point at it.
+            for context in self.store.list("Context", limit=self.policy.integer("engine.max_store_scan")):
+                if forgotten & set(context.experience_ids):
+                    context.experience_ids = [i for i in context.experience_ids if i not in forgotten]
+                    self.store.put(context)
+            dropped = recompile_families(self.store, families, self.clock())["reflexes_dropped"]
+            if dropped:
+                removed["ProjectReflex"] += dropped
+        from .reflex_index import recompute_file_support  # reflex_index imports this module
+
+        recompute_file_support(self.project, self)
+        return dict(removed)
 
     def preview(self, description: str) -> str:
         task_class = classify(description)
@@ -463,6 +484,8 @@ class Engine:
         scan = self.policy.integer("engine.max_store_scan")
         sims = []
         for experience in self.store.list("Experience", limit=scan):
+            if is_harness_message(experience.description):
+                continue
             sim = similarity(query, experience.embedding)
             sims.append(sim)
             if sim < threshold:
@@ -522,7 +545,7 @@ class Engine:
         query = embed(description)
         scan = self.policy.integer("engine.max_store_scan")
         same = [e for e in self.store.list("Experience", "task_class", task_class, limit=scan)
-                if e.execution_id != exclude and e.description != UNTRACKED]
+                if e.execution_id != exclude and e.description != UNTRACKED and not is_harness_message(e.description)]
         threshold = self.policy.number("retrieval.threshold")
         similar = [e for e in same if similarity(query, e.embedding) >= threshold]
         minimum = self.policy.integer("retrieval.minimum_similar_evidence")

@@ -11,6 +11,12 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
   keeps stronger evidence it agrees with, wins when it reports failure despite a passing check, and is upgraded
   when a check later passes for the success it reported.
 - The pane's Checked row names each level: check passed, agent said, inferred, unknown.
+- Memory hygiene (ADR 0001, decision 2): task notifications and subagent hand-backs that versions before 0.10.0
+  stored as tasks no longer feed Reflexes, recall, routing evidence or the "previous task" note.
+- Forgetting an experience now removes its influence everywhere (ADR 0001, decision 2): the Reflexes of its
+  families are recomputed from what remains (a family with nothing left is dropped), other tasks' recall records
+  stop pointing at it, and the Project Map's file support is rebuilt from the remaining executions. About 0.6 s on
+  a 118-experience project. Recomputed Reflexes lose history marks such as "stale".
 
 ### Migration
 
