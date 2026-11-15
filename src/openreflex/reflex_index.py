@@ -17,7 +17,7 @@ from collections import Counter
 from pathlib import Path
 
 from .engine import Engine
-from .models import VERIFIED_LEVELS, is_verified
+from .models import VERIFIED_LEVELS, is_harness_message, is_verified
 from .project_memory import load_snapshot, snapshot_path, update_state
 from .reflexes import reflex_summary
 
@@ -160,16 +160,26 @@ def reinforce_files(project: Path, files: list[str], *, status: str, verified: b
     if not snapshot or not files:
         return snapshot
     at = time.time() if now is None else now
+    _apply_support(snapshot, files, status=status, verified=verified, at=at, verification_upgrade=verification_upgrade)
+    _finish_support(project, snapshot, at)
+    return snapshot
+
+
+SUPPORT_COUNTERS = ("observations", "successful_outcomes", "failed_outcomes", "verified_successes")
+
+
+def _apply_support(snapshot: dict, files: list[str], *, status: str, verified: bool, at: float,
+                   verification_upgrade: bool = False) -> None:
+    """Add one execution's outcome to the support counters of the files it touched (in memory)."""
     touched = {str(Path(path).as_posix()) for path in files if path}
     by_path = {str(item.get("path")): item for item in snapshot.get("indexed_files", []) if item.get("path")}
-
     for path in sorted(touched):
         item = by_path.get(path)
         if item is None:
             item = {"path": path, "role": "execution-observed", "source_hash": ""}
             snapshot.setdefault("indexed_files", []).append(item)
             by_path[path] = item
-        for key in ("observations", "successful_outcomes", "failed_outcomes", "verified_successes"):
+        for key in SUPPORT_COUNTERS:
             item.setdefault(key, 0)
         if verification_upgrade:
             if status == "success" and verified:
@@ -185,6 +195,42 @@ def reinforce_files(project: Path, files: list[str], *, status: str, verified: b
         item["last_observed_at"] = round(at, 3)
         item["evidence_state"] = _evidence_state(item)
 
+
+def recompute_file_support(project: Path, engine: Engine) -> dict:
+    """Rebuild every file's execution support from the experiences that remain (ADR 0001, deletion).
+
+    Counters are added up per execution, so a forgotten execution cannot be subtracted reliably; replaying what
+    remains is deterministic. Structural facts about files stay; entries that only existed because an execution
+    touched them are dropped and come back if a remaining execution touched them.
+    """
+    snapshot = load_snapshot(project)
+    if not snapshot:
+        return snapshot
+    kept = []
+    for item in snapshot.get("indexed_files", []):
+        if item.get("role") == "execution-observed":
+            continue
+        for key in SUPPORT_COUNTERS:
+            item[key] = 0
+        item.pop("last_observed_at", None)
+        item["evidence_state"] = _evidence_state(item)
+        kept.append(item)
+    snapshot["indexed_files"] = kept
+    outcomes = {o.execution_id: o for o in engine.store.list("Outcome", limit=100_000)}
+    at = 0.0
+    for experience in sorted(engine.store.list("Experience", limit=100_000), key=lambda x: x.created_at):
+        outcome = outcomes.get(experience.execution_id)
+        if outcome is None or outcome.status == "unknown" or is_harness_message(experience.description):
+            continue
+        at = outcome.elapsed_seconds + experience.created_at
+        verified = is_verified(outcome)
+        _apply_support(snapshot, experience.files, status=outcome.status, verified=verified, at=at)
+        engine.store.set_meta(f"reflex-index-evidence:{experience.execution_id}", f"{outcome.status}:{int(verified)}")
+    _finish_support(project, snapshot, at or time.time())
+    return snapshot
+
+
+def _finish_support(project: Path, snapshot: dict, at: float) -> None:
     snapshot["indexed_files"] = sorted(
         snapshot.get("indexed_files", []),
         key=lambda item: (
@@ -197,7 +243,6 @@ def reinforce_files(project: Path, files: list[str], *, status: str, verified: b
     )[:600]
     snapshot["evidence_updated_at"] = round(at, 3)
     _atomic_snapshot(project, snapshot)
-    return snapshot
 
 
 def reinforce_latest_execution(project: Path, agent: str, session: str) -> dict:

@@ -8,6 +8,7 @@ enumerations, finiteness, unknown fields) is enforced explicitly in __post_init_
 import dataclasses
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Literal, get_args
 from uuid import uuid4
@@ -35,6 +36,14 @@ def one_of(choices: tuple[str, ...], default: str | None = None):
 
 Status = Literal["success", "failure", "unknown"]
 STATUSES = get_args(Status)
+
+# Messages the harness delivers as prompts (background-task notifications, subagent hand-backs): not work a person
+# asked for. Versions before 0.10.0 stored them as tasks, so learning and recall skip them by this same rule.
+HARNESS_MESSAGE = re.compile(r"^<(agent-message|task-notification)\b")
+
+
+def is_harness_message(text: str | None) -> bool:
+    return bool(HARNESS_MESSAGE.match((text or "").strip()))
 
 # How strong an outcome's evidence is, weakest first (ADR 0001, decision 1). A passing check proves the check
 # passed, not that the task is correct; an agent's own report is never verified on its own.

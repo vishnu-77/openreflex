@@ -10,7 +10,7 @@ from collections import Counter
 from pathlib import PurePosixPath
 
 from .learning import resolutions
-from .models import Experience, ProjectReflex, ToolCall, is_verified
+from .models import Experience, ProjectReflex, ToolCall, is_harness_message, is_verified
 from .routing import embed, similarity
 from .store import Store
 
@@ -494,7 +494,8 @@ def _compile_family(
     project_scope = family.startswith("area:") or family == PROJECT_ROOT_FAMILY
     observed_group = [
         item for item in store.list("Experience", limit=5000)
-        if (project_scope or item.task_mode == experience.task_mode)
+        if not is_harness_message(item.description)
+        and (project_scope or item.task_mode == experience.task_mode)
         and family in families_for_experience(item)
     ]
     observed_group.sort(key=lambda item: item.created_at)
@@ -568,6 +569,31 @@ def compile_for_experience(store: Store, experience: Experience, now: float) -> 
     return compiled[0]
 
 
+def recompile_families(store: Store, families: set[str], now: float) -> dict[str, int]:
+    """Recompute the Reflexes of these families from the experiences that remain (ADR 0001, deletion).
+
+    Each Reflex is dropped and compiled once from the latest remaining experience of its family and scope, so a
+    forgotten experience leaves no trace in counts, evidence or credit. A family with nothing left stays deleted.
+    Recomputing from scratch also drops history such as an earlier "stale" mark; that is the price of determinism.
+    """
+    affected = [r for r in store.list_reflexes() if r.family in families]
+    for reflex in affected:
+        store.delete_reflex(reflex.id)
+    remaining = sorted((x for x in store.list("Experience", limit=5000) if not is_harness_message(x.description)),
+                       key=lambda x: x.created_at)
+    calls_by_execution, outcomes_by_id = _execution_cache(store)
+    recompiled = 0
+    for reflex in affected:
+        project_scope = reflex.task_mode == "project"
+        latest = next((x for x in reversed(remaining)
+                       if reflex.family in families_for_experience(x) and (project_scope or x.task_mode == reflex.task_mode)),
+                      None)
+        if latest is not None:
+            _compile_family(store, latest, reflex.family, now, calls_by_execution, outcomes_by_id)
+            recompiled += 1
+    return {"reflexes_dropped": len(affected) - recompiled, "reflexes_recomputed": recompiled}
+
+
 def ensure_project_reflex(store: Store, now: float | None = None) -> ProjectReflex | None:
     """Backfill/update the root project Reflex from all captured experiences.
 
@@ -575,7 +601,8 @@ def ensure_project_reflex(store: Store, now: float | None = None) -> ProjectRefl
     summary is therefore also a safe migration point: existing execution evidence is
     consolidated without inventing success or verification.
     """
-    experiences = sorted(store.list("Experience", limit=5000), key=lambda item: item.created_at)
+    experiences = sorted((item for item in store.list("Experience", limit=5000) if not is_harness_message(item.description)),
+                         key=lambda item: item.created_at)
     if not experiences:
         return None
     latest = experiences[-1]
