@@ -10,6 +10,8 @@ const PANE = {
 } as const
 
 const ON = { project: 'opentrajectory', phase: 'ready', project_enabled: true, experiences: 15, lessons: 16, map_files: 115, updated_at: 20,
+  // verified here is the unfiltered store count; the pane must show only evidence.outcomes.verified.
+  reflexes_proven: 0, reflexes_learned: 22, reflexes_learning: 90, verification: 'test', verified: 1,
   evidence: { tasks: 17, outcomes: { verified: 2, inferred: 6, unknown: 7 }, recall: { shown: 9, checkable: 3, used: 2, chance: 0.556 }, holdout: { shown: 14, held_out: 0, min_side: 30, tool_call_change: null, low: null, high: null } } }
 
 test('only OpenReflex lines are kept, without the tag', () => {
@@ -60,6 +62,11 @@ test('the pane shows OpenReflex live: state, recall and each capture', async ($,
   expect((await ui.find({ type: 'Text', text: /15 stored experiences/ }))?.text).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /2 verified · 6 inferred/ }))?.text).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /used 2 \(67%\) · chance 56%/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /0 proven · 22 learned · 90 learning/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /last check: test/ }))?.text).toBeDefined()
+  // One verified count on screen, the filtered one: never a second that disagrees with it.
+  const verifiedCounts = (await ui.findAll({ type: 'Text', text: /\d+ verified/ })).map(t => t.text.match(/(\d+) verified/)?.[1])
+  expect(new Set(verifiedCounts)).toEqual(new Set(['2']))
   expect((await ui.find({ type: 'Text', text: /run tests/ }))?.text).toBe('Reflex: run tests · active.')
   expect((await ui.find({ type: 'Text', text: /PostToolUse\s+Bash/ }))?.text).toBeDefined()
   await ui.unmount()

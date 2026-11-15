@@ -159,8 +159,9 @@ export const register: Register = on => {
         </Text>,
         row('Memory', `${n(st.experiences)} stored experiences · ${n(st.lessons)} lessons · ${n(st.facts)} facts`),
         row('Map', `${n(st.map_files)} files · ${n(st.relationships)} links · ${n(st.indexed_files)} indexed`),
-        row('Reflexes', `${n(st.reflexes_proven)} proven · ${n(st.reflexes_learning)} learning${st.project_reflex_state ? ` · project ${st.project_reflex_state}` : ''}`),
-        row('Verify', `${st.verification ?? '—'} · ${n(st.verified)} verified`),
+        row('Reflexes', `${n(st.reflexes_proven)} proven · ${n(st.reflexes_learned)} learned · ${n(st.reflexes_learning)} learning${st.project_reflex_state ? ` · project ${st.project_reflex_state}` : ''}`),
+        // Counts of verified outcomes live under Checked, from the same tasks status counts; this row names the check.
+        row('Verify', `last check: ${st.verification ?? '—'}`),
         row('Now', live),
         ...evidenceRows(st.evidence).map(([label, text]) => row(label, text)),
       )
