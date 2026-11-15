@@ -1,6 +1,7 @@
 import { Coffee } from "lucide-react";
 import { LINKS, TAGLINE } from "@/lib/site";
 import { GUIDES } from "@/lib/guides";
+import { DownloadsBadge } from "./DownloadsBadge";
 import { Wordmark } from "./Logo";
 
 const PROJECT = [
@@ -38,6 +39,7 @@ export function Footer() {
         <div>
           <Wordmark className="h-[30px] w-auto" />
           <p className="mt-4 max-w-[22rem] leading-relaxed text-muted">{TAGLINE}. Open source and local-first.</p>
+          <DownloadsBadge className="mt-4" />
         </div>
 
         <nav aria-label="Project links">

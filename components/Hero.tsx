@@ -1,6 +1,7 @@
 import { GithubIcon } from "./GithubIcon";
 import { LINKS } from "@/lib/site";
 import { CopyButton } from "./CopyButton";
+import { DownloadsBadge } from "./DownloadsBadge";
 import { GithubStars } from "./GithubStars";
 import { ReflexReplay } from "./ReflexReplay";
 import { ResearchLink } from "./ViewToggle";
@@ -54,6 +55,7 @@ export function Hero() {
               <GithubStars />
             </a>
           </div>
+          <DownloadsBadge className="mt-5" />
           <p className="view-builder mt-6 text-[0.95rem] text-muted">
             Evaluating the approach? <ResearchLink />
           </p>
