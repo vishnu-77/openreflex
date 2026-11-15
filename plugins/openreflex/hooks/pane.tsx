@@ -61,6 +61,15 @@ export function evidenceRows(ev: Evidence | undefined): [string, string][] {
   return [['Checked', checked], ['Recall', recall], ['Holdout', holdout]]
 }
 
+/** Every Reflex OpenReflex has learned is a Reflex: the proven/learned split stays inside OpenReflex, not on screen. */
+export function reflexText(st: ReflexState): string {
+  const ready = (st.reflexes_proven ?? 0) + (st.reflexes_learned ?? 0)
+  const project = st.project_reflex_state === 'learned' || st.project_reflex_state === 'proven'
+    ? 'project reflex ready'
+    : st.project_reflex_state === 'stale' ? 'project reflex stale' : st.project_reflex_state ? 'project reflex learning' : ''
+  return [`${ready} reflex${ready === 1 ? '' : 'es'}`, `${n(st.reflexes_learning)} learning`, project].filter(Boolean).join(' · ')
+}
+
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
 const ago = (ms: number): string => (ms < 60000 ? `${Math.max(0, Math.round(ms / 1000))} s` : `${Math.floor(ms / 60000)} min`)
 const n = (value: number | undefined): string => String(value ?? 0)
@@ -159,7 +168,7 @@ export const register: Register = on => {
         </Text>,
         row('Memory', `${n(st.experiences)} stored experiences · ${n(st.lessons)} lessons · ${n(st.facts)} facts`),
         row('Map', `${n(st.map_files)} files · ${n(st.relationships)} links · ${n(st.indexed_files)} indexed`),
-        row('Reflexes', `${n(st.reflexes_proven)} proven · ${n(st.reflexes_learned)} learned · ${n(st.reflexes_learning)} learning${st.project_reflex_state ? ` · project ${st.project_reflex_state}` : ''}`),
+        row('Reflexes', reflexText(st)),
         // Counts of verified outcomes live under Checked, from the same tasks status counts; this row names the check.
         row('Verify', `last check: ${st.verification ?? '—'}`),
         row('Now', live),

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { evidenceRows, isOn, pickState, reflexLines } from './pane'
+import { evidenceRows, isOn, pickState, reflexLines, reflexText } from './pane'
 
 const PANE = {
   plugin: 'openreflex',
@@ -62,7 +62,8 @@ test('the pane shows OpenReflex live: state, recall and each capture', async ($,
   expect((await ui.find({ type: 'Text', text: /15 stored experiences/ }))?.text).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /2 verified · 6 inferred/ }))?.text).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /used 2 \(67%\) · chance 56%/ }))?.text).toBeDefined()
-  expect((await ui.find({ type: 'Text', text: /0 proven · 22 learned · 90 learning/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /22 reflexes · 90 learning/ }))?.text).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /proven/ })).toBeUndefined()
   expect((await ui.find({ type: 'Text', text: /last check: test/ }))?.text).toBeDefined()
   // One verified count on screen, the filtered one: never a second that disagrees with it.
   const verifiedCounts = (await ui.findAll({ type: 'Text', text: /\d+ verified/ })).map(t => t.text.match(/(\d+) verified/)?.[1])
@@ -155,4 +156,12 @@ test('the holdout gives a change only with its 95% range', () => {
 
 test('a state file from before evidence existed says when it will appear', () => {
   expect(evidenceRows(undefined)).toEqual([['Evidence', 'updates at the next session start']])
+})
+
+test('reflexes are counted as reflexes, without the proven/learned split', () => {
+  expect(reflexText({ reflexes_proven: 2, reflexes_learned: 20, reflexes_learning: 90, project_reflex_state: 'learned' }))
+    .toBe('22 reflexes · 90 learning · project reflex ready')
+  expect(reflexText({ reflexes_learned: 1, reflexes_learning: 2, project_reflex_state: 'candidate' }))
+    .toBe('1 reflex · 2 learning · project reflex learning')
+  expect(reflexText({})).toBe('0 reflexes · 0 learning')
 })
