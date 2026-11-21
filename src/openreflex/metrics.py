@@ -8,7 +8,7 @@ module provides the controlled (simulated) comparison.
 import math
 import time
 from collections import Counter, defaultdict
-from statistics import mean, variance
+from statistics import mean, median, variance
 
 from .engine import HARNESS_MESSAGE, MARKERS, Engine
 from .models import evidence_level_of, is_verified
@@ -61,6 +61,28 @@ def _counted(store):
 
 # Fewer held-out tasks than this per side and the pane says the comparison has too little data to read.
 MIN_HOLDOUT_SIDE = 30
+
+
+# Tasks needed on each side (hint shown / held out) before the pane calls hints helping or not.
+MIN_HINT_SIDE = 10
+
+
+def verdict(pointers: dict, first_edit: dict) -> dict:
+    """One plain answer for the pane: are hints helping? Claims no more than the data: used is never "saved"."""
+    shown, held = first_edit["shown"], first_edit["held_out"]
+    if min(shown, held) < MIN_HINT_SIDE:
+        hints = pointers["shown"]
+        return {"state": "early", "line": (
+            f"Too early to tell: {hints} hint{'s' if hints != 1 else ''} shown, {pointers['used']} used. "
+            f"Needs {MIN_HINT_SIDE} tasks with a hint and {MIN_HINT_SIDE} without ({shown} and {held} so far).")}
+    a, b = first_edit["shown_median"], first_edit["held_out_median"]
+    if a < b:
+        return {"state": "helping", "line": (
+            f"Hints are helping: first edit after a median {a:g} calls with a hint vs {b:g} without "
+            f"({shown} vs {held} tasks).")}
+    return {"state": "not_helping", "line": (
+        f"Hints are not helping yet: first edit after a median {a:g} calls with a hint vs {b:g} without "
+        f"({shown} vs {held} tasks).")}
 
 
 def evidence(engine: Engine) -> dict:
@@ -116,6 +138,7 @@ def evidence(engine: Engine) -> dict:
     # would have been shown, so their rate of touching those files anyway is the comparison.
     files_of_execution = {x.execution_id: set(x.files) for x in mine}
     pointers = {"shown": 0, "used": 0, "held_out": 0, "held_out_used": 0}
+    before_edit: dict[bool, list[int]] = {False: [], True: []}
     for execution in executions:
         if execution.task_id not in substantial:
             continue
@@ -127,12 +150,23 @@ def evidence(engine: Engine) -> dict:
         pointers[side] += 1
         pointers[side + "_used" if side == "held_out" else "used"] += bool(
             pointed & files_of_execution.get(execution.id, set()))
+        # The rediscovery cost: tool calls before the first edit, for tasks that got a hint against held-out tasks
+        # that would have got one. Same situation on both sides; medians, as call counts are skewed.
+        calls = engine._calls(execution.id)
+        first_edit = next((i for i, c in enumerate(calls) if c.category == "edit"), None)
+        if first_edit is not None:
+            before_edit[execution.holdout].append(first_edit)
+    first_edit = {"shown": len(before_edit[False]), "held_out": len(before_edit[True]),
+                  "shown_median": median(before_edit[False]) if before_edit[False] else None,
+                  "held_out_median": median(before_edit[True]) if before_edit[True] else None}
     return {
         "tasks": len(substantial),
         "outcomes": {key: levels[key] for key in
                      ("independently_verified", "check_passed", "agent_reported", "inferred", "unknown")},
         "recall": {"shown": len(recalled_of), "checkable": len(checkable), "used": used, "chance": chance},
         "pointers": pointers,
+        "first_edit": first_edit,
+        "verdict": verdict(pointers, first_edit),
         "holdout": {"shown": len(sides[False]), "held_out": len(sides[True]), "min_side": MIN_HOLDOUT_SIDE,
                     **_typical_change(sides[False], sides[True])},
     }

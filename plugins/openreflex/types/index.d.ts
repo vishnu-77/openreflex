@@ -10,6 +10,8 @@ export type Evidence = {
   outcomes?: { independently_verified?: number; check_passed?: number; agent_reported?: number; inferred?: number; unknown?: number }
   recall?: { shown?: number; checkable?: number; used?: number; chance?: number | null }
   pointers?: { shown?: number; used?: number; held_out?: number; held_out_used?: number }
+  verdict?: { state?: 'early' | 'helping' | 'not_helping'; line?: string }
+  first_edit?: { shown?: number; held_out?: number; shown_median?: number | null; held_out_median?: number | null }
   holdout?: { shown?: number; held_out?: number; min_side?: number; tool_call_change?: number | null; low?: number | null; high?: number | null }
 }
 
@@ -43,6 +45,6 @@ export type ReflexState = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'openreflex': { recalls: Shaped<Recall[]>; captures: Shaped<Capture[]>; state: Shaped<ReflexState | null> }
+    'openreflex': { recalls: Shaped<Recall[]>; captures: Shaped<Capture[]>; state: Shaped<ReflexState | null>; details: Shaped<boolean> }
   }
 }

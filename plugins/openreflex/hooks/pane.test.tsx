@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { evidenceRows, isOn, pickState, reflexLines, reflexText } from './pane'
+import { evidenceRows, isOn, pickState, reflexLines, reflexText, verdictOf } from './pane'
 
 const PANE = {
   plugin: 'openreflex',
@@ -12,7 +12,7 @@ const PANE = {
 const ON = { project: 'opentrajectory', phase: 'ready', project_enabled: true, experiences: 15, lessons: 16, map_files: 115, updated_at: 20,
   // verified here is the unfiltered store count; the pane must show only evidence.outcomes.verified.
   reflexes_proven: 0, reflexes_learned: 22, reflexes_learning: 90, verification: 'test', verified: 1,
-  evidence: { tasks: 17, outcomes: { independently_verified: 0, check_passed: 2, agent_reported: 1, inferred: 5, unknown: 7 }, recall: { shown: 9, checkable: 3, used: 2, chance: 0.556 }, holdout: { shown: 14, held_out: 0, min_side: 30, tool_call_change: null, low: null, high: null } } }
+  evidence: { tasks: 17, outcomes: { independently_verified: 0, check_passed: 2, agent_reported: 1, inferred: 5, unknown: 7 }, recall: { shown: 9, checkable: 3, used: 2, chance: 0.556 }, verdict: { state: 'early' as const, line: 'Too early to tell: 3 hints shown, 2 used' }, holdout: { shown: 14, held_out: 0, min_side: 30, tool_call_change: null, low: null, high: null } } }
 
 test('only OpenReflex lines are kept, without the tag', () => {
   expect(reflexLines(['other hook', '[OpenReflex] Reflex: run tests · active.\n  [OpenReflex] Project memory: app.'])).toEqual([
@@ -48,17 +48,29 @@ function engine(on: Parameters<Parameters<typeof test>[1]>[1], root: string, sta
   on('session.start', (_, e) => ({ cwd: e.cwd }))
 }
 
-test('the pane shows OpenReflex live: state, recall and each capture', async ($, on) => {
+test('the pane leads with the verdict and the last hint; numbers wait behind Details', async ($, on) => {
   engine(on, 'opentrajectory')
   on('classic.UserPromptSubmit', () => ({ additionalContext: ['[OpenReflex] Reflex: run tests · active.'] }))
   on('classic.PostToolUse', () => ({}))
+  on('classic.PostToolUseFailure', () => ({}))
 
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await $.classic.UserPromptSubmit({ hook_event_name: 'UserPromptSubmit', prompt: 'hi' } as never)
-  await $.classic.PostToolUse({ hook_event_name: 'PostToolUse', tool_name: 'Bash' } as never)
+  await $.classic.PostToolUse({ hook_event_name: 'PostToolUse', tool_name: 'Read' } as never)
+  await $.classic.PostToolUseFailure({ hook_event_name: 'PostToolUseFailure', tool_name: 'Bash' } as never)
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Text', text: /● ready/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /^Too early to tell: 3 hints shown, 2 used$/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /^Last hint/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /run tests/ }))?.text).toBe('Reflex: run tests · active.')
+  // The feed keeps failures and hints only, not every tool call.
+  expect((await ui.find({ type: 'Text', text: /✕ PostToolUseFailure Bash/ }))?.text).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /PostToolUse Read/ })).toBeUndefined()
+  // Details are hidden until asked for.
+  expect(await ui.find({ type: 'Text', text: /15 stored experiences/ })).toBeUndefined()
+
+  await ui.press({ key: 'details' })
   expect((await ui.find({ type: 'Text', text: /15 stored experiences/ }))?.text).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /2 check passed · 1 agent said · 5 inferred · 7 unknown$/ }))?.text).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /used 2 \(67%\) · chance 56%/ }))?.text).toBeDefined()
@@ -68,9 +80,27 @@ test('the pane shows OpenReflex live: state, recall and each capture', async ($,
   // No bare "verified" on screen: the old store count (verified: 1) must not reappear, and a passing check is not
   // called verified. Only independently verified outcomes would say so, and there are none here.
   expect(await ui.find({ type: 'Text', text: /verified/ })).toBeUndefined()
-  expect((await ui.find({ type: 'Text', text: /run tests/ }))?.text).toBe('Reflex: run tests · active.')
-  expect((await ui.find({ type: 'Text', text: /PostToolUse\s+Bash/ }))?.text).toBeDefined()
+
+  await ui.press({ key: 'details' })
+  expect(await ui.find({ type: 'Text', text: /15 stored experiences/ })).toBeUndefined()
   await ui.unmount()
+})
+
+test('the verdict is coloured by its state, and an older state file says when it will appear', () => {
+  expect(verdictOf({ verdict: { state: 'helping', line: 'Hints are used' } })).toEqual({ color: 'green', line: 'Hints are used' })
+  expect(verdictOf({ verdict: { state: 'not_helping', line: 'x' } }).color).toBe('red')
+  expect(verdictOf({ verdict: { state: 'early', line: 'x' } }).color).toBe('yellow')
+  expect(verdictOf(undefined).line).toBe('Evidence updates at the next session start')
+  expect(verdictOf({}).line).toBe('Evidence updates at the next session start')
+})
+
+test('first edit compares medians only when both sides have them', () => {
+  const rows = (first_edit: object) => Object.fromEntries(evidenceRows({ first_edit }))
+  expect(rows({ shown: 12, held_out: 9, shown_median: 4, held_out_median: 7 })['First edit'])
+    .toBe('median 4 calls before first edit with hint (n=12) vs 7 without (n=9)')
+  expect(rows({ shown: 2, held_out: 0, shown_median: 3, held_out_median: null })['First edit'])
+    .toBe('needs tasks on both sides (2 with hint · 0 held out)')
+  expect(rows({})['First edit']).toBe('needs tasks on both sides (0 with hint · 0 held out)')
 })
 
 test('in a project OpenReflex is not on for, the pane says how to turn it on', async ($, on) => {

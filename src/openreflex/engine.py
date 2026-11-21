@@ -12,7 +12,7 @@ from .decision import DecisionSnapshot, make_snapshot, render_paths, render_reca
 from .models import (HARNESS_MESSAGE, VERIFIED_LEVELS, CandidatePath, Context, Execution, Experience, Lesson, Outcome,
                      ProjectReflex, Status, Task, ToolCall, ambient_text, evidence_level_of, is_harness_message, uid)
 from .policy import load_policy
-from .privacy import PROGRESS, categorize, error_signature, file_paths, fingerprint, redact
+from .privacy import PROGRESS, VERIFICATION, categorize, error_signature, file_paths, fingerprint, redact
 from .routing import Budget, Limits, budget_for, candidates, classify, embed, limits_from_env, similarity, task_mode
 from .reflexes import compile_for_experience, families_for_experience, match_reflex, recompile_families
 from .store import Store, database_path
@@ -193,7 +193,7 @@ class Engine:
             else:
                 for failed, resolver in learning.resolutions(calls):
                     self.store.link(failed.id, "resolved_by", resolver.id)
-            notes = (self._pointer(execution, call) if success else self._known_fix(execution, call),
+            notes = (self._pointer(execution, call, arguments) if success else self._known_fix(execution, call),
                      self._alert(execution, calls, now))
             message = self._deliver(execution, " ".join(note for note in notes if note) or None, deliverable)
             self.store.put(execution)
@@ -712,29 +712,66 @@ class Engine:
         execution.alerts.append(marker)
         return f"OpenReflex: this error was resolved before in this project: {known.text}"
 
-    def _pointer(self, execution: Execution, call: ToolCall) -> str | None:
+    def _pointer(self, execution: Execution, call: ToolCall, arguments: object = None) -> str | None:
         """After the first file a task touches, the files earlier tasks worked on together with it (ADR 0001, Phase B).
 
         A situation trigger: on real projects these hit 4 of 7 times where pointers recalled by prompt wording hit
-        0 of 11. Fires once per task; the marker records what was pointed at, so use can be measured.
+        0 of 11. A first search with no file yet anchors on the past file its pattern names, so the hint lands when
+        rediscovery starts. Files gone from disk are never pointed at (drift). Fires once per task; the marker
+        records what was pointed at, so use can be measured.
         """
-        if not call.files or any(a.startswith("pointer:") for a in execution.alerts):
+        if any(a.startswith("pointer:") for a in execution.alerts):
+            return None
+        if not call.files and call.category != "search":
             return None
         task = self._task(execution)
         if not task.substantial:
             return None
-        first = call.files[0]
+        history = [x for x in self.store.list("Experience", limit=self.policy.integer("engine.max_store_scan"))
+                   if x.execution_id != execution.id and not is_harness_message(x.description)]
+        searched = not call.files
+        first = call.files[0] if call.files else self._searched_file(history, arguments)
+        if first is None:
+            return None  # a search naming no known file: wait for the first file instead
+        with_first = [x for x in history if first in x.files]
         together: Counter = Counter()
-        for experience in self.store.list("Experience", limit=self.policy.integer("engine.max_store_scan")):
-            if experience.execution_id == execution.id or is_harness_message(experience.description)                     or first not in experience.files:
-                continue
+        for experience in with_first:
             together.update(f for f in set(experience.files) if f != first)
-        pointed = [(path, count) for path, count in together.most_common(3)]
+        pointed = [(path, count) for path, count in together.most_common() if self._exists(path)][:3]
+        if searched:
+            pointed = [(first, len(with_first))] + pointed[:2]
         execution.alerts.append("pointer:" + "|".join(path for path, _ in pointed))
         if not pointed:
             return None
         listed = ", ".join(f"{path} ({count} task{'s' if count != 1 else ''})" for path, count in pointed)
-        return f"[OpenReflex] Earlier tasks that touched {first} also worked on: {listed}."
+        lead = ("Earlier tasks matching this search worked on" if searched
+                else f"Earlier tasks that touched {first} also worked on")
+        return f"[OpenReflex] {lead}: {listed}.{self._checks_note(with_first)}"
+
+    def _exists(self, path: str) -> bool:
+        return (self.project / path).exists()
+
+    def _searched_file(self, history: list[Experience], arguments: object) -> str | None:
+        """The past file a search pattern names (by file name), the most worked on first. The pattern is not stored."""
+        pattern = arguments.get("pattern") if isinstance(arguments, dict) else None
+        terms = {t.lower() for t in re.findall(r"[A-Za-z0-9]{4,}", pattern or "")}
+        if not terms:
+            return None
+        counts = Counter(f for x in history for f in set(x.files)
+                         if any(t in Path(f).name.lower() for t in terms))
+        return next((path for path, _ in counts.most_common() if self._exists(path)), None)
+
+    def _checks_note(self, experiences: list[Experience]) -> str:
+        """What only execution history knows: how often a check failed and was then fixed in those tasks."""
+        caught = 0
+        for experience in experiences[:50]:
+            checks = [c for c in self._calls(experience.execution_id) if c.category in VERIFICATION]
+            failed = next((i for i, c in enumerate(checks) if c.status == "failure"), None)
+            caught += failed is not None and any(c.status == "success" for c in checks[failed + 1:])
+        if not caught:
+            return ""
+        return (f" A test, lint or build check failed and was then fixed in {caught} of those"
+                f" task{'s' if caught != 1 else ''}: run the checks after editing.")
 
     def _held_out(self, session: str, description: str) -> bool:
         """A stable share of tasks where OpenReflex records but stays silent: the comparison group for its effect."""

@@ -132,13 +132,14 @@ def cmd_uninstall(args) -> int:
 
 def cmd_status(args) -> int:
     from .engine import Engine
-    from .metrics import project_metrics
+    from .metrics import evidence, project_metrics
 
     project = _project(args.project)
     record = approval(project)
     engine = Engine(project)
     try:
         data = project_metrics(engine, record)
+        data["evidence"] = evidence(engine)
     finally:
         engine.close()
     data["enabled"] = record is not None
@@ -148,6 +149,7 @@ def cmd_status(args) -> int:
     reuse, path_check, routing = data["experience_reuse"], data["path_check"], data["routing"]
     eff = data["efficiency_observational"]
     print(f"OpenReflex {__version__} - {project}")
+    print(f"  hints: {data['evidence']['verdict']['line']}")
     print(f"  enabled: {data['enabled']}   agents: {', '.join(data['engagement']['agents']) or '-'}")
     print(f"  tasks: {data['engagement']['tasks']}   experiences: {data['engagement']['experiences']}   lessons: {data['lessons']}")
     reflexes = data["project_reflexes"]

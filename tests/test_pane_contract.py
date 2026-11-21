@@ -78,3 +78,18 @@ def test_recalled_context_starts_with_the_tag_the_pane_reads(project, factory, c
     context = output["hookSpecificOutput"]["additionalContext"]
     assert any(line.strip().startswith("[OpenReflex]") for line in context.splitlines())
     assert "const TAG = '[OpenReflex]'" in PANE.read_text(encoding="utf-8")
+
+
+def test_evidence_has_the_verdict_and_first_edit_keys_the_pane_reads(project, factory, clock):
+    from openreflex.metrics import evidence
+
+    approve(project)
+    seed_experience(project, factory, clock)
+    ev = evidence(factory(project))
+    assert set(ev["verdict"]) >= {"state", "line"} and ev["verdict"]["state"] in {"early", "helping", "not_helping"}
+    assert set(ev["first_edit"]) >= {"shown", "held_out", "shown_median", "held_out_median"}
+    pane, types = PANE.read_text(encoding="utf-8"), PANE_TYPES.read_text(encoding="utf-8")
+    for key in ("verdict", "first_edit", "shown_median", "held_out_median"):
+        assert key in types, key
+    for read in ("ev?.verdict", "v.line", "v.state", "ev.first_edit", "f.shown_median", "f.held_out_median"):
+        assert read in pane, read

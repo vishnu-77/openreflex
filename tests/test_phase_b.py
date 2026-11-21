@@ -17,6 +17,14 @@ from .test_holdout_pipeline import holdout
 from .test_hooks import call, seed_experience
 
 
+@pytest.fixture(autouse=True)
+def files_on_disk(project):
+    """Pointers name only files that still exist, so the files these tasks touch are on disk."""
+    for path in ("src/auth.py", "tests/test_auth.py", "src/session.py"):
+        (project / path).parent.mkdir(parents=True, exist_ok=True)
+        (project / path).write_text("", encoding="utf-8")
+
+
 @pytest.fixture
 def factory(tmp_path, clock):
     database = tmp_path / "hooks.sqlite3"
