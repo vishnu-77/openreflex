@@ -1,11 +1,29 @@
 """Hints that land when rediscovery starts, never point at deleted files, carry what checks caught, and are judged
 by a fair comparison: calls before the first edit, with a hint against held-out tasks that would have got one."""
+import pytest
+
+from openreflex.engine import Engine
 from openreflex.metrics import MIN_HINT_SIDE, evidence, verdict
 from openreflex.project import approve
+from openreflex.store import Store
 
 from .test_holdout_pipeline import holdout
 from .test_hooks import seed_experience
-from .test_phase_b import EDIT_AUTH, EDIT_TEST, LOGIN, PYTEST, READ_AUTH, factory, files_on_disk, task  # noqa: F401
+from .test_phase_b import EDIT_AUTH, EDIT_TEST, LOGIN, PYTEST, READ_AUTH, task
+
+
+@pytest.fixture(autouse=True)
+def files_on_disk(project):
+    """Pointers name only files that still exist, so the files these tasks touch are on disk."""
+    for path in ("src/auth.py", "tests/test_auth.py", "src/session.py"):
+        (project / path).parent.mkdir(parents=True, exist_ok=True)
+        (project / path).write_text("", encoding="utf-8")
+
+
+@pytest.fixture
+def factory(tmp_path, clock):
+    database = tmp_path / "hooks.sqlite3"
+    return lambda project: Engine(project, Store(database), clock=clock)
 
 SKEW = "Make the token refresh endpoint honour the clock skew"
 
