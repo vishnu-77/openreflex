@@ -97,10 +97,10 @@ test('the verdict is coloured by its state, and an older state file says when it
 test('first edit compares medians only when both sides have them', () => {
   const rows = (first_edit: object) => Object.fromEntries(evidenceRows({ first_edit }))
   expect(rows({ shown: 12, held_out: 9, shown_median: 4, held_out_median: 7 })['First edit'])
-    .toBe('median 4 calls before first edit with hint (n=12) vs 7 without (n=9)')
+    .toBe('median 4 calls with hint (n=12) · 7 without (n=9)')
   expect(rows({ shown: 2, held_out: 0, shown_median: 3, held_out_median: null })['First edit'])
-    .toBe('needs tasks on both sides (2 with hint · 0 held out)')
-  expect(rows({})['First edit']).toBe('needs tasks on both sides (0 with hint · 0 held out)')
+    .toBe('needs more tasks (2 with hint · 0 without)')
+  expect(rows({})['First edit']).toBe('needs more tasks (0 with hint · 0 without)')
 })
 
 test('in a project OpenReflex is not on for, the pane says how to turn it on', async ($, on) => {

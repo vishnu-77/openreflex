@@ -12,7 +12,7 @@ from .decision import DecisionSnapshot, make_snapshot, render_paths, render_reca
 from .models import (HARNESS_MESSAGE, VERIFIED_LEVELS, CandidatePath, Context, Execution, Experience, Lesson, Outcome,
                      ProjectReflex, Status, Task, ToolCall, ambient_text, evidence_level_of, is_harness_message, uid)
 from .policy import load_policy
-from .privacy import PROGRESS, VERIFICATION, categorize, error_signature, file_paths, fingerprint, redact
+from .privacy import LOOKUP_CATEGORIES, PROGRESS, VERIFICATION, categorize, error_signature, file_paths, fingerprint, redact
 from .routing import Budget, Limits, budget_for, candidates, classify, embed, limits_from_env, similarity, task_mode
 from .reflexes import compile_for_experience, families_for_experience, match_reflex, recompile_families
 from .store import Store, database_path
@@ -581,7 +581,8 @@ class Engine:
         execution.context_tokens = self._injected_context_tokens(context)
         if substantial:
             self._record_decision(execution, "start", "recommend", paths[0], paths, now,
-                                  context_tokens=execution.context_tokens, experiences=retrieved)
+                                  context_tokens=execution.context_tokens, experiences=retrieved,
+                                  note=self._fix_note(context, paths[0]))
         self.store.put(execution)
         self.store.bind_session(agent, session, execution.id)
         return execution, context
@@ -612,7 +613,8 @@ class Engine:
         execution.context_tokens = self._injected_context_tokens(context)
         if task.substantial:
             self._record_decision(execution, "start", "recommend", paths[0], paths, now,
-                                  context_tokens=execution.context_tokens, experiences=retrieved)
+                                  context_tokens=execution.context_tokens, experiences=retrieved,
+                                  note=self._fix_note(context, paths[0]))
         self.store.put(execution)
         self.store.link(execution.id, "used", context.id)
         return context
@@ -655,7 +657,8 @@ class Engine:
                          outcome: str | None = None, expected_regret: float | None = None,
                          model_tokens: int | None = None,
                          token_usage: dict[str, int | float] | None = None,
-                         experiences: list[tuple[Experience, float]] | None = None) -> DecisionSnapshot:
+                         experiences: list[tuple[Experience, float]] | None = None,
+                         note: str = "") -> DecisionSnapshot:
         task = self._task(execution)
         if experiences is None:  # task start passes what it just retrieved instead of scanning the store again
             experiences = self.retrieve(task.description, task.task_class) if task.substantial else []
@@ -671,6 +674,8 @@ class Engine:
                                  actual_tokens=actual_tokens, elapsed_seconds=elapsed_seconds, outcome=outcome,
                                  expected_regret=expected_regret, model_tokens=model_tokens, token_usage=token_usage,
                                  reflex_name=reflex_name)
+        if note:
+            snapshot = DecisionSnapshot.from_dict({**snapshot.as_dict(), "note": note})
         if not task.substantial or (phase == "complete" and outcome == "unknown"):
             # Trivial activity and completion without observable evidence remain available in
             # trace/status, but must not become alarming ambient user-facing recaps.
@@ -749,7 +754,7 @@ class Engine:
         return f"[OpenReflex] {lead}: {listed}.{self._checks_note(with_first)}"
 
     def _exists(self, path: str) -> bool:
-        return (self.project / path).exists()
+        return (self.project / path).is_file()  # a folder is not something to open
 
     def _searched_file(self, history: list[Experience], arguments: object) -> str | None:
         """The past file a search pattern names (by file name), the most worked on first. The pattern is not stored."""
@@ -809,7 +814,9 @@ class Engine:
         inferred = learning.infer_strategy(calls, task.task_mode)
         if task.task_mode == "build" and not inferred and any(c.category == "test" for c in calls):
             inferred = "test-first"
-        current = (by_strategy.get(history[-1][1]) if history else None) or declared or by_strategy.get(inferred or "") or recommended
+        elif task.task_mode == "build" and not inferred and calls and all(c.category in LOOKUP_CATEGORIES for c in calls):
+            inferred = "inspect-first"  # reading before any test or edit is the inspect-first path, live
+        current =(by_strategy.get(history[-1][1]) if history else None) or declared or by_strategy.get(inferred or "") or recommended
         tried = {name for source, target, _ in history for name in (source, target)}
         since = max(execution.last_progress_at, control.switch_time(execution, calls))
         return control.assess(execution, calls, current, paths, budget, active, since, tried, self.policy)
@@ -818,7 +825,8 @@ class Engine:
         if now - execution.last_alert_at < self.policy.number("detectors.cooldown_seconds"):
             return None
         budget, active = self._budget(execution), learning.active_seconds(execution, calls, now)
-        problems = detect.detect(execution, calls, budget, now, active, self.policy)
+        problems = detect.detect(execution, calls, budget, now, active, self.policy,
+                                 known_fix=self._has_known_fix(execution))
         if not problems:
             return None
         verdict = self._verdict(execution, calls, budget, active)
@@ -863,7 +871,7 @@ class Engine:
         event = verdict.action if verdict.action in {"pivot", "stop"} else alert.kind
         self._record_decision(execution, "runtime", verdict.action, best, paths, now,
                               context_tokens=execution.context_tokens or 0, budget_used=verdict.budget_used,
-                              event=event)
+                              event=event, actual_tool_calls=len(calls))
         return " ".join(parts)
 
     def _finalize(self, execution: Execution, status: Status | None = None, evidence: str | None = None,
@@ -969,11 +977,39 @@ class Engine:
         pairs = learning.resolutions(calls)
         for failed, resolver in pairs:
             self.store.link(failed.id, "resolved_by", resolver.id)
+        learned = []
         for lesson in learning.extract_lessons(experience, calls, pairs, execution.alerts):
             self.store.put(lesson)
             self.store.link(experience.id, "caused", lesson.id)
+            if lesson.kind == "resolution":
+                learned.append(lesson.text)
+        last = execution.decision_history[-1] if execution.decision_history else None
+        if learned and last and last.get("phase") == "complete":
+            last["note"] = "learned → " + learned[0].rstrip(".")
+            self.store.put(execution)
         compile_for_experience(self.store, experience, now)
         return outcome
+
+    def _has_known_fix(self, execution: Execution) -> bool:
+        context = next(iter(self.store.list("Context", "task_id", execution.task_id, limit=1)), None)
+        return bool(context and context.injected and any(
+            self.store.exists(i) and self.store.get(i).kind == "resolution" for i in context.lesson_ids))
+
+    def _fix_note(self, context: Context, best: CandidatePath) -> str:
+        """The start recap's pointer: files a known fix was made in, from a lesson the model was actually given."""
+        if not context.injected:
+            return ""
+        files: list[str] = []
+        for lesson_id in context.lesson_ids:
+            lesson = self.store.get(lesson_id) if self.store.exists(lesson_id) else None
+            if lesson is None or lesson.kind != "resolution" or len(lesson.evidence_ids) < 2:
+                continue
+            fixer = lesson.evidence_ids[-1]  # evidence is [experience, failed call, fixing call]
+            if self.store.exists(fixer):
+                files += [f for f in self.store.get(fixer).files if f not in files and self._exists(f)]
+        if not files:
+            return ""
+        return f"OpenReflex context → likely {', '.join(files[:2])} · {best.strategy} recommended"
 
 
 def render_context(task: Task, paths: list[CandidatePath], retrieved: list[tuple[Experience, float]],

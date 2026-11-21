@@ -68,3 +68,12 @@ def test_the_verdict_claims_no_more_than_the_data():
     early = verdict(pointers, {"shown": 30, "held_out": 2, "shown_median": 1, "held_out_median": 9})
     assert early["state"] == "early", "a big gap on two held-out tasks is not evidence"
     assert all("sav" not in v["line"].lower() for v in (early,))
+
+
+def test_folders_are_never_pointed_at(project, factory, clock):
+    approve(project)
+    (project / "src" / "auth").mkdir(parents=True, exist_ok=True)
+    for index in range(2):
+        task(project, factory, clock, f"s{index}", LOGIN, [EDIT_AUTH, EDIT_TEST, ("Glob", {"pattern": "*.py", "path": "src/auth"})])
+    out = task(project, factory, clock, "new", SKEW, [READ_AUTH])
+    assert "tests/test_auth.py" in out["tools"][0] and "src/auth (" not in out["tools"][0]

@@ -42,7 +42,7 @@ def test_claude_round_trip_counts_tools_and_output_tokens(project, tmp_path, clo
     rendered = json.loads(_call(factory, "claude-code", "Stop", base))
     recap = rendered["systemMessage"]
     assert recap.startswith("↺ OpenReflex · COMPLETE")
-    assert "calls" not in recap
+    assert "3 calls" in recap  # every tool call counted
     assert "tokens" not in recap
 
     engine = factory(project)

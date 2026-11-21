@@ -4,6 +4,14 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## 0.11.0 (2026-11-21)
 
+- The walkthrough flow: the start recap reads "N experiences · <path> <success> · ~N calls · +N context tokens" and,
+  when a lesson the model was given names where a known fix was made, adds "OpenReflex context → likely <file> ·
+  <path> recommended". Mid-task: "N calls · budget N% · pivot → <path>". Completion: "success · <path> · N calls ·
+  regret N vs <path>" (regret only when evidence supports it) and "learned → <the fix this task taught>".
+- With a known fix in hand, pure exploration counts as stalled at 15 calls (not 30), and reading before any test or
+  edit is treated as the inspect-first path, so the pivot to test-first comes when exploration stalls.
+- Hints never name folders.
+
 - Hints fire at the first search too: a first Grep/Glob with no file yet anchors on the past file its pattern names
   (the pattern is not stored). Files gone from disk are never pointed at. A hint adds how often a test, lint or
   build check failed and was then fixed in those tasks.

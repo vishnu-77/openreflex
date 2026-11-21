@@ -17,7 +17,7 @@ class Alert:
 
 
 def detect(execution: Execution, calls: list[ToolCall], budget: Budget, now: float, active_seconds: float = 0,
-           policy: Policy | None = None) -> list[Alert]:
+           policy: Policy | None = None, known_fix: bool = False) -> list[Alert]:
     cfg = policy or load_policy()
     values = cfg.table("detectors")
     severity = cfg.table("detectors.severity")
@@ -57,8 +57,9 @@ def detect(execution: Execution, calls: list[ToolCall], budget: Budget, now: flo
     idle = now - execution.last_progress_at
     implementing = any(c.category in PROGRESS for c in calls)
     stagnation_calls = int(values["stagnation_calls"])
-    threshold = stagnation_calls if implementing else round(float(values["exploration_stagnation_multiplier"])
-                                                             * stagnation_calls)
+    # Exploring is slow by nature, so it gets more room, unless a known fix already says where the change goes.
+    threshold = stagnation_calls if implementing or known_fix else round(
+        float(values["exploration_stagnation_multiplier"]) * stagnation_calls)
     enough_for_time = len(since_progress) >= int(values["minimum_stagnation_calls_with_time"])
     if len(since_progress) >= threshold or (
         implementing and idle >= float(values["stagnation_seconds"]) and enough_for_time

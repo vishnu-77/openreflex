@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import fields, asdict, dataclass, field
 from typing import Iterable
 
 from .models import CandidatePath, Execution, Experience, Task
@@ -47,13 +47,15 @@ class DecisionSnapshot:
     model_tokens: int | None = None
     token_usage: dict[str, int | float] = field(default_factory=dict)
     reflex_name: str | None = None
+    note: str = ""  # one plain line: the file a known fix names (start) or what was learned (complete)
 
     def as_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "DecisionSnapshot":
-        values = dict(data)
+        known = {f.name for f in fields(cls)}
+        values = {key: value for key, value in data.items() if key in known}  # newer writers may add fields
         values["policy_sources"] = tuple(values.get("policy_sources") or ())
         return cls(**values)
 
@@ -153,9 +155,14 @@ def render_recap(snapshot: DecisionSnapshot, previous: DecisionSnapshot | None =
             return ""
 
         state = "COMPLETE" if snapshot.outcome == "success" else "FAILED"
-        lines = [f"↺ OpenReflex · {state}"]
-        if snapshot.reflex_name:
-            lines.append(snapshot.reflex_name)
+        summary = [snapshot.outcome or "", snapshot.strategy or ""]
+        if snapshot.actual_tool_calls is not None:
+            summary.append(f"{snapshot.actual_tool_calls} calls")
+        if snapshot.expected_regret is not None and snapshot.next_best_strategy:
+            summary.append(f"regret {snapshot.expected_regret:.2f} vs {snapshot.next_best_strategy}")
+        lines = [f"↺ OpenReflex · {state}", " · ".join(part for part in summary if part)]
+        if snapshot.note:
+            lines.append(snapshot.note)
         return "\n".join(lines)
 
     delta = ""
@@ -166,18 +173,19 @@ def render_recap(snapshot: DecisionSnapshot, previous: DecisionSnapshot | None =
     if snapshot.phase == "start":
         success = "?" if snapshot.success_probability is None else f"{snapshot.success_probability:.0%}"
         calls = "?" if snapshot.estimated_tool_calls is None else f"~{snapshot.estimated_tool_calls:.0f} calls"
-        tokens = "?" if snapshot.estimated_tokens is None else f"~{snapshot.estimated_tokens / 1000:.0f}k tokens"
-        label = snapshot.reflex_name or "working approach"
-        return (f"{first}\n{snapshot.evidence_count} experiences · {label} · {success} · "
-                f"{calls} · {tokens} · +{snapshot.context_tokens} context tokens")
+        label = snapshot.strategy or "working approach"
+        lines = [first, f"{snapshot.evidence_count} experiences · {label} {success} · {calls} · "
+                        f"+{snapshot.context_tokens} context tokens"]
+        if snapshot.note:
+            lines.append(snapshot.note)
+        return "\n".join(lines)
 
-    success = "?" if snapshot.success_probability is None else f"{snapshot.success_probability:.0%}"
-    label = snapshot.reflex_name or "working approach"
-    message = (f"{first}\n{snapshot.action} · {label} · {success} · "
-               f"budget {snapshot.budget_used:.0%}")
-    if snapshot.next_best_strategy and snapshot.action in {"pivot", "stop"}:
-        message += f" · next {snapshot.next_best_strategy}"
-    return message
+    parts = [f"{snapshot.actual_tool_calls} calls"] if snapshot.actual_tool_calls is not None else []
+    parts.append(f"budget {snapshot.budget_used:.0%}")
+    action = snapshot.action
+    if action == "pivot" and snapshot.strategy:
+        action += f" → {snapshot.strategy}"  # a pivot's snapshot is of the path it pivots to
+    return f"{first}\n{' · '.join(parts + [action])}"
 
 
 def render_why(snapshot: DecisionSnapshot) -> str:

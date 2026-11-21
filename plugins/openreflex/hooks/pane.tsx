@@ -75,8 +75,8 @@ export function evidenceRows(ev: Evidence | undefined): [string, string][] {
   // Rediscovery cost: calls before the first edit, medians, tasks with a pointer against held-out ones that would have had it.
   const f = ev.first_edit ?? {}
   const firstEdit = f.shown_median === null || f.shown_median === undefined || f.held_out_median === null || f.held_out_median === undefined
-    ? `needs tasks on both sides (${n(f.shown)} with hint · ${n(f.held_out)} held out)`
-    : `median ${f.shown_median} calls before first edit with hint (n=${n(f.shown)}) vs ${f.held_out_median} without (n=${n(f.held_out)})`
+    ? `needs more tasks (${n(f.shown)} with hint · ${n(f.held_out)} without)`
+    : `median ${f.shown_median} calls with hint (n=${n(f.shown)}) · ${f.held_out_median} without (n=${n(f.held_out)})`
   return [['Checked', checked], ['Recall', recall], ['Pointers', pointers], ['First edit', firstEdit], ['Holdout', holdout]]
 }
 

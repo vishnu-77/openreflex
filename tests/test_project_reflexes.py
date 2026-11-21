@@ -295,8 +295,8 @@ def test_engine_learns_then_reuses_project_reflex(engine, clock):
 
     recap = engine.take_notice("mcp", "helm-next")
     assert recap is not None
-    assert "Helm values change" in recap
-    assert "inspect-first" not in recap
+    # Phase B: a matched Reflex stays internal; the recap shows the evidence count and recommended path.
+    assert "1 experiences" in recap or "experiences ·" in recap
 
 
 def test_contradictory_failures_make_a_learned_reflex_stale(tmp_path):

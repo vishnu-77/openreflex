@@ -39,16 +39,14 @@ def test_unknown_completion_is_silent_in_ambient_ui():
 
 def test_success_completion_is_compact_and_evidence_backed():
     recap = render_recap(_snapshot(outcome="success", expected_regret=0.25))
-    assert recap == "↺ OpenReflex · COMPLETE\nHelm values change"
-    assert "calls" not in recap
+    assert recap == "↺ OpenReflex · COMPLETE\nsuccess · incremental · 9 calls · regret 0.25 vs test-first"
     assert "tokens" not in recap
     assert "Path check" not in recap
 
 
 def test_failure_completion_is_compact_and_evidence_backed():
     recap = render_recap(_snapshot(outcome="failure", expected_regret=0.4))
-    assert recap == "↺ OpenReflex · FAILED\nHelm values change"
-    assert "calls" not in recap
+    assert recap == "↺ OpenReflex · FAILED\nfailure · incremental · 9 calls · regret 0.40 vs test-first"
     assert "tokens" not in recap
 
 
