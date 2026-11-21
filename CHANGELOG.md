@@ -2,7 +2,7 @@
 
 All notable changes to OpenReflex are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.11.0 (2026-11-21)
 
 - Hints fire at the first search too: a first Grep/Glob with no file yet anchors on the past file its pattern names
   (the pattern is not stored). Files gone from disk are never pointed at. A hint adds how often a test, lint or

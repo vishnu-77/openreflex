@@ -1,6 +1,6 @@
 {
   "name": "openreflex",
-  "version": "0.10.2",
+  "version": "0.11.0",
   "description": "Ambient project muscle memory for AI coding agents: hooks learn and reuse project Reflexes automatically.",
   "author": {
     "name": "vishnu-77",
