@@ -4,6 +4,16 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## Unreleased
 
+- Hints fire at the first search too: a first Grep/Glob with no file yet anchors on the past file its pattern names
+  (the pattern is not stored). Files gone from disk are never pointed at. A hint adds how often a test, lint or
+  build check failed and was then fixed in those tasks.
+- Hints are judged fairly: `evidence()["first_edit"]` compares tool calls before the first edit for tasks shown a
+  hint against held-out tasks that would have got one, as medians with counts; `verdict` turns it into one line
+  (too early / helping / not helping, needing 10 tasks per side). `openreflex status` prints it.
+- The pane leads with that verdict and the last hint; the numbers move behind a Details button, and the feed shows
+  only hints and failed calls.
+- project_map no longer raises a `maxsplit` DeprecationWarning.
+
 - Phase B (ADR 0001, revised by evidence): prompt-time context is injected only for specific lessons (known fixes,
   failure loops). A matched Reflex stays internal: its procedure was a generic sequence of tool categories. On the
   largest local project, ambient injection drops from 113 tasks to 9. MCP `get_execution_context` still returns
