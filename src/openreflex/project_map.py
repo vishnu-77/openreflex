@@ -185,12 +185,12 @@ def _dependencies(project: Path, paths: list[Path]) -> list[dict]:
                 for group in groups:
                     for item in group:
                         if isinstance(item, str):
-                            add(re.split(r"[<>=!~;\s\[]", item, 1)[0], "python", source)
+                            add(re.split(r"[<>=!~;\s\[]", item, maxsplit=1)[0], "python", source)
             except (tomllib.TOMLDecodeError, AttributeError):
                 pass
         elif name == "requirements.txt":
             for line in text.splitlines():
-                add(re.split(r"[<>=!~;\s\[]", line.strip(), 1)[0], "python", source)
+                add(re.split(r"[<>=!~;\s\[]", line.strip(), maxsplit=1)[0], "python", source)
         elif name == "package.json":
             try:
                 data = json.loads(text)
