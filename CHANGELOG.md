@@ -4,6 +4,10 @@ All notable changes to OpenReflex are listed here. Versions follow [Semantic Ver
 
 ## 0.11.0 (2026-11-21)
 
+- OpenReflex no longer writes into the session transcript: its recaps and notices (start, pivot, COMPLETE,
+  REFRESHING, WAITING, OFF) are taken out of the hook output and kept in the project state, and the side pane shows
+  them as the Flow. What the model is given (hints) and refusals of repeated failing calls are unchanged.
+
 - The walkthrough flow: the start recap reads "N experiences · <path> <success> · ~N calls · +N context tokens" and,
   when a lesson the model was given names where a known fix was made, adds "OpenReflex context → likely <file> ·
   <path> recommended". Mid-task: "N calls · budget N% · pivot → <path>". Completion: "success · <path> · N calls ·

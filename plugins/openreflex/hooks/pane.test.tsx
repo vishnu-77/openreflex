@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { evidenceRows, isOn, pickState, reflexLines, reflexText, verdictOf } from './pane'
+import { evidenceRows, flowLines, isOn, pickState, reflexLines, reflexText, verdictOf } from './pane'
 
 const PANE = {
   plugin: 'openreflex',
@@ -92,6 +92,22 @@ test('the verdict is coloured by its state, and an older state file says when it
   expect(verdictOf({ verdict: { state: 'early', line: 'x' } }).color).toBe('yellow')
   expect(verdictOf(undefined).line).toBe('Evidence updates at the next session start')
   expect(verdictOf({}).line).toBe('Evidence updates at the next session start')
+})
+
+test('the flow shows the newest recaps first, here instead of in the session', async ($, on) => {
+  const flow = [{ at: 40, text: '↺ OpenReflex · 41\n2 experiences · test-first 94% · ~16 calls · +80 context tokens\nOpenReflex context → likely src/auth/session.py · test-first recommended' },
+    { at: 70, text: '↺ OpenReflex · COMPLETE\nsuccess · inspect-first · 4 calls · regret 0.00 vs test-first' }]
+  expect(flowLines(flow, 100000).map(l => l.text)).toEqual([
+    '↺ OpenReflex · COMPLETE  · 30 s ago', '  success · inspect-first · 4 calls · regret 0.00 vs test-first',
+    '↺ OpenReflex · 41  · 1 min ago', '  2 experiences · test-first 94% · ~16 calls · +80 context tokens',
+    '  OpenReflex context → likely src/auth/session.py · test-first recommended'])
+  expect(flowLines(undefined, 0)).toEqual([])
+  engine(on, 'opentrajectory', JSON.stringify({ ...ON, flow }))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /likely src\/auth\/session\.py/ }))?.text).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /^↺ OpenReflex · COMPLETE/ }))?.text).toBeDefined()
+  await ui.unmount()
 })
 
 test('first edit compares medians only when both sides have them', () => {

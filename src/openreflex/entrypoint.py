@@ -211,6 +211,23 @@ def _merge_project_context(output: str, project_context: str, event: str) -> str
     return json.dumps(data)
 
 
+# The flow the pane shows: OpenReflex's recaps for the person, newest last.
+FLOW_KEEP = 20
+
+
+def notice_to_pane(project: Path, output: str, enabled: bool) -> str:
+    """OpenReflex's notices for the person (recaps, REFRESHING, WAITING, OFF) belong in the side pane, never in the
+    session transcript: take the systemMessage out of the hook output and keep it in the state the pane reads."""
+    data = _output_dict(output)
+    notice = data.pop("systemMessage", None)
+    if not notice:
+        return output
+    if enabled:
+        flow = list(read_state(project).get("flow") or [])[-(FLOW_KEEP - 1):]
+        update_state(project, flow=flow + [{"at": round(time.time(), 3), "text": str(notice)}])
+    return json.dumps(data) if data else ""
+
+
 def _merge_notice(output: str, notice: str) -> str:
     data = _output_dict(output)
     existing = data.get("systemMessage")
@@ -432,6 +449,7 @@ def _hook(argv: list[str]) -> int:
         _best_effort("reinforce outcome", lambda: _stop_state(project, agent, session, output, payload), None)
         _best_effort("refresh evidence", lambda: refresh_evidence(project), False)
 
+    output = _best_effort("move notice to pane", lambda: notice_to_pane(project, output, enabled), output)
     if output:
         sys.stdout.write(output)
         sys.stdout.flush()

@@ -17,6 +17,8 @@ export type Evidence = {
 
 /** The fields of OpenReflex's own state.json the pane reads: its status-line cache. */
 export type ReflexState = {
+  /** OpenReflex's recaps for the person, newest last: shown in the pane, never in the session transcript. */
+  flow?: { at: number; text: string }[]
   project?: string
   phase?: string
   memory?: string

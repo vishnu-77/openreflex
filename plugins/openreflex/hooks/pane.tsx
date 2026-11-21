@@ -81,6 +81,17 @@ export function evidenceRows(ev: Evidence | undefined): [string, string][] {
 }
 
 /** The one plain answer at the top of the pane, written by Python (metrics.evidence verdict). */
+/**
+ * The flow: OpenReflex's recaps (start, pivot, complete), shown here instead of in the session transcript. Newest
+ * first, at most `count`; each recap's first line is its head, the rest its detail.
+ */
+export function flowLines(flow: ReflexState['flow'], nowMs: number, count = 3): { head: boolean; text: string }[] {
+  return (flow ?? []).slice(-count).reverse().flatMap(item => {
+    const [first, ...rest] = String(item.text).split('\n')
+    return [{ head: true, text: `${first}  · ${ago(nowMs - item.at * 1000)} ago` }, ...rest.map(text => ({ head: false, text: `  ${text}` }))]
+  })
+}
+
 export function verdictOf(ev: Evidence | undefined): { color: string; line: string } {
   const v = ev?.verdict
   if (v === undefined || !v.line) return { color: 'gray', line: 'Evidence updates at the next session start' }
@@ -202,6 +213,10 @@ export const register: Register = on => {
         <Text> </Text>
         {enabled && <Text bold color={verdict.color}>{clip(verdict.line, width)}</Text>}
         {enabled && <Text> </Text>}
+        {enabled && flowLines(st.flow, now).map(line => line.head
+          ? <Text color="cyan">{clip(line.text, width)}</Text>
+          : <Text>{clip(line.text, width)}</Text>)}
+        {enabled && (st.flow ?? []).length > 0 && <Text> </Text>}
         {last === undefined
           ? <Text dimColor>{clip('No hint yet: OpenReflex speaks when it knows something specific', width)}</Text>
           : <Text dimColor>{`Last hint · ${ago(now - last.at)} ago`}</Text>}
